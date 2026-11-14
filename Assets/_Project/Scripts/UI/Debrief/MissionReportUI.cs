@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using AstraLink.Core;
 using AstraLink.UI.Flight;
+using AstraLink.UI.Flight.SpaceMap;
 using AstraLink.UI.Hub;
 using AstraLink.UI.Workshop;
 using UnityEngine;
@@ -173,13 +174,21 @@ namespace AstraLink.UI.Debrief
         private MissionReport _currentReport;
         private MissionReport _lastRewardedReport;
         private bool _isLiveFlightViewActive = true;
+        private bool _isFlightPlaybackCompleted;
+        public bool IsFlightPlaybackCompleted => _isFlightPlaybackCompleted;
         private bool _hasExplicitRules;
         private bool _hasExplicitEvents;
         private bool _allowPayoutForCurrentReport = true;
+        private bool _payoutAppliedForCurrentLaunch;
         private bool _pendingLaunchSequence;
+        private bool _devSafeMode;
+        private AudioSource _outcomeSfxSource;
         private GameObject _sampleOrbitLeoBtn;
         private GameObject _sampleOrbitLunarBtn;
         private GameObject _sampleOrbitMarsBtn;
+        private GameObject _topHeaderBarRoot;
+        private VerticalLayoutGroup _rootContentLayout;
+        private SolarSystemHUDPanel _solarHudPanel;
 
         /// <summary>
         /// Gets the currently displayed <see cref="MissionReport"/>.
@@ -309,6 +318,12 @@ namespace AstraLink.UI.Debrief
 
             _repository = repository ?? _repository;
             _simulator = simulator ?? _simulator;
+            activeManualCommands.Clear();
+            _payoutAppliedForCurrentLaunch = false;
+            _devSafeMode = false;
+            _isFlightPlaybackCompleted = !_isLiveFlightViewActive || showVerificationBar;
+            if (_solarHudPanel != null) _solarHudPanel.SetDebriefUnlocked(_isFlightPlaybackCompleted);
+            if (switchToDebriefButton != null) switchToDebriefButton.interactable = _isFlightPlaybackCompleted;
             if (components != null) _activeComponents = new List<SatelliteComponent>(components);
             if (rocket != null) _activeRocket = rocket;
             if (rules != null)
@@ -353,6 +368,14 @@ namespace AstraLink.UI.Debrief
 
             _currentReport = report ?? BuildFullFlightSampleReport(_activeOrbit, _activeGoal, _activeRules, activeManualCommands, _activeEvents);
             _allowPayoutForCurrentReport = applyContractPayoutOnSuccess;
+            if (applyContractPayoutOnSuccess)
+            {
+                _payoutAppliedForCurrentLaunch = false;
+            }
+            _devSafeMode = false;
+            _isFlightPlaybackCompleted = !_isLiveFlightViewActive || showVerificationBar;
+            if (_solarHudPanel != null) _solarHudPanel.SetDebriefUnlocked(_isFlightPlaybackCompleted);
+            if (switchToDebriefButton != null) switchToDebriefButton.interactable = _isFlightPlaybackCompleted;
 
             if (_currentReport.Status == MissionStatus.Failed)
             {
@@ -398,7 +421,8 @@ namespace AstraLink.UI.Debrief
             bool waitingOrPlayingLaunch = _pendingLaunchSequence || (spaceMapController != null && spaceMapController.IsLaunchPlaying);
             if (!waitingOrPlayingLaunch && orbitRadarUI != null && !orbitRadarUI.IsPlaying && _currentReport != null && _currentReport.Ticks != null && _currentReport.Ticks.Count > 1)
             {
-                orbitRadarUI.LoadMissionReport(_currentReport, _activeOrbit, autoPlay: true, resetTickIndex: false);
+                bool atEnd = orbitRadarUI.CurrentTickIndex >= _currentReport.Ticks.Count - 1;
+                orbitRadarUI.LoadMissionReport(_currentReport, _activeOrbit, autoPlay: !atEnd && !_isFlightPlaybackCompleted, resetTickIndex: false);
             }
             RefreshUI();
         }
@@ -408,6 +432,11 @@ namespace AstraLink.UI.Debrief
         /// </summary>
         public void ShowDebriefSummaryView()
         {
+            if (!_isFlightPlaybackCompleted && !showVerificationBar)
+            {
+                return;
+            }
+
             if (OnRequestDebriefSummaryView != null)
             {
                 OnRequestDebriefSummaryView.Invoke();
@@ -436,6 +465,13 @@ namespace AstraLink.UI.Debrief
             _isLiveFlightViewActive = liveFlightMode;
             if (liveFlightModeRoot != null) liveFlightModeRoot.SetActive(liveFlightMode);
             if (debriefSummaryModeRoot != null) debriefSummaryModeRoot.SetActive(!liveFlightMode);
+            if (_topHeaderBarRoot != null) _topHeaderBarRoot.SetActive(!liveFlightMode);
+            if (_rootContentLayout != null)
+            {
+                _rootContentLayout.padding = liveFlightMode ? new RectOffset(0, 0, 0, 0) : new RectOffset(18, 18, 8, 8);
+                _rootContentLayout.spacing = liveFlightMode ? 0f : 6f;
+            }
+            ApplyVerificationVisibility();
 
             HighlightModeButton(switchToLiveFlightButton, liveFlightMode, new Color(0.14f, 0.58f, 0.86f, 1f));
             HighlightModeButton(switchToDebriefButton, !liveFlightMode, new Color(0.16f, 0.56f, 0.36f, 1f));
@@ -499,6 +535,7 @@ namespace AstraLink.UI.Debrief
                 {
                     playbackPlayPauseLabel.text = orbitRadarUI.IsPlaying ? "PAUSE" : "PLAY";
                 }
+                SyncSolarHudPlaybackState();
             }
         }
 
@@ -520,6 +557,53 @@ namespace AstraLink.UI.Debrief
                 {
                     playbackPlayPauseLabel.text = "PLAY";
                 }
+                SyncSolarHudPlaybackState();
+            }
+        }
+
+        private void SyncSolarHudPlaybackState()
+        {
+            if (_solarHudPanel == null || orbitRadarUI == null) return;
+            int totalTicks = (_currentReport != null && _currentReport.Ticks != null) ? _currentReport.Ticks.Count : 20;
+            _solarHudPanel.UpdatePlaybackState(orbitRadarUI.IsPlaying, orbitRadarUI.SpeedMultiplier, orbitRadarUI.CurrentTickIndex, totalTicks, _activeGoal, _activeOrbit);
+        }
+
+        public void SetDevSafeMode(bool enabled)
+        {
+            _devSafeMode = enabled;
+            if (_solarHudPanel != null)
+            {
+                _solarHudPanel.SetDevSafeModeVisual(enabled);
+            }
+        }
+
+        public void RestartFlightPlayback()
+        {
+            if (spaceMapController != null && (_pendingLaunchSequence || spaceMapController.IsLaunchPlaying))
+            {
+                _pendingLaunchSequence = false;
+                spaceMapController.SkipLaunchSequence();
+            }
+
+            if (orbitRadarUI != null)
+            {
+                orbitRadarUI.JumpToTick(0, pausePlayback: false);
+                SyncSolarHudPlaybackState();
+            }
+        }
+
+        public void ScrubFlightToTick(int tickIndex)
+        {
+            if (spaceMapController != null && (_pendingLaunchSequence || spaceMapController.IsLaunchPlaying))
+            {
+                _pendingLaunchSequence = false;
+                spaceMapController.SkipLaunchSequence();
+            }
+
+            if (orbitRadarUI != null)
+            {
+                orbitRadarUI.JumpToTick(tickIndex, pausePlayback: !orbitRadarUI.IsPlaying);
+                SyncSolarHudPlaybackState();
             }
         }
 
@@ -583,6 +667,24 @@ namespace AstraLink.UI.Debrief
             {
                 playbackPlayPauseLabel.text = orbitRadarUI.IsPlaying ? "PAUSE" : "PLAY";
             }
+
+            if (_solarHudPanel != null)
+            {
+                float spd = orbitRadarUI != null ? orbitRadarUI.SpeedMultiplier : 1f;
+                bool isPlaying = orbitRadarUI != null && orbitRadarUI.IsPlaying;
+                _solarHudPanel.UpdatePlaybackState(isPlaying, spd, tickIndex, totalTicks, _activeGoal, _activeOrbit);
+                _solarHudPanel.UpdateTelemetrySnapshot(snapshot, _activeGoal);
+                if (manualOverrideUI != null)
+                {
+                    float orbitDelay = _activeOrbit != null ? _activeOrbit.SignalDelaySeconds : 0f;
+                    _solarHudPanel.UpdateSignalDelay(
+                        manualOverrideUI.IsSignalInTransit,
+                        manualOverrideUI.DelayRemainingSeconds,
+                        manualOverrideUI.DelayTotalSeconds,
+                        manualOverrideUI.LatestCommandSummary,
+                        orbitDelay);
+                }
+            }
         }
 
         private void HandleRadarSpeedChanged(float newSpeed)
@@ -608,13 +710,33 @@ namespace AstraLink.UI.Debrief
                     activeManualCommands,
                     _activeEvents);
 
+                _currentReport = recalculatedReport;
                 if (orbitRadarUI != null)
                 {
                     orbitRadarUI.LoadMissionReport(recalculatedReport, _activeOrbit, autoPlay: orbitRadarUI.IsPlaying, resetTickIndex: false);
                 }
             }
+            else
+            {
+                _currentReport = recalculatedReport;
+            }
 
-            _currentReport = recalculatedReport;
+            if (GameManager.Instance != null)
+            {
+                GameManager.Instance.UpdateLastMissionReport(_currentReport);
+            }
+
+            if (_solarHudPanel != null)
+            {
+                _solarHudPanel.SetTelemetryHistory(_currentReport.Ticks, _activeGoal);
+                SyncSolarHudPlaybackState();
+                if (_currentReport.Ticks != null && _currentReport.Ticks.Count > 0 && orbitRadarUI != null)
+                {
+                    int idx = Mathf.Clamp(orbitRadarUI.CurrentTickIndex, 0, _currentReport.Ticks.Count - 1);
+                    _solarHudPanel.UpdateTelemetrySnapshot(_currentReport.Ticks[idx], _activeGoal);
+                }
+            }
+
             if (_currentReport.Status == MissionStatus.Failed)
             {
                 EnsureFailureDebriefPopulated(_currentReport);
@@ -625,6 +747,25 @@ namespace AstraLink.UI.Debrief
 
         private void HandleRadarTestFlightCompleted(MissionReport completedReport)
         {
+            if (_devSafeMode)
+            {
+                if (orbitRadarUI != null)
+                {
+                    orbitRadarUI.JumpToTick(0, pausePlayback: false);
+                }
+                return;
+            }
+
+            _isFlightPlaybackCompleted = true;
+            if (_solarHudPanel != null) _solarHudPanel.SetDebriefUnlocked(true);
+            if (switchToDebriefButton != null) switchToDebriefButton.interactable = true;
+
+            if (_solarHudPanel != null)
+            {
+                MissionStatus finalStatus = (_currentReport ?? completedReport) != null ? (_currentReport ?? completedReport).Status : MissionStatus.Success;
+                PlayOutcomeSfxPersistent(finalStatus);
+            }
+
             if (OnFlightPlaybackCompleted != null)
             {
                 OnFlightPlaybackCompleted.Invoke(_currentReport ?? completedReport);
@@ -716,6 +857,14 @@ namespace AstraLink.UI.Debrief
                 manualOverrideUI.OnMissionRecalculated += HandleManualMissionRecalculated;
             }
 
+            if (_solarHudPanel != null)
+            {
+                _solarHudPanel.SetTelemetryHistory(report != null ? report.Ticks : null, _activeGoal);
+                _solarHudPanel.SetAutopilotRules(_activeRules);
+                _solarHudPanel.SetDevControlsVisible(showVerificationBar);
+                _solarHudPanel.SetDevSafeModeVisual(_devSafeMode);
+            }
+
             if (report != null && report.Ticks != null && report.Ticks.Count > 0)
             {
                 int idx = orbitRadarUI != null ? Mathf.Clamp(orbitRadarUI.CurrentTickIndex, 0, report.Ticks.Count - 1) : 0;
@@ -797,6 +946,12 @@ namespace AstraLink.UI.Debrief
             HighlightModeButton(playbackSpeed1xButton, Mathf.Approximately(speed, 1.0f), new Color(0.14f, 0.62f, 0.88f, 1f));
             HighlightModeButton(playbackSpeed5xButton, Mathf.Approximately(speed, 5.0f), new Color(0.14f, 0.62f, 0.88f, 1f));
             HighlightModeButton(playbackSpeed10xButton, Mathf.Approximately(speed, 10.0f), new Color(0.14f, 0.62f, 0.88f, 1f));
+
+            if (_solarHudPanel != null && orbitRadarUI != null)
+            {
+                int totalTicks = (_currentReport != null && _currentReport.Ticks != null) ? _currentReport.Ticks.Count : 20;
+                _solarHudPanel.UpdatePlaybackState(orbitRadarUI.IsPlaying, speed, orbitRadarUI.CurrentTickIndex, totalTicks, _activeGoal, _activeOrbit);
+            }
         }
 
         /// <summary>
@@ -861,7 +1016,7 @@ namespace AstraLink.UI.Debrief
         public void BuildUIInEditor()
         {
             CleanupOldRoots();
-            Transform existing = transform.Find("DebriefContentRoot_v4");
+            Transform existing = transform.Find("DebriefContentRoot_v5");
             if (existing != null)
             {
                 DestroyImmediate(existing.gameObject);
@@ -998,11 +1153,12 @@ namespace AstraLink.UI.Debrief
 
         private void ApplySuccessPayoutIfNeeded(MissionReport report)
         {
-            if (report == null || report.Status != MissionStatus.Success || _lastRewardedReport == report)
+            if (report == null || report.Status != MissionStatus.Success || _payoutAppliedForCurrentLaunch || _lastRewardedReport == report)
             {
                 return;
             }
 
+            _payoutAppliedForCurrentLaunch = true;
             _lastRewardedReport = report;
 
             if (_agencyState == null)
@@ -2042,16 +2198,52 @@ namespace AstraLink.UI.Debrief
             }
         }
 
+        private void PlayOutcomeSfxPersistent(MissionStatus status)
+        {
+            if (_solarHudPanel == null || !_solarHudPanel.IsSfxEnabled)
+            {
+                return;
+            }
+
+            AudioClip clip = _solarHudPanel.GetOutcomeClip(status);
+            if (clip == null)
+            {
+                return;
+            }
+
+            if (_outcomeSfxSource == null)
+            {
+                _outcomeSfxSource = gameObject.AddComponent<AudioSource>();
+                _outcomeSfxSource.playOnAwake = false;
+                _outcomeSfxSource.loop = false;
+                _outcomeSfxSource.spatialBlend = 0f;
+            }
+
+            _outcomeSfxSource.PlayOneShot(clip, Mathf.Clamp01(_solarHudPanel.MasterVolume * 0.75f));
+        }
+
         private void ApplyVerificationVisibility()
         {
-            if (verificationBarRoot != null) verificationBarRoot.SetActive(showVerificationBar);
+            if (verificationBarRoot != null) verificationBarRoot.SetActive(showVerificationBar && !_isLiveFlightViewActive);
             if (_sampleOrbitLeoBtn != null) _sampleOrbitLeoBtn.SetActive(showVerificationBar);
             if (_sampleOrbitLunarBtn != null) _sampleOrbitLunarBtn.SetActive(showVerificationBar);
             if (_sampleOrbitMarsBtn != null) _sampleOrbitMarsBtn.SetActive(showVerificationBar);
+            if (_solarHudPanel != null) _solarHudPanel.SetDevControlsVisible(showVerificationBar);
         }
 
         private void Update()
         {
+            if (_isLiveFlightViewActive && _solarHudPanel != null && manualOverrideUI != null)
+            {
+                float orbitDelay = _activeOrbit != null ? _activeOrbit.SignalDelaySeconds : 0f;
+                _solarHudPanel.UpdateSignalDelay(
+                    manualOverrideUI.IsSignalInTransit,
+                    manualOverrideUI.DelayRemainingSeconds,
+                    manualOverrideUI.DelayTotalSeconds,
+                    manualOverrideUI.LatestCommandSummary,
+                    orbitDelay);
+            }
+
             if (!showVerificationBar) return;
 
             if (Input.GetKeyDown(KeyCode.F5)) TriggerSampleSuccessScenario(true);
@@ -2064,7 +2256,7 @@ namespace AstraLink.UI.Debrief
 
         private void CleanupOldRoots()
         {
-            string[] oldNames = { "DebriefContentRoot", "DebriefContentRoot_v2", "DebriefContentRoot_v3" };
+            string[] oldNames = { "DebriefContentRoot", "DebriefContentRoot_v2", "DebriefContentRoot_v3", "DebriefContentRoot_v4" };
             for (int i = 0; i < oldNames.Length; i++)
             {
                 Transform old = transform.Find(oldNames[i]);
@@ -2079,10 +2271,11 @@ namespace AstraLink.UI.Debrief
         {
             CleanupOldRoots();
 
-            Transform root = transform.Find("DebriefContentRoot_v4");
+            Transform root = transform.Find("DebriefContentRoot_v5");
             if (root != null &&
                 orbitRadarUI != null &&
                 spaceMapController != null &&
+                _solarHudPanel != null &&
                 telemetryHUD != null &&
                 manualOverrideUI != null &&
                 eventPopupUI != null &&
@@ -2118,12 +2311,13 @@ namespace AstraLink.UI.Debrief
             }
             baseBg.color = new Color(0.04f, 0.07f, 0.13f, 1f);
 
-            GameObject contentRoot = CreateUIObject("DebriefContentRoot_v4", transform);
+            GameObject contentRoot = CreateUIObject("DebriefContentRoot_v5", transform);
             StretchFull(contentRoot.GetComponent<RectTransform>());
 
             VerticalLayoutGroup rootLayout = contentRoot.AddComponent<VerticalLayoutGroup>();
-            rootLayout.padding = new RectOffset(18, 18, 8, 8);
-            rootLayout.spacing = 6f;
+            _rootContentLayout = rootLayout;
+            rootLayout.padding = _isLiveFlightViewActive ? new RectOffset(0, 0, 0, 0) : new RectOffset(18, 18, 8, 8);
+            rootLayout.spacing = _isLiveFlightViewActive ? 0f : 6f;
             rootLayout.childControlWidth = true;
             rootLayout.childControlHeight = true;
             rootLayout.childForceExpandWidth = true;
@@ -2150,9 +2344,21 @@ namespace AstraLink.UI.Debrief
 
         private void BuildTopHeaderBar(Transform parent, Font font)
         {
-            GameObject headerBar = CreatePanel("HeaderBar", parent, new Color(0.07f, 0.12f, 0.21f, 0.98f), 50f);
+            SolarSystemArtBank art = SolarSystemArtBank.Load();
+            GameObject headerBar = CreatePanel("HeaderBar", parent, new Color(0.92f, 0.96f, 1f, 0.96f), 54f);
+            _topHeaderBarRoot = headerBar;
+            if (art != null && art.inventoryPanel != null)
+            {
+                SolarSystemArtBank.ApplyPanelFrame(headerBar.GetComponent<Image>(), art.inventoryPanel, new Vector4(12f, 12f, 12f, 12f), new Color(0.92f, 0.96f, 1f, 0.96f));
+            }
+            else
+            {
+                headerBar.GetComponent<Image>().color = new Color(0.07f, 0.12f, 0.21f, 0.98f);
+            }
+
+            headerBar.SetActive(!_isLiveFlightViewActive);
             HorizontalLayoutGroup headerLayout = headerBar.AddComponent<HorizontalLayoutGroup>();
-            headerLayout.padding = new RectOffset(14, 14, 5, 5);
+            headerLayout.padding = new RectOffset(12, 12, 6, 6);
             headerLayout.spacing = 10f;
             headerLayout.childAlignment = TextAnchor.MiddleLeft;
             headerLayout.childControlWidth = true;
@@ -2160,12 +2366,22 @@ namespace AstraLink.UI.Debrief
             headerLayout.childForceExpandWidth = false;
             headerLayout.childForceExpandHeight = true;
 
+            if (art != null && art.missionBadge != null)
+            {
+                GameObject badgeIconObj = CreateUIObject("HeaderMissionBadge", headerBar.transform);
+                badgeIconObj.AddComponent<LayoutElement>().preferredWidth = 36f;
+                Image bImg = badgeIconObj.AddComponent<Image>();
+                bImg.sprite = art.missionBadge;
+                bImg.preserveAspect = true;
+                bImg.raycastTarget = false;
+            }
+
             GameObject titleStack = CreateUIObject("TitleStack", headerBar.transform);
             LayoutElement titleStackLe = titleStack.AddComponent<LayoutElement>();
             titleStackLe.flexibleWidth = 1f;
 
             VerticalLayoutGroup titleStackLayout = titleStack.AddComponent<VerticalLayoutGroup>();
-            titleStackLayout.spacing = 1f;
+            titleStackLayout.spacing = 2f;
             titleStackLayout.childControlWidth = true;
             titleStackLayout.childControlHeight = true;
             titleStackLayout.childForceExpandWidth = true;
@@ -2175,8 +2391,8 @@ namespace AstraLink.UI.Debrief
                 "ScreenTitle",
                 titleStack.transform,
                 font,
-                "ASTRA-LINK // FLIGHT TELEMETRY PLAYBACK (S2-04) & MISSION DEBRIEF (S2-05)",
-                17,
+                "ASTRA-LINK  //  POST-FLIGHT MISSION DEBRIEF",
+                16,
                 FontStyle.Bold,
                 new Color(0.92f, 0.97f, 1.0f, 1f),
                 TextAnchor.MiddleLeft);
@@ -2188,44 +2404,54 @@ namespace AstraLink.UI.Debrief
                 "Contract: 1. LEO Weather CubeSat   •   Orbit: LEO 400 km (Delay: 1.0s)",
                 12,
                 FontStyle.Normal,
-                new Color(0.65f, 0.80f, 0.95f, 1f),
+                new Color(0.72f, 0.86f, 0.98f, 1f),
                 TextAnchor.MiddleLeft);
 
             switchToLiveFlightButton = CreateActionButton(
                 headerBar.transform,
                 "Btn_Mode_LiveFlight_S204",
-                "[S2-04] LIVE FLIGHT & RADAR",
-                new Color(0.14f, 0.58f, 0.86f, 1f),
-                245f,
-                38f,
+                "< SOLAR MAP",
+                new Color(0.75f, 0.94f, 1f, 1f),
+                170f,
+                36f,
                 font,
                 ShowLiveFlightView);
 
             switchToDebriefButton = CreateActionButton(
                 headerBar.transform,
                 "Btn_Mode_Debrief_S205",
-                "[S2-05] POST-FLIGHT DEBRIEF",
-                new Color(0.12f, 0.18f, 0.28f, 0.96f),
-                245f,
-                38f,
+                "DEBRIEF",
+                new Color(0.75f, 1f, 0.88f, 1f),
+                150f,
+                36f,
                 font,
                 ShowDebriefSummaryView);
 
-            GameObject badgeObj = CreatePanel("StatusBadge", headerBar.transform, new Color(0.12f, 0.48f, 0.28f, 1f), 38f);
+            GameObject badgeObj = CreatePanel("StatusBadge", headerBar.transform, new Color(0.12f, 0.48f, 0.28f, 1f), 36f);
             LayoutElement badgeLe = badgeObj.GetComponent<LayoutElement>();
-            badgeLe.preferredWidth = 230f;
+            badgeLe.preferredWidth = 220f;
             statusBadgeBackground = badgeObj.GetComponent<Image>();
+            if (art != null && art.dialogueBox != null)
+            {
+                SolarSystemArtBank.ApplyPanelFrame(statusBadgeBackground, art.dialogueBox, new Vector4(10f, 10f, 10f, 10f), new Color(0.18f, 0.72f, 0.42f, 1f));
+            }
 
             statusBadgeText = CreateText(
                 "StatusBadgeText",
                 badgeObj.transform,
                 font,
                 "STATUS: MISSION SUCCESS",
-                14,
+                12,
                 FontStyle.Bold,
                 Color.white,
                 TextAnchor.MiddleCenter);
-            StretchFull(statusBadgeText.GetComponent<RectTransform>());
+            statusBadgeText.resizeTextForBestFit = true;
+            statusBadgeText.resizeTextMinSize = 9;
+            statusBadgeText.resizeTextMaxSize = 12;
+            RectTransform sbRt = statusBadgeText.GetComponent<RectTransform>();
+            StretchFull(sbRt);
+            sbRt.offsetMin = new Vector2(8f, 2f);
+            sbRt.offsetMax = new Vector2(-8f, -2f);
         }
 
         private void BuildLiveFlightModeView(Transform parent, Font font)
@@ -2233,172 +2459,70 @@ namespace AstraLink.UI.Debrief
             liveFlightModeRoot = CreateUIObject("LiveFlightModeView_S204", parent);
             StretchFull(liveFlightModeRoot.GetComponent<RectTransform>());
 
-            VerticalLayoutGroup vLayout = liveFlightModeRoot.AddComponent<VerticalLayoutGroup>();
-            vLayout.spacing = 6f;
-            vLayout.childControlWidth = true;
-            vLayout.childControlHeight = true;
-            vLayout.childForceExpandWidth = true;
-            vLayout.childForceExpandHeight = false;
-
-            // Top S2-04 Controls & Event Popup Row
-            GameObject topControlsRow = CreateUIObject("FlightTopControlsAndEventRow", liveFlightModeRoot.transform);
-            topControlsRow.AddComponent<LayoutElement>().preferredHeight = 52f;
-            HorizontalLayoutGroup topRowLayout = topControlsRow.AddComponent<HorizontalLayoutGroup>();
-            topRowLayout.spacing = 10f;
-            topRowLayout.childControlWidth = true;
-            topRowLayout.childControlHeight = true;
-            topRowLayout.childForceExpandWidth = false;
-            topRowLayout.childForceExpandHeight = true;
-
-            // EventPopupUI (ActiveEventTitle notification banner)
-            GameObject eventPopupObj = CreateUIObject("EventPopupUI", topControlsRow.transform);
-            LayoutElement popupLe = eventPopupObj.AddComponent<LayoutElement>();
-            popupLe.flexibleWidth = 1f;
-            eventPopupUI = eventPopupObj.AddComponent<EventPopupUI>();
-            eventPopupUI.EnsurePopupHierarchy();
-
-            // Speed & Playback Bar (1x, 5x, 10x, Play/Pause, Step +1, Scenario Presets)
-            GameObject speedBar = CreatePanel("PlaybackSpeedAndOrbitBar", topControlsRow.transform, new Color(0.07f, 0.12f, 0.21f, 0.98f), 52f);
-            LayoutElement speedBarLe = speedBar.GetComponent<LayoutElement>();
-            speedBarLe.preferredWidth = 820f;
-
-            HorizontalLayoutGroup speedLayout = speedBar.AddComponent<HorizontalLayoutGroup>();
-            speedLayout.padding = new RectOffset(10, 10, 6, 6);
-            speedLayout.spacing = 6f;
-            speedLayout.childAlignment = TextAnchor.MiddleCenter;
-            speedLayout.childControlWidth = true;
-            speedLayout.childControlHeight = true;
-            speedLayout.childForceExpandWidth = false;
-            speedLayout.childForceExpandHeight = true;
-
-            _sampleOrbitLeoBtn = CreateActionButton(
-                speedBar.transform,
-                "Btn_Orbit_LEO",
-                "LEO (1s Delay)",
-                new Color(0.14f, 0.38f, 0.58f, 1f),
-                122f,
-                38f,
-                font,
-                () => StartSampleLiveFlightScenario(0)).gameObject;
-
-            _sampleOrbitLunarBtn = CreateActionButton(
-                speedBar.transform,
-                "Btn_Orbit_Lunar",
-                "MOON + OVERHEAT (3s)",
-                new Color(0.42f, 0.30f, 0.14f, 1f),
-                168f,
-                38f,
-                font,
-                () => StartSampleLiveFlightScenario(1)).gameObject;
-
-            _sampleOrbitMarsBtn = CreateActionButton(
-                speedBar.transform,
-                "Btn_Orbit_Mars",
-                "MARS + CME STORM (10s)",
-                new Color(0.56f, 0.20f, 0.18f, 1f),
-                178f,
-                38f,
-                font,
-                () => StartSampleLiveFlightScenario(2)).gameObject;
-
-            ApplyVerificationVisibility();
-
-            playbackPlayPauseButton = CreateActionButton(
-                speedBar.transform,
-                "Btn_PlayPause",
-                "PAUSE",
-                new Color(0.14f, 0.54f, 0.34f, 1f),
-                74f,
-                38f,
-                font,
-                TogglePlaybackPlayPause);
-            playbackPlayPauseLabel = playbackPlayPauseButton.GetComponentInChildren<Text>();
-
-            playbackStepTickButton = CreateActionButton(
-                speedBar.transform,
-                "Btn_StepTick",
-                "STEP +1",
-                new Color(0.22f, 0.32f, 0.48f, 1f),
-                76f,
-                38f,
-                font,
-                StepPlaybackNextTick);
-
-            playbackSpeed1xButton = CreateActionButton(
-                speedBar.transform,
-                "Btn_Speed_1x",
-                "1x",
-                new Color(0.14f, 0.62f, 0.88f, 1f),
-                48f,
-                38f,
-                font,
-                SetPlaybackSpeed1x);
-
-            playbackSpeed5xButton = CreateActionButton(
-                speedBar.transform,
-                "Btn_Speed_5x",
-                "5x",
-                new Color(0.12f, 0.18f, 0.28f, 0.96f),
-                48f,
-                38f,
-                font,
-                SetPlaybackSpeed5x);
-
-            playbackSpeed10xButton = CreateActionButton(
-                speedBar.transform,
-                "Btn_Speed_10x",
-                "10x",
-                new Color(0.12f, 0.18f, 0.28f, 0.96f),
-                54f,
-                38f,
-                font,
-                SetPlaybackSpeed10x);
-
-            // Main 3-Column Flight Mission Control Row
-            GameObject flightColumns = CreateUIObject("FlightColumnsRow", liveFlightModeRoot.transform);
-            LayoutElement colsLe = flightColumns.AddComponent<LayoutElement>();
-            colsLe.flexibleHeight = 1f;
-            colsLe.preferredHeight = 740f;
-
-            HorizontalLayoutGroup colsLayout = flightColumns.AddComponent<HorizontalLayoutGroup>();
-            colsLayout.spacing = 12f;
-            colsLayout.childControlWidth = true;
-            colsLayout.childControlHeight = true;
-            colsLayout.childForceExpandWidth = false;
-            colsLayout.childForceExpandHeight = true;
-
-            // Column 1: Pixel-Art Interactive Space Map (SpaceMapController) + Headless Tick Playback Driver
-            GameObject spaceMapCol = CreateUIObject("SpaceMapColumn", flightColumns.transform);
-            LayoutElement spaceMapLe = spaceMapCol.AddComponent<LayoutElement>();
-            spaceMapLe.flexibleWidth = 1.25f;
-            spaceMapLe.preferredWidth = 740f;
-
-            spaceMapController = spaceMapCol.AddComponent<SpaceMapController>();
+            // 1. Full-Tab Interactive Solar System Space Map (SpaceMapController)
+            GameObject spaceMapViewport = CreateUIObject("SpaceMapFullViewport", liveFlightModeRoot.transform);
+            StretchFull(spaceMapViewport.GetComponent<RectTransform>());
+            spaceMapController = spaceMapViewport.AddComponent<SpaceMapController>();
             spaceMapController.SetAutoSetupDemoOnStart(false);
             spaceMapController.SetSandboxTestBarVisible(false);
             ConfigureSpaceMapSprites();
 
-            GameObject playbackDriverObj = CreateUIObject("FlightPlaybackEngine", spaceMapCol.transform);
+            // 2. Active Headless Tick Playback Driver (OrbitRadarUI)
+            GameObject playbackDriverObj = CreateUIObject("FlightPlaybackEngine", liveFlightModeRoot.transform);
             playbackDriverObj.SetActive(false);
             orbitRadarUI = playbackDriverObj.AddComponent<OrbitRadarUI>();
             orbitRadarUI.SetHeadlessPlaybackOnly(true);
             playbackDriverObj.SetActive(true);
 
-            // Column 2: Live Telemetry & Green Autopilot Rule Highlighting (TelemetryHUD)
-            GameObject telemetryCol = CreateUIObject("TelemetryHUDColumn", flightColumns.transform);
-            LayoutElement telemetryLe = telemetryCol.AddComponent<LayoutElement>();
-            telemetryLe.flexibleWidth = 1.00f;
-            telemetryLe.preferredWidth = 600f;
+            // 3. Synchronized Behind-the-Scenes Telemetry / Override / Event Handlers (Active for Coroutines, Invisible Zero-Clutter)
+            GameObject hiddenLogicRoot = CreateUIObject("FlightHiddenLogicRoot", liveFlightModeRoot.transform);
+            RectTransform hiddenRt = hiddenLogicRoot.GetComponent<RectTransform>();
+            hiddenRt.anchorMin = Vector2.zero;
+            hiddenRt.anchorMax = Vector2.zero;
+            hiddenRt.sizeDelta = new Vector2(10f, 10f);
+            CanvasGroup hiddenCg = hiddenLogicRoot.AddComponent<CanvasGroup>();
+            hiddenCg.alpha = 0f;
+            hiddenCg.interactable = false;
+            hiddenCg.blocksRaycasts = false;
+
+            GameObject eventPopupObj = CreateUIObject("EventPopupUI", hiddenLogicRoot.transform);
+            eventPopupUI = eventPopupObj.AddComponent<EventPopupUI>();
+            eventPopupUI.EnsurePopupHierarchy();
+
+            GameObject telemetryCol = CreateUIObject("TelemetryHUDHidden", hiddenLogicRoot.transform);
             telemetryHUD = telemetryCol.AddComponent<TelemetryHUD>();
             telemetryHUD.EnsureTelemetryHierarchy();
 
-            // Column 3: Manual Override Commands with Signal Delay Timer (ManualOverrideUI)
-            GameObject manualCol = CreateUIObject("ManualOverrideColumn", flightColumns.transform);
-            LayoutElement manualLe = manualCol.AddComponent<LayoutElement>();
-            manualLe.flexibleWidth = 0.85f;
-            manualLe.preferredWidth = 500f;
+            GameObject manualCol = CreateUIObject("ManualOverrideHidden", hiddenLogicRoot.transform);
             manualOverrideUI = manualCol.AddComponent<ManualOverrideUI>();
             manualOverrideUI.EnsureManualOverrideHierarchy();
+
+            // 4. Single Collapsible (- / +) Pixel-Art Control, Telemetry & Audio HUD Panel
+            GameObject hudObj = CreateUIObject("SingleSolarHUDPanel", liveFlightModeRoot.transform);
+            StretchFull(hudObj.GetComponent<RectTransform>());
+            _solarHudPanel = hudObj.AddComponent<SolarSystemHUDPanel>();
+            _solarHudPanel.EnsureBuilt();
+            _solarHudPanel.BindSpaceMap(spaceMapController);
+            _solarHudPanel.OnPlayPauseClicked -= TogglePlaybackPlayPause;
+            _solarHudPanel.OnPlayPauseClicked += TogglePlaybackPlayPause;
+            _solarHudPanel.OnStepTickClicked -= StepPlaybackNextTick;
+            _solarHudPanel.OnStepTickClicked += StepPlaybackNextTick;
+            _solarHudPanel.OnRestartFlightClicked -= RestartFlightPlayback;
+            _solarHudPanel.OnRestartFlightClicked += RestartFlightPlayback;
+            _solarHudPanel.OnScrubTickRequested -= ScrubFlightToTick;
+            _solarHudPanel.OnScrubTickRequested += ScrubFlightToTick;
+            _solarHudPanel.OnSpeedSelected -= SetPlaybackSpeed;
+            _solarHudPanel.OnSpeedSelected += SetPlaybackSpeed;
+            _solarHudPanel.OnToggleInstrumentsClicked -= TriggerManualToggleInstruments;
+            _solarHudPanel.OnToggleInstrumentsClicked += TriggerManualToggleInstruments;
+            _solarHudPanel.OnToggleCommsClicked -= TriggerManualToggleComms;
+            _solarHudPanel.OnToggleCommsClicked += TriggerManualToggleComms;
+            _solarHudPanel.OnToggleSafeModeClicked -= TriggerManualEnableSafeMode;
+            _solarHudPanel.OnToggleSafeModeClicked += TriggerManualEnableSafeMode;
+            _solarHudPanel.OnDevSafeModeToggled -= SetDevSafeMode;
+            _solarHudPanel.OnDevSafeModeToggled += SetDevSafeMode;
+            _solarHudPanel.OnOpenDebriefClicked -= ShowDebriefSummaryView;
+            _solarHudPanel.OnOpenDebriefClicked += ShowDebriefSummaryView;
         }
 
         private void BuildDebriefSummaryModeView(Transform parent, Font font)
@@ -2406,8 +2530,16 @@ namespace AstraLink.UI.Debrief
             debriefSummaryModeRoot = CreateUIObject("DebriefSummaryModeView_S205", parent);
             StretchFull(debriefSummaryModeRoot.GetComponent<RectTransform>());
 
+            // Pixel-art twinkling starfield backdrop behind the debrief cards
+            GameObject starBackdrop = CreateUIObject("DebriefStarfieldBackdrop", debriefSummaryModeRoot.transform);
+            StretchFull(starBackdrop.GetComponent<RectTransform>());
+            LayoutElement starLe = starBackdrop.AddComponent<LayoutElement>();
+            starLe.ignoreLayout = true;
+            PixelStarfieldLayer stars = starBackdrop.AddComponent<PixelStarfieldLayer>();
+            stars.EnsureBuilt();
+
             VerticalLayoutGroup vLayout = debriefSummaryModeRoot.AddComponent<VerticalLayoutGroup>();
-            vLayout.spacing = 8f;
+            vLayout.spacing = 10f;
             vLayout.childControlWidth = true;
             vLayout.childControlHeight = true;
             vLayout.childForceExpandWidth = true;
@@ -2423,7 +2555,7 @@ namespace AstraLink.UI.Debrief
             mainRowLe.preferredHeight = 470f;
 
             HorizontalLayoutGroup mainRowLayout = mainRow.AddComponent<HorizontalLayoutGroup>();
-            mainRowLayout.spacing = 16f;
+            mainRowLayout.spacing = 14f;
             mainRowLayout.childControlWidth = true;
             mainRowLayout.childControlHeight = true;
             mainRowLayout.childForceExpandWidth = true;
@@ -2435,11 +2567,35 @@ namespace AstraLink.UI.Debrief
 
         private void BuildOutcomeBanner(Transform parent, Font font)
         {
-            GameObject bannerObj = CreatePanel("OutcomeBanner", parent, new Color(0.08f, 0.26f, 0.18f, 0.96f), 54f);
+            SolarSystemArtBank art = SolarSystemArtBank.Load();
+            GameObject bannerObj = CreatePanel("OutcomeBanner", parent, new Color(0.16f, 0.45f, 0.30f, 0.96f), 58f);
             outcomeBannerBackground = bannerObj.GetComponent<Image>();
+            if (art != null && art.dialogueBox != null)
+            {
+                SolarSystemArtBank.ApplyPanelFrame(outcomeBannerBackground, art.dialogueBox, new Vector4(10f, 10f, 10f, 10f), new Color(0.24f, 0.62f, 0.40f, 0.96f));
+            }
 
-            VerticalLayoutGroup bannerLayout = bannerObj.AddComponent<VerticalLayoutGroup>();
-            bannerLayout.padding = new RectOffset(18, 18, 5, 5);
+            HorizontalLayoutGroup hLayout = bannerObj.AddComponent<HorizontalLayoutGroup>();
+            hLayout.padding = new RectOffset(14, 14, 6, 6);
+            hLayout.spacing = 12f;
+            hLayout.childAlignment = TextAnchor.MiddleLeft;
+            hLayout.childControlWidth = true;
+            hLayout.childControlHeight = true;
+            hLayout.childForceExpandWidth = false;
+
+            if (art != null && art.holoProjector != null)
+            {
+                GameObject icObj = CreateUIObject("OutcomeIcon", bannerObj.transform);
+                icObj.AddComponent<LayoutElement>().preferredWidth = 36f;
+                Image ic = icObj.AddComponent<Image>();
+                ic.sprite = art.holoProjector;
+                ic.preserveAspect = true;
+                ic.raycastTarget = false;
+            }
+
+            GameObject txtStack = CreateUIObject("OutcomeTextStack", bannerObj.transform);
+            txtStack.AddComponent<LayoutElement>().flexibleWidth = 1f;
+            VerticalLayoutGroup bannerLayout = txtStack.AddComponent<VerticalLayoutGroup>();
             bannerLayout.spacing = 2f;
             bannerLayout.childControlWidth = true;
             bannerLayout.childControlHeight = true;
@@ -2448,7 +2604,7 @@ namespace AstraLink.UI.Debrief
 
             outcomeHeadlineText = CreateText(
                 "OutcomeHeadline",
-                bannerObj.transform,
+                txtStack.transform,
                 font,
                 "MISSION ACCOMPLISHED  •  FINAL SCORE: 162.5 PTS",
                 18,
@@ -2458,43 +2614,79 @@ namespace AstraLink.UI.Debrief
 
             outcomeSublineText = CreateText(
                 "OutcomeSubline",
-                bannerObj.transform,
+                txtStack.transform,
                 font,
                 "All orbital objectives verified by NASA Ground Control.",
                 13,
                 FontStyle.Normal,
-                new Color(0.84f, 0.95f, 0.88f, 1f),
+                new Color(0.88f, 0.96f, 0.92f, 1f),
                 TextAnchor.MiddleLeft);
         }
 
         private void BuildTelemetryMetricsColumn(Transform parent, Font font)
         {
-            GameObject leftCol = CreatePanel("TelemetryMetricsColumn", parent, new Color(0.07f, 0.11f, 0.19f, 0.98f), 0f);
+            SolarSystemArtBank art = SolarSystemArtBank.Load();
+            GameObject leftCol = CreatePanel("TelemetryMetricsColumn", parent, new Color(0.95f, 0.97f, 1f, 0.95f), 0f);
+            if (art != null && art.inventoryPanel != null)
+            {
+                SolarSystemArtBank.ApplyPanelFrame(leftCol.GetComponent<Image>(), art.inventoryPanel, new Vector4(12f, 12f, 12f, 12f), new Color(0.95f, 0.97f, 1f, 0.95f));
+            }
+            else
+            {
+                leftCol.GetComponent<Image>().color = new Color(0.07f, 0.11f, 0.19f, 0.98f);
+            }
+
             LayoutElement leftLe = leftCol.AddComponent<LayoutElement>();
             leftLe.flexibleWidth = 0.95f;
             leftLe.preferredWidth = 820f;
 
             VerticalLayoutGroup leftLayout = leftCol.AddComponent<VerticalLayoutGroup>();
-            leftLayout.padding = new RectOffset(16, 16, 12, 12);
-            leftLayout.spacing = 7f;
+            leftLayout.padding = new RectOffset(14, 14, 12, 12);
+            leftLayout.spacing = 8f;
             leftLayout.childControlWidth = true;
             leftLayout.childControlHeight = true;
             leftLayout.childForceExpandWidth = true;
             leftLayout.childForceExpandHeight = false;
 
+            GameObject hdrObj = CreateUIObject("MetricsHeaderRow", leftCol.transform);
+            hdrObj.AddComponent<LayoutElement>().preferredHeight = 28f;
+            if (art != null && art.nameTab != null)
+            {
+                SolarSystemArtBank.ApplyPanelFrame(hdrObj.AddComponent<Image>(), art.nameTab, new Vector4(8f, 6f, 8f, 6f), Color.white);
+            }
+            HorizontalLayoutGroup hdrHl = hdrObj.AddComponent<HorizontalLayoutGroup>();
+            hdrHl.padding = new RectOffset(10, 10, 2, 2);
+            hdrHl.spacing = 8f;
+            hdrHl.childAlignment = TextAnchor.MiddleLeft;
+            hdrHl.childControlWidth = true;
+            hdrHl.childControlHeight = true;
+            hdrHl.childForceExpandWidth = false;
+
+            if (art != null && art.starChart != null)
+            {
+                GameObject icObj = CreateUIObject("HeaderIcon", hdrObj.transform);
+                icObj.AddComponent<LayoutElement>().preferredWidth = 20f;
+                Image ic = icObj.AddComponent<Image>();
+                ic.sprite = art.starChart;
+                ic.preserveAspect = true;
+                ic.raycastTarget = false;
+            }
+
             CreateText(
                 "MetricsHeader",
-                leftCol.transform,
+                hdrObj.transform,
                 font,
-                "FLIGHT TELEMETRY & NASA RESOURCE SUMMARY",
-                16,
+                "FLIGHT TELEMETRY & HARDWARE SUMMARY",
+                14,
                 FontStyle.Bold,
-                new Color(0.55f, 0.84f, 1.0f, 1f),
-                TextAnchor.MiddleLeft);
+                Color.white,
+                TextAnchor.MiddleLeft).gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
 
             BuildMetricCard(
                 leftCol.transform,
                 font,
+                art,
+                art != null ? art.iconSpaceTelescope : null,
                 "Metric_Science",
                 "1. DELIVERED SCIENCE (DOWNLINKED QUOTA)",
                 "120.0 / 100.0 pts",
@@ -2507,6 +2699,8 @@ namespace AstraLink.UI.Debrief
             BuildMetricCard(
                 leftCol.transform,
                 font,
+                art,
+                art != null ? art.iconSolarPanel : null,
                 "Metric_Budget",
                 "2. MISSION BUDGET SPENT (HARDWARE + ROCKET)",
                 "$90.0k / $120.0k",
@@ -2519,6 +2713,8 @@ namespace AstraLink.UI.Debrief
             BuildMetricCard(
                 leftCol.transform,
                 font,
+                art,
+                art != null ? art.iconEnergyCell : null,
                 "Metric_MinBattery",
                 "3. MINIMUM BATTERY CHARGE (ECLIPSE RESERVE)",
                 "60.0%",
@@ -2531,6 +2727,8 @@ namespace AstraLink.UI.Debrief
             BuildMetricCard(
                 leftCol.transform,
                 font,
+                art,
+                art != null ? art.iconShieldGenerator : null,
                 "Metric_FinalHealth",
                 "4. FINAL ELECTRONICS HEALTH (RADIATION INTEGRITY)",
                 "100.0%",
@@ -2543,6 +2741,8 @@ namespace AstraLink.UI.Debrief
             BuildMetricCard(
                 leftCol.transform,
                 font,
+                art,
+                art != null ? art.iconDataChip : null,
                 "Metric_Reliability",
                 "5. SPACECRAFT OVERALL RELIABILITY",
                 "92.0%",
@@ -2556,6 +2756,8 @@ namespace AstraLink.UI.Debrief
         private static void BuildMetricCard(
             Transform parent,
             Font font,
+            SolarSystemArtBank art,
+            Sprite icon,
             string name,
             string label,
             string initialValue,
@@ -2565,16 +2767,64 @@ namespace AstraLink.UI.Debrief
             out Text detailText,
             out Image barFill)
         {
-            GameObject card = CreatePanel(name, parent, new Color(0.04f, 0.07f, 0.13f, 0.95f), 74f);
-            VerticalLayoutGroup cardLayout = card.AddComponent<VerticalLayoutGroup>();
-            cardLayout.padding = new RectOffset(14, 14, 6, 6);
+            GameObject card = CreatePanel(name, parent, Color.white, 0f);
+            LayoutElement cardLe = card.AddComponent<LayoutElement>();
+            cardLe.minHeight = 76f;
+            if (art != null && art.dialogueBox != null)
+            {
+                SolarSystemArtBank.ApplyPanelFrame(card.GetComponent<Image>(), art.dialogueBox, new Vector4(10f, 10f, 10f, 10f), Color.white);
+            }
+            else
+            {
+                card.GetComponent<Image>().color = new Color(0.04f, 0.07f, 0.13f, 0.95f);
+            }
+
+            HorizontalLayoutGroup outerHl = card.AddComponent<HorizontalLayoutGroup>();
+            outerHl.padding = new RectOffset(10, 12, 7, 7);
+            outerHl.spacing = 10f;
+            outerHl.childAlignment = TextAnchor.MiddleLeft;
+            outerHl.childControlWidth = true;
+            outerHl.childControlHeight = true;
+            outerHl.childForceExpandWidth = false;
+
+            if (icon != null)
+            {
+                GameObject slotObj = CreateUIObject("IconSlot", card.transform);
+                LayoutElement slotLe = slotObj.AddComponent<LayoutElement>();
+                slotLe.preferredWidth = 48f;
+                slotLe.preferredHeight = 48f;
+                Image slotBg = slotObj.AddComponent<Image>();
+                if (art != null && art.itemSlot != null)
+                {
+                    SolarSystemArtBank.ApplyPanelFrame(slotBg, art.itemSlot, new Vector4(10f, 10f, 10f, 10f), Color.white);
+                }
+                else
+                {
+                    slotBg.color = new Color(0.08f, 0.12f, 0.22f, 0.95f);
+                }
+
+                GameObject icObj = CreateUIObject("Icon", slotObj.transform);
+                RectTransform icRt = icObj.GetComponent<RectTransform>();
+                icRt.anchorMin = new Vector2(0.16f, 0.16f);
+                icRt.anchorMax = new Vector2(0.84f, 0.84f);
+                icRt.offsetMin = Vector2.zero;
+                icRt.offsetMax = Vector2.zero;
+                Image icImg = icObj.AddComponent<Image>();
+                icImg.sprite = icon;
+                icImg.preserveAspect = true;
+                icImg.raycastTarget = false;
+            }
+
+            GameObject rightStack = CreateUIObject("MetricContent", card.transform);
+            rightStack.AddComponent<LayoutElement>().flexibleWidth = 1f;
+            VerticalLayoutGroup cardLayout = rightStack.AddComponent<VerticalLayoutGroup>();
             cardLayout.spacing = 4f;
             cardLayout.childControlWidth = true;
             cardLayout.childControlHeight = true;
             cardLayout.childForceExpandWidth = true;
             cardLayout.childForceExpandHeight = false;
 
-            GameObject topRow = CreateUIObject("TopRow", card.transform);
+            GameObject topRow = CreateUIObject("TopRow", rightStack.transform);
             HorizontalLayoutGroup topLayout = topRow.AddComponent<HorizontalLayoutGroup>();
             topLayout.childControlWidth = true;
             topLayout.childControlHeight = true;
@@ -2586,10 +2836,13 @@ namespace AstraLink.UI.Debrief
                 topRow.transform,
                 font,
                 label,
-                13,
+                12,
                 FontStyle.Bold,
-                new Color(0.76f, 0.86f, 0.96f, 1f),
+                new Color(0.78f, 0.88f, 0.98f, 1f),
                 TextAnchor.MiddleLeft);
+            titleTxt.resizeTextForBestFit = true;
+            titleTxt.resizeTextMinSize = 10;
+            titleTxt.resizeTextMaxSize = 12;
             LayoutElement titleLe = titleTxt.gameObject.AddComponent<LayoutElement>();
             titleLe.flexibleWidth = 1f;
 
@@ -2598,12 +2851,14 @@ namespace AstraLink.UI.Debrief
                 topRow.transform,
                 font,
                 initialValue,
-                16,
+                15,
                 FontStyle.Bold,
                 new Color(0.35f, 0.96f, 0.58f, 1f),
                 TextAnchor.MiddleRight);
+            valueText.horizontalOverflow = HorizontalWrapMode.Overflow;
+            valueText.gameObject.AddComponent<LayoutElement>().minWidth = 105f;
 
-            GameObject barTrack = CreatePanel("BarTrack", card.transform, new Color(0.12f, 0.18f, 0.28f, 1f), 9f);
+            GameObject barTrack = CreatePanel("BarTrack", rightStack.transform, new Color(0.10f, 0.15f, 0.26f, 1f), 10f);
             GameObject fillObj = CreateUIObject("BarFill", barTrack.transform);
             StretchFull(fillObj.GetComponent<RectTransform>());
             barFill = fillObj.AddComponent<Image>();
@@ -2616,12 +2871,12 @@ namespace AstraLink.UI.Debrief
 
             detailText = CreateText(
                 "Detail",
-                card.transform,
+                rightStack.transform,
                 font,
                 initialDetail,
-                12,
+                11,
                 FontStyle.Normal,
-                new Color(0.68f, 0.78f, 0.90f, 1f),
+                new Color(0.72f, 0.82f, 0.94f, 1f),
                 TextAnchor.MiddleLeft);
         }
 
@@ -2638,40 +2893,116 @@ namespace AstraLink.UI.Debrief
 
         private void BuildSuccessStatePanel(Transform parent, Font font)
         {
-            successStateRoot = CreatePanel("SuccessStatePanel", parent, new Color(0.07f, 0.13f, 0.19f, 0.98f), 0f);
+            SolarSystemArtBank art = SolarSystemArtBank.Load();
+            successStateRoot = CreatePanel("SuccessStatePanel", parent, new Color(0.95f, 0.98f, 1f, 0.95f), 0f);
+            if (art != null && art.inventoryPanel != null)
+            {
+                SolarSystemArtBank.ApplyPanelFrame(successStateRoot.GetComponent<Image>(), art.inventoryPanel, new Vector4(12f, 12f, 12f, 12f), new Color(0.92f, 1f, 0.96f, 0.95f));
+            }
+            else
+            {
+                successStateRoot.GetComponent<Image>().color = new Color(0.07f, 0.13f, 0.19f, 0.98f);
+            }
             StretchFull(successStateRoot.GetComponent<RectTransform>());
 
             VerticalLayoutGroup layout = successStateRoot.AddComponent<VerticalLayoutGroup>();
-            layout.padding = new RectOffset(18, 18, 12, 12);
+            layout.padding = new RectOffset(14, 14, 12, 12);
             layout.spacing = 9f;
             layout.childControlWidth = true;
             layout.childControlHeight = true;
             layout.childForceExpandWidth = true;
             layout.childForceExpandHeight = false;
 
+            // Header Banner
+            GameObject hdrObj = CreateUIObject("SuccessHeaderRow", successStateRoot.transform);
+            hdrObj.AddComponent<LayoutElement>().preferredHeight = 28f;
+            if (art != null && art.nameTab != null)
+            {
+                SolarSystemArtBank.ApplyPanelFrame(hdrObj.AddComponent<Image>(), art.nameTab, new Vector4(8f, 6f, 8f, 6f), new Color(0.75f, 1f, 0.88f, 1f));
+            }
+            HorizontalLayoutGroup hdrHl = hdrObj.AddComponent<HorizontalLayoutGroup>();
+            hdrHl.padding = new RectOffset(10, 10, 2, 2);
+            hdrHl.spacing = 8f;
+            hdrHl.childAlignment = TextAnchor.MiddleLeft;
+            hdrHl.childControlWidth = true;
+            hdrHl.childControlHeight = true;
+            hdrHl.childForceExpandWidth = false;
+
+            if (art != null && art.missionBadge != null)
+            {
+                GameObject icObj = CreateUIObject("SuccessIcon", hdrObj.transform);
+                icObj.AddComponent<LayoutElement>().preferredWidth = 20f;
+                Image ic = icObj.AddComponent<Image>();
+                ic.sprite = art.missionBadge;
+                ic.preserveAspect = true;
+                ic.raycastTarget = false;
+            }
+
             CreateText(
                 "SuccessHeader",
-                successStateRoot.transform,
+                hdrObj.transform,
                 font,
                 "MISSION RATING, RELIABILITY BONUS & CONTRACT PAYOUT",
-                16,
+                14,
                 FontStyle.Bold,
-                new Color(0.45f, 0.96f, 0.66f, 1f),
-                TextAnchor.MiddleLeft);
+                Color.white,
+                TextAnchor.MiddleLeft).gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
 
-            // 1. Score & Rating Card
-            GameObject scoreCard = CreatePanel("ScoreCard", successStateRoot.transform, new Color(0.04f, 0.08f, 0.14f, 0.96f), 118f);
-            VerticalLayoutGroup scoreLayout = scoreCard.AddComponent<VerticalLayoutGroup>();
-            scoreLayout.padding = new RectOffset(16, 16, 8, 8);
+            // 1. Score & Rating Card with Controller Portrait
+            GameObject scoreCard = CreatePanel("ScoreCard", successStateRoot.transform, Color.white, 0f);
+            scoreCard.AddComponent<LayoutElement>().minHeight = 116f;
+            if (art != null && art.dialogueBox != null)
+            {
+                SolarSystemArtBank.ApplyPanelFrame(scoreCard.GetComponent<Image>(), art.dialogueBox, new Vector4(10f, 10f, 10f, 10f), Color.white);
+            }
+            else
+            {
+                scoreCard.GetComponent<Image>().color = new Color(0.04f, 0.08f, 0.14f, 0.96f);
+            }
+
+            HorizontalLayoutGroup scoreOuter = scoreCard.AddComponent<HorizontalLayoutGroup>();
+            scoreOuter.padding = new RectOffset(12, 14, 8, 8);
+            scoreOuter.spacing = 12f;
+            scoreOuter.childAlignment = TextAnchor.MiddleLeft;
+            scoreOuter.childControlWidth = true;
+            scoreOuter.childControlHeight = true;
+            scoreOuter.childForceExpandWidth = false;
+
+            if (art != null && art.controllerPortrait != null)
+            {
+                GameObject pSlot = CreateUIObject("ControllerPortraitSlot", scoreCard.transform);
+                LayoutElement pLe = pSlot.AddComponent<LayoutElement>();
+                pLe.preferredWidth = 76f;
+                pLe.preferredHeight = 76f;
+                Image pBg = pSlot.AddComponent<Image>();
+                if (art.itemSlotSelected != null)
+                {
+                    SolarSystemArtBank.ApplyPanelFrame(pBg, art.itemSlotSelected, new Vector4(10f, 10f, 10f, 10f), Color.white);
+                }
+                GameObject pImgObj = CreateUIObject("PortraitImg", pSlot.transform);
+                RectTransform prt = pImgObj.GetComponent<RectTransform>();
+                prt.anchorMin = new Vector2(0.10f, 0.10f);
+                prt.anchorMax = new Vector2(0.90f, 0.90f);
+                prt.offsetMin = Vector2.zero;
+                prt.offsetMax = Vector2.zero;
+                Image pImg = pImgObj.AddComponent<Image>();
+                pImg.sprite = art.controllerPortrait;
+                pImg.preserveAspect = true;
+                pImg.raycastTarget = false;
+            }
+
+            GameObject scoreRight = CreateUIObject("ScoreContent", scoreCard.transform);
+            scoreRight.AddComponent<LayoutElement>().flexibleWidth = 1f;
+            VerticalLayoutGroup scoreLayout = scoreRight.AddComponent<VerticalLayoutGroup>();
             scoreLayout.spacing = 5f;
             scoreLayout.childControlWidth = true;
             scoreLayout.childControlHeight = true;
             scoreLayout.childForceExpandWidth = true;
             scoreLayout.childForceExpandHeight = false;
 
-            GameObject scoreTopRow = CreateUIObject("ScoreTopRow", scoreCard.transform);
+            GameObject scoreTopRow = CreateUIObject("ScoreTopRow", scoreRight.transform);
             HorizontalLayoutGroup scoreTopLayout = scoreTopRow.AddComponent<HorizontalLayoutGroup>();
-            scoreTopLayout.spacing = 12f;
+            scoreTopLayout.spacing = 10f;
             scoreTopLayout.childAlignment = TextAnchor.MiddleLeft;
             scoreTopLayout.childControlWidth = true;
             scoreTopLayout.childControlHeight = true;
@@ -2682,8 +3013,8 @@ namespace AstraLink.UI.Debrief
                 "FinalScoreLabel",
                 scoreTopRow.transform,
                 font,
-                "FINAL MISSION SCORE:",
-                15,
+                "FINAL SCORE:",
+                14,
                 FontStyle.Bold,
                 new Color(0.78f, 0.88f, 0.98f, 1f),
                 TextAnchor.MiddleLeft);
@@ -2695,47 +3026,62 @@ namespace AstraLink.UI.Debrief
                 scoreTopRow.transform,
                 font,
                 "162.5 PTS",
-                24,
+                22,
                 FontStyle.Bold,
                 new Color(0.38f, 0.98f, 0.62f, 1f),
                 TextAnchor.MiddleRight);
 
-            GameObject gradeBadge = CreatePanel("GradeBadge", scoreTopRow.transform, new Color(0.14f, 0.54f, 0.32f, 1f), 32f);
+            GameObject gradeBadge = CreatePanel("GradeBadge", scoreTopRow.transform, new Color(0.14f, 0.54f, 0.32f, 1f), 30f);
             LayoutElement gradeLe = gradeBadge.GetComponent<LayoutElement>();
-            gradeLe.preferredWidth = 210f;
+            gradeLe.preferredWidth = 190f;
             ratingGradeBadgeBg = gradeBadge.GetComponent<Image>();
+            if (art != null && art.itemSlotSelected != null)
+            {
+                SolarSystemArtBank.ApplyPanelFrame(ratingGradeBadgeBg, art.itemSlotSelected, new Vector4(10f, 10f, 10f, 10f), new Color(0.32f, 0.92f, 0.56f, 1f));
+            }
 
             ratingGradeBadgeText = CreateText(
                 "GradeBadgeText",
                 gradeBadge.transform,
                 font,
                 "GRADE S  •  EXEMPLARY",
-                13,
+                12,
                 FontStyle.Bold,
                 Color.white,
                 TextAnchor.MiddleCenter);
-            StretchFull(ratingGradeBadgeText.GetComponent<RectTransform>());
+            ratingGradeBadgeText.resizeTextForBestFit = true;
+            ratingGradeBadgeText.resizeTextMinSize = 9;
+            ratingGradeBadgeText.resizeTextMaxSize = 12;
+            RectTransform gbRt = ratingGradeBadgeText.GetComponent<RectTransform>();
+            StretchFull(gbRt);
+            gbRt.offsetMin = new Vector2(8f, 2f);
+            gbRt.offsetMax = new Vector2(-8f, -2f);
 
             scoreFormulaBreakdownText = CreateText(
                 "ScoreFormulaBreakdown",
-                scoreCard.transform,
+                scoreRight.transform,
                 font,
                 "• Delivered Science Points: <b>+120.0 pts</b>\n" +
                 "• Budget Efficiency Bonus: <b>+15.0 pts</b>\n" +
                 "• Engineering Reliability Margin Bonus: <b>+50.0 pts</b>",
-                13,
+                12,
                 FontStyle.Normal,
-                new Color(0.84f, 0.92f, 0.98f, 1f),
+                new Color(0.86f, 0.94f, 0.99f, 1f),
                 TextAnchor.MiddleLeft);
             scoreFormulaBreakdownText.supportRichText = true;
             scoreFormulaBreakdownText.lineSpacing = 1.12f;
 
             // 2. +50 Reliability Bonus Card
-            GameObject bonusCard = CreatePanel("ReliabilityBonusCard", successStateRoot.transform, new Color(0.09f, 0.30f, 0.20f, 0.95f), 64f);
+            GameObject bonusCard = CreatePanel("ReliabilityBonusCard", successStateRoot.transform, new Color(0.18f, 0.52f, 0.34f, 0.95f), 0f);
+            bonusCard.AddComponent<LayoutElement>().minHeight = 64f;
             reliabilityBonusCardBg = bonusCard.GetComponent<Image>();
+            if (art != null && art.dialogueBox != null)
+            {
+                SolarSystemArtBank.ApplyPanelFrame(reliabilityBonusCardBg, art.dialogueBox, new Vector4(10f, 10f, 10f, 10f), new Color(0.28f, 0.72f, 0.46f, 0.96f));
+            }
 
             VerticalLayoutGroup bonusLayout = bonusCard.AddComponent<VerticalLayoutGroup>();
-            bonusLayout.padding = new RectOffset(16, 16, 7, 7);
+            bonusLayout.padding = new RectOffset(14, 14, 7, 7);
             bonusLayout.spacing = 3f;
             bonusLayout.childControlWidth = true;
             bonusLayout.childControlHeight = true;
@@ -2747,7 +3093,7 @@ namespace AstraLink.UI.Debrief
                 bonusCard.transform,
                 font,
                 "RELIABILITY MARGIN BONUS: +50.0 PTS AWARDED",
-                15,
+                14,
                 FontStyle.Bold,
                 new Color(0.42f, 0.98f, 0.64f, 1f),
                 TextAnchor.MiddleLeft);
@@ -2759,13 +3105,23 @@ namespace AstraLink.UI.Debrief
                 "Conditions: Min Battery >= 15%  •  Final Health >= 80%  •  Reliability >= 85%",
                 12,
                 FontStyle.Normal,
-                new Color(0.85f, 0.95f, 0.90f, 1f),
+                new Color(0.88f, 0.96f, 0.92f, 1f),
                 TextAnchor.MiddleLeft);
 
             // 3. Contract Payout & Passive Income Card
-            GameObject payoutCard = CreatePanel("ContractPayoutCard", successStateRoot.transform, new Color(0.04f, 0.08f, 0.14f, 0.96f), 122f);
+            GameObject payoutCard = CreatePanel("ContractPayoutCard", successStateRoot.transform, Color.white, 0f);
+            payoutCard.AddComponent<LayoutElement>().minHeight = 120f;
+            if (art != null && art.dialogueBox != null)
+            {
+                SolarSystemArtBank.ApplyPanelFrame(payoutCard.GetComponent<Image>(), art.dialogueBox, new Vector4(10f, 10f, 10f, 10f), Color.white);
+            }
+            else
+            {
+                payoutCard.GetComponent<Image>().color = new Color(0.04f, 0.08f, 0.14f, 0.96f);
+            }
+
             VerticalLayoutGroup payoutLayout = payoutCard.AddComponent<VerticalLayoutGroup>();
-            payoutLayout.padding = new RectOffset(16, 16, 8, 8);
+            payoutLayout.padding = new RectOffset(14, 14, 8, 8);
             payoutLayout.spacing = 6f;
             payoutLayout.childControlWidth = true;
             payoutLayout.childControlHeight = true;
@@ -2777,51 +3133,71 @@ namespace AstraLink.UI.Debrief
                 payoutCard.transform,
                 font,
                 "CONTRACT REWARD & PASSIVE INCOME PAYOUT",
-                14,
+                13,
                 FontStyle.Bold,
                 new Color(1.0f, 0.84f, 0.38f, 1f),
                 TextAnchor.MiddleLeft);
 
             GameObject payoutBoxesRow = CreateUIObject("PayoutBoxesRow", payoutCard.transform);
             HorizontalLayoutGroup payoutBoxesLayout = payoutBoxesRow.AddComponent<HorizontalLayoutGroup>();
-            payoutBoxesLayout.spacing = 12f;
+            payoutBoxesLayout.spacing = 10f;
             payoutBoxesLayout.childControlWidth = true;
             payoutBoxesLayout.childControlHeight = true;
             payoutBoxesLayout.childForceExpandWidth = true;
             payoutBoxesLayout.childForceExpandHeight = false;
 
-            GameObject rewardBox = CreatePanel("RewardBox", payoutBoxesRow.transform, new Color(0.08f, 0.16f, 0.26f, 1f), 36f);
+            GameObject rewardBox = CreatePanel("RewardBox", payoutBoxesRow.transform, Color.white, 38f);
+            if (art != null && art.itemSlotSelected != null)
+            {
+                SolarSystemArtBank.ApplyPanelFrame(rewardBox.GetComponent<Image>(), art.itemSlotSelected, new Vector4(10f, 10f, 10f, 10f), new Color(0.85f, 1f, 0.90f, 1f));
+            }
             contractRewardValueText = CreateText(
                 "ContractRewardValue",
                 rewardBox.transform,
                 font,
                 "+$130k Contract Payout",
-                15,
+                14,
                 FontStyle.Bold,
                 new Color(0.42f, 0.98f, 0.64f, 1f),
                 TextAnchor.MiddleCenter);
-            StretchFull(contractRewardValueText.GetComponent<RectTransform>());
+            contractRewardValueText.resizeTextForBestFit = true;
+            contractRewardValueText.resizeTextMinSize = 10;
+            contractRewardValueText.resizeTextMaxSize = 14;
+            RectTransform crRt = contractRewardValueText.GetComponent<RectTransform>();
+            StretchFull(crRt);
+            crRt.offsetMin = new Vector2(8f, 2f);
+            crRt.offsetMax = new Vector2(-8f, -2f);
 
-            GameObject passiveBox = CreatePanel("PassiveBox", payoutBoxesRow.transform, new Color(0.08f, 0.16f, 0.26f, 1f), 36f);
+            GameObject passiveBox = CreatePanel("PassiveBox", payoutBoxesRow.transform, Color.white, 38f);
+            if (art != null && art.itemSlot != null)
+            {
+                SolarSystemArtBank.ApplyPanelFrame(passiveBox.GetComponent<Image>(), art.itemSlot, new Vector4(10f, 10f, 10f, 10f), Color.white);
+            }
             passiveIncomeValueText = CreateText(
                 "PassiveIncomeValue",
                 passiveBox.transform,
                 font,
                 "+$20k / Flight Passive Income",
-                15,
+                14,
                 FontStyle.Bold,
                 new Color(0.48f, 0.88f, 1.0f, 1f),
                 TextAnchor.MiddleCenter);
-            StretchFull(passiveIncomeValueText.GetComponent<RectTransform>());
+            passiveIncomeValueText.resizeTextForBestFit = true;
+            passiveIncomeValueText.resizeTextMinSize = 10;
+            passiveIncomeValueText.resizeTextMaxSize = 14;
+            RectTransform piRt = passiveIncomeValueText.GetComponent<RectTransform>();
+            StretchFull(piRt);
+            piRt.offsetMin = new Vector2(8f, 2f);
+            piRt.offsetMax = new Vector2(-8f, -2f);
 
             agencyCapitalSummaryText = CreateText(
                 "AgencyCapitalSummary",
                 payoutCard.transform,
                 font,
                 "Total Payout Credited: <b>+$150k</b>\nAgency Balance: <b>$200k</b>   •   Active Passive Income Stream: <b>+$20k / mission</b>",
-                13,
+                12,
                 FontStyle.Normal,
-                new Color(0.84f, 0.92f, 0.98f, 1f),
+                new Color(0.86f, 0.94f, 0.99f, 1f),
                 TextAnchor.MiddleLeft);
             agencyCapitalSummaryText.supportRichText = true;
             agencyCapitalSummaryText.lineSpacing = 1.12f;
@@ -2830,42 +3206,81 @@ namespace AstraLink.UI.Debrief
                 successStateRoot.transform,
                 "Btn_ReturnToHub",
                 "RETURN TO CONTRACT HUB (COLLECT REWARD & NEXT MISSION)",
-                new Color(0.14f, 0.56f, 0.34f, 1f),
+                new Color(0.74f, 1f, 0.86f, 1f),
                 0f,
-                48f,
+                46f,
                 font,
                 ReturnToHub);
         }
 
         private void BuildFailureStatePanel(Transform parent, Font font)
         {
-            failureStateRoot = CreatePanel("FailureStatePanel", parent, new Color(0.14f, 0.08f, 0.12f, 0.98f), 0f);
+            SolarSystemArtBank art = SolarSystemArtBank.Load();
+            failureStateRoot = CreatePanel("FailureStatePanel", parent, new Color(1f, 0.90f, 0.92f, 0.95f), 0f);
+            if (art != null && art.inventoryPanel != null)
+            {
+                SolarSystemArtBank.ApplyPanelFrame(failureStateRoot.GetComponent<Image>(), art.inventoryPanel, new Vector4(12f, 12f, 12f, 12f), new Color(1f, 0.86f, 0.90f, 0.95f));
+            }
+            else
+            {
+                failureStateRoot.GetComponent<Image>().color = new Color(0.14f, 0.08f, 0.12f, 0.98f);
+            }
             StretchFull(failureStateRoot.GetComponent<RectTransform>());
 
             VerticalLayoutGroup layout = failureStateRoot.AddComponent<VerticalLayoutGroup>();
-            layout.padding = new RectOffset(18, 18, 12, 12);
+            layout.padding = new RectOffset(14, 14, 12, 12);
             layout.spacing = 9f;
             layout.childControlWidth = true;
             layout.childControlHeight = true;
             layout.childForceExpandWidth = true;
             layout.childForceExpandHeight = false;
 
+            // Header Banner with A.S.T.R.A. Portrait
+            GameObject hdrObj = CreateUIObject("FailureHeaderRow", failureStateRoot.transform);
+            hdrObj.AddComponent<LayoutElement>().preferredHeight = 28f;
+            if (art != null && art.nameTab != null)
+            {
+                SolarSystemArtBank.ApplyPanelFrame(hdrObj.AddComponent<Image>(), art.nameTab, new Vector4(8f, 6f, 8f, 6f), new Color(1f, 0.72f, 0.72f, 1f));
+            }
+            HorizontalLayoutGroup hdrHl = hdrObj.AddComponent<HorizontalLayoutGroup>();
+            hdrHl.padding = new RectOffset(10, 10, 2, 2);
+            hdrHl.spacing = 8f;
+            hdrHl.childAlignment = TextAnchor.MiddleLeft;
+            hdrHl.childControlWidth = true;
+            hdrHl.childControlHeight = true;
+            hdrHl.childForceExpandWidth = false;
+
+            if (art != null && art.countdownClock != null)
+            {
+                GameObject icObj = CreateUIObject("FailClockIcon", hdrObj.transform);
+                icObj.AddComponent<LayoutElement>().preferredWidth = 20f;
+                Image ic = icObj.AddComponent<Image>();
+                ic.sprite = art.countdownClock;
+                ic.preserveAspect = true;
+                ic.raycastTarget = false;
+            }
+
             CreateText(
                 "FailureHeader",
-                failureStateRoot.transform,
+                hdrObj.transform,
                 font,
-                "WHY DID IT FAIL? — A.S.T.R.A. FAILURE DEBRIEF BUILDER",
-                16,
+                "WHY DID IT FAIL? — A.S.T.R.A. FAILURE DEBRIEF",
+                14,
                 FontStyle.Bold,
-                new Color(1.0f, 0.50f, 0.48f, 1f),
-                TextAnchor.MiddleLeft);
+                Color.white,
+                TextAnchor.MiddleLeft).gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
 
             // 1. FailureTitle Box
-            GameObject titleBox = CreatePanel("FailureTitleBox", failureStateRoot.transform, new Color(0.42f, 0.11f, 0.14f, 0.98f), 68f);
+            GameObject titleBox = CreatePanel("FailureTitleBox", failureStateRoot.transform, new Color(0.65f, 0.22f, 0.26f, 0.98f), 0f);
+            titleBox.AddComponent<LayoutElement>().minHeight = 68f;
             failureTitleBannerBg = titleBox.GetComponent<Image>();
+            if (art != null && art.dialogueBox != null)
+            {
+                SolarSystemArtBank.ApplyPanelFrame(failureTitleBannerBg, art.dialogueBox, new Vector4(10f, 10f, 10f, 10f), new Color(0.82f, 0.26f, 0.30f, 0.98f));
+            }
 
             VerticalLayoutGroup titleBoxLayout = titleBox.AddComponent<VerticalLayoutGroup>();
-            titleBoxLayout.padding = new RectOffset(16, 16, 7, 7);
+            titleBoxLayout.padding = new RectOffset(14, 14, 7, 7);
             titleBoxLayout.spacing = 3f;
             titleBoxLayout.childControlWidth = true;
             titleBoxLayout.childControlHeight = true;
@@ -2876,10 +3291,10 @@ namespace AstraLink.UI.Debrief
                 "FailureTitleTag",
                 titleBox.transform,
                 font,
-                "1. PRIMARY ANOMALY CLASSIFICATION (FailureTitle):",
-                12,
+                "1. PRIMARY ANOMALY CLASSIFICATION:",
+                11,
                 FontStyle.Bold,
-                new Color(1.0f, 0.78f, 0.78f, 1f),
+                new Color(1.0f, 0.80f, 0.80f, 1f),
                 TextAnchor.MiddleLeft);
 
             failureTitleText = CreateText(
@@ -2887,15 +3302,25 @@ namespace AstraLink.UI.Debrief
                 titleBox.transform,
                 font,
                 "Critical Battery Depletion (0%)",
-                19,
+                18,
                 FontStyle.Bold,
                 Color.white,
                 TextAnchor.MiddleLeft);
 
             // 2. FailureCause Box
-            GameObject causeBox = CreatePanel("FailureCauseBox", failureStateRoot.transform, new Color(0.06f, 0.08f, 0.14f, 0.96f), 104f);
+            GameObject causeBox = CreatePanel("FailureCauseBox", failureStateRoot.transform, Color.white, 0f);
+            causeBox.AddComponent<LayoutElement>().minHeight = 92f;
+            if (art != null && art.dialogueBox != null)
+            {
+                SolarSystemArtBank.ApplyPanelFrame(causeBox.GetComponent<Image>(), art.dialogueBox, new Vector4(10f, 10f, 10f, 10f), Color.white);
+            }
+            else
+            {
+                causeBox.GetComponent<Image>().color = new Color(0.06f, 0.08f, 0.14f, 0.96f);
+            }
+
             VerticalLayoutGroup causeBoxLayout = causeBox.AddComponent<VerticalLayoutGroup>();
-            causeBoxLayout.padding = new RectOffset(16, 16, 8, 8);
+            causeBoxLayout.padding = new RectOffset(14, 14, 8, 8);
             causeBoxLayout.spacing = 4f;
             causeBoxLayout.childControlWidth = true;
             causeBoxLayout.childControlHeight = true;
@@ -2906,8 +3331,8 @@ namespace AstraLink.UI.Debrief
                 "FailureCauseTag",
                 causeBox.transform,
                 font,
-                "2. ROOT CAUSE & ORBITAL TELEMETRY ANALYSIS (FailureCause):",
-                13,
+                "2. ROOT CAUSE & ORBITAL TELEMETRY ANALYSIS:",
+                12,
                 FontStyle.Bold,
                 new Color(1.0f, 0.74f, 0.36f, 1f),
                 TextAnchor.MiddleLeft);
@@ -2917,16 +3342,58 @@ namespace AstraLink.UI.Debrief
                 causeBox.transform,
                 font,
                 "Satellite lost power on orbit 1 (tick 11). Power draw reached 27.0 W against 0.0 W generation, draining battery capacity (45.0 Wh) in eclipse.",
-                14,
+                13,
                 FontStyle.Normal,
                 new Color(0.94f, 0.96f, 1.0f, 1f),
                 TextAnchor.UpperLeft);
             failureCauseText.lineSpacing = 1.15f;
 
-            // 3. FailureRecommendation Box
-            GameObject recBox = CreatePanel("FailureRecommendationBox", failureStateRoot.transform, new Color(0.06f, 0.17f, 0.24f, 0.96f), 100f);
-            VerticalLayoutGroup recBoxLayout = recBox.AddComponent<VerticalLayoutGroup>();
-            recBoxLayout.padding = new RectOffset(16, 16, 8, 8);
+            // 3. FailureRecommendation Box with A.S.T.R.A. Portrait
+            GameObject recBox = CreatePanel("FailureRecommendationBox", failureStateRoot.transform, Color.white, 0f);
+            recBox.AddComponent<LayoutElement>().minHeight = 102f;
+            if (art != null && art.dialogueBox != null)
+            {
+                SolarSystemArtBank.ApplyPanelFrame(recBox.GetComponent<Image>(), art.dialogueBox, new Vector4(10f, 10f, 10f, 10f), new Color(0.76f, 0.96f, 1f, 0.98f));
+            }
+            else
+            {
+                recBox.GetComponent<Image>().color = new Color(0.06f, 0.17f, 0.24f, 0.96f);
+            }
+
+            HorizontalLayoutGroup recOuter = recBox.AddComponent<HorizontalLayoutGroup>();
+            recOuter.padding = new RectOffset(12, 14, 8, 8);
+            recOuter.spacing = 12f;
+            recOuter.childAlignment = TextAnchor.MiddleLeft;
+            recOuter.childControlWidth = true;
+            recOuter.childControlHeight = true;
+            recOuter.childForceExpandWidth = false;
+
+            if (art != null && art.astraPortrait != null)
+            {
+                GameObject aSlot = CreateUIObject("AstraPortraitSlot", recBox.transform);
+                LayoutElement aLe = aSlot.AddComponent<LayoutElement>();
+                aLe.preferredWidth = 74f;
+                aLe.preferredHeight = 74f;
+                Image aBg = aSlot.AddComponent<Image>();
+                if (art.itemSlotSelected != null)
+                {
+                    SolarSystemArtBank.ApplyPanelFrame(aBg, art.itemSlotSelected, new Vector4(10f, 10f, 10f, 10f), new Color(0.68f, 0.94f, 1f, 1f));
+                }
+                GameObject aImgObj = CreateUIObject("AstraPortraitImg", aSlot.transform);
+                RectTransform artRt = aImgObj.GetComponent<RectTransform>();
+                artRt.anchorMin = new Vector2(0.10f, 0.10f);
+                artRt.anchorMax = new Vector2(0.90f, 0.90f);
+                artRt.offsetMin = Vector2.zero;
+                artRt.offsetMax = Vector2.zero;
+                Image aImg = aImgObj.AddComponent<Image>();
+                aImg.sprite = art.astraPortrait;
+                aImg.preserveAspect = true;
+                aImg.raycastTarget = false;
+            }
+
+            GameObject recRight = CreateUIObject("RecContent", recBox.transform);
+            recRight.AddComponent<LayoutElement>().flexibleWidth = 1f;
+            VerticalLayoutGroup recBoxLayout = recRight.AddComponent<VerticalLayoutGroup>();
             recBoxLayout.spacing = 4f;
             recBoxLayout.childControlWidth = true;
             recBoxLayout.childControlHeight = true;
@@ -2935,27 +3402,36 @@ namespace AstraLink.UI.Debrief
 
             CreateText(
                 "FailureRecommendationTag",
-                recBox.transform,
+                recRight.transform,
                 font,
-                "3. A.S.T.R.A. CORRECTIVE ENGINEERING ACTION (FailureRecommendation):",
-                13,
+                "3. A.S.T.R.A. CORRECTIVE ENGINEERING ACTION:",
+                12,
                 FontStyle.Bold,
                 new Color(0.42f, 0.92f, 1.0f, 1f),
                 TextAnchor.MiddleLeft);
 
             failureRecommendationText = CreateText(
                 "FailureRecommendationValue",
-                recBox.transform,
+                recRight.transform,
                 font,
                 "Add autopilot rule: IF SolarWatts < 5 THEN ScienceOff ELSE ScienceOn (or use BatteryPercent for RTG), or install a larger battery.",
-                14,
+                13,
                 FontStyle.Bold,
-                new Color(0.86f, 0.98f, 1.0f, 1f),
+                new Color(0.88f, 0.98f, 1.0f, 1f),
                 TextAnchor.UpperLeft);
             failureRecommendationText.lineSpacing = 1.15f;
 
             // 4. Free Retry Summary Box
-            GameObject noteBox = CreatePanel("FailureTelemetryNoteBox", failureStateRoot.transform, new Color(0.05f, 0.09f, 0.15f, 0.94f), 54f);
+            GameObject noteBox = CreatePanel("FailureTelemetryNoteBox", failureStateRoot.transform, Color.white, 0f);
+            noteBox.AddComponent<LayoutElement>().minHeight = 50f;
+            if (art != null && art.dialogueBox != null)
+            {
+                SolarSystemArtBank.ApplyPanelFrame(noteBox.GetComponent<Image>(), art.dialogueBox, new Vector4(10f, 10f, 10f, 10f), Color.white);
+            }
+            else
+            {
+                noteBox.GetComponent<Image>().color = new Color(0.05f, 0.09f, 0.15f, 0.94f);
+            }
             VerticalLayoutGroup noteLayout = noteBox.AddComponent<VerticalLayoutGroup>();
             noteLayout.padding = new RectOffset(14, 14, 6, 6);
             noteLayout.childControlWidth = true;
@@ -2970,7 +3446,7 @@ namespace AstraLink.UI.Debrief
                 "FREE RETRY POLICY: $0k deducted from Agency Capital. Modify your components or autopilot rules in the Hangar at no penalty.",
                 12,
                 FontStyle.Normal,
-                new Color(0.82f, 0.90f, 0.96f, 1f),
+                new Color(0.84f, 0.92f, 0.98f, 1f),
                 TextAnchor.MiddleLeft);
             failureTelemetryNoteText.supportRichText = true;
 
@@ -2978,9 +3454,9 @@ namespace AstraLink.UI.Debrief
                 failureStateRoot.transform,
                 "Btn_ReturnToWorkshop",
                 "FREE RETURN TO HANGAR (FIX SATELLITE BUILD / AUTOPILOT RULES)",
-                new Color(0.78f, 0.42f, 0.12f, 1f),
+                new Color(1.0f, 0.82f, 0.62f, 1f),
                 0f,
-                48f,
+                46f,
                 font,
                 ReturnToWorkshopFree);
         }
@@ -3156,20 +3632,36 @@ namespace AstraLink.UI.Debrief
             Font font,
             UnityEngine.Events.UnityAction onClick)
         {
+            SolarSystemArtBank art = SolarSystemArtBank.Load();
             GameObject btnObj = CreateUIObject(name, parent);
             Image img = btnObj.AddComponent<Image>();
             img.color = bgColor;
 
             Button btn = btnObj.AddComponent<Button>();
             btn.targetGraphic = img;
+            if (art != null && art.buttonNormal != null)
+            {
+                art.ApplyButtonSprites(btn, bgColor);
+            }
             btn.onClick.AddListener(onClick);
 
             LayoutElement le = btnObj.AddComponent<LayoutElement>();
             if (width > 0f) le.preferredWidth = width;
-            if (height > 0f) le.preferredHeight = height;
+            if (height > 0f)
+            {
+                le.minHeight = height;
+                le.preferredHeight = height;
+                le.flexibleHeight = 0f;
+            }
 
             Text txt = CreateText("Text", btnObj.transform, font, label, 12, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
-            StretchFull(txt.GetComponent<RectTransform>());
+            txt.resizeTextForBestFit = true;
+            txt.resizeTextMinSize = 9;
+            txt.resizeTextMaxSize = 13;
+            RectTransform txtRt = txt.GetComponent<RectTransform>();
+            StretchFull(txtRt);
+            txtRt.offsetMin = new Vector2(8f, 2f);
+            txtRt.offsetMax = new Vector2(-8f, -2f);
             return btn;
         }
     }
