@@ -4,13 +4,51 @@ using System.Globalization;
 
 namespace AstraLink.Core
 {
+    public enum LaunchValidationError
+    {
+        None,
+        MissingRocket,
+        MissingOrbit,
+        MissingGoal,
+        EmptyComponents,
+        MissingCorePlatform,
+        MissingPowerGeneration,
+        MissingEnergyStorage,
+        MissingCommsAndStorage,
+        MissingSciencePayload,
+        MassLimitExceeded,
+        BudgetLimitExceeded,
+        MissingRequiredSensor
+    }
+
     /// <summary>
-    /// S1-05 (Саша Г): Валідатор передстартової готовності місії (MissionValidator).
-    /// Перевіряє наявність 5 обов'язкових категорій модулів, ліміт маси ракети для обраної орбіти,
-    /// ліміт бюджету контракту та наявність обов'язкового наукового сенсора (RequiredSensorTag).
+    /// Validates satellite readiness before launch, checking mandatory component slots, rocket mass limits, mission budget, and required sensor tags.
     /// </summary>
     public class MissionValidator
     {
+        private static readonly Dictionary<LaunchValidationError, string> ErrorMessages = new Dictionary<LaunchValidationError, string>
+        {
+            { LaunchValidationError.None, string.Empty },
+            { LaunchValidationError.MissingRocket, "No launch vehicle selected." },
+            { LaunchValidationError.MissingOrbit, "No target orbit selected." },
+            { LaunchValidationError.MissingGoal, "No mission contract selected." },
+            { LaunchValidationError.EmptyComponents, "Satellite build is empty. Install all 5 required modules." },
+            { LaunchValidationError.MissingCorePlatform, "Missing core platform (satellite bus)." },
+            { LaunchValidationError.MissingPowerGeneration, "Missing power generation module (solar panels or RTG)." },
+            { LaunchValidationError.MissingEnergyStorage, "Missing energy storage module (battery)." },
+            { LaunchValidationError.MissingCommsAndStorage, "Missing communication and onboard SSD module." },
+            { LaunchValidationError.MissingSciencePayload, "Missing science payload module." },
+            { LaunchValidationError.MassLimitExceeded, "Rocket \"{0}\" mass limit exceeded for orbit \"{1}\": {2:F1} kg / {3:F1} kg max." },
+            { LaunchValidationError.BudgetLimitExceeded, "Mission \"{0}\" budget limit exceeded: ${1:F0}k / ${2:F0}k max." },
+            { LaunchValidationError.MissingRequiredSensor, "Mission \"{0}\" requires sensor tag \"{1}\"." }
+        };
+
+        public static string GetErrorMessage(LaunchValidationError error)
+        {
+            string message;
+            return ErrorMessages.TryGetValue(error, out message) ? message : string.Empty;
+        }
+
         public bool ValidateLaunch(
             List<SatelliteComponent> components,
             RocketOption rocket,
@@ -30,29 +68,28 @@ namespace AstraLink.Core
         {
             if (rocket == null)
             {
-                errorMessage = "Не обрано ракету-носій для запуску.";
+                errorMessage = GetErrorMessage(LaunchValidationError.MissingRocket);
                 return false;
             }
 
             if (orbit == null)
             {
-                errorMessage = "Не обрано цільову орбіту місії.";
+                errorMessage = GetErrorMessage(LaunchValidationError.MissingOrbit);
                 return false;
             }
 
             if (goal == null)
             {
-                errorMessage = "Не обрано контракт місії.";
+                errorMessage = GetErrorMessage(LaunchValidationError.MissingGoal);
                 return false;
             }
 
             if (components == null || components.Count == 0)
             {
-                errorMessage = "Конструкція супутника порожня. Встановіть усі 5 обов'язкових модулів.";
+                errorMessage = GetErrorMessage(LaunchValidationError.EmptyComponents);
                 return false;
             }
 
-            // 1. Перевірка 5 обов'язкових слотів супутника
             bool hasPlatform = false;
             bool hasPowerGen = false;
             bool hasStorage = false;
@@ -101,74 +138,66 @@ namespace AstraLink.Core
 
             if (!hasPlatform)
             {
-                errorMessage = "Не встановлено базову платформу (корпус супутника).";
+                errorMessage = GetErrorMessage(LaunchValidationError.MissingCorePlatform);
                 return false;
             }
             if (!hasPowerGen)
             {
-                errorMessage = "Не встановлено джерело енергії (сонячні панелі або РІТЕГ).";
+                errorMessage = GetErrorMessage(LaunchValidationError.MissingPowerGeneration);
                 return false;
             }
             if (!hasStorage)
             {
-                errorMessage = "Не встановлено акумуляторну батарею.";
+                errorMessage = GetErrorMessage(LaunchValidationError.MissingEnergyStorage);
                 return false;
             }
             if (!hasComms)
             {
-                errorMessage = "Не встановлено модуль зв'язку та бортовий SSD-накопичувач.";
+                errorMessage = GetErrorMessage(LaunchValidationError.MissingCommsAndStorage);
                 return false;
             }
             if (!hasScience)
             {
-                errorMessage = "Не встановлено жодного наукового приладу.";
+                errorMessage = GetErrorMessage(LaunchValidationError.MissingSciencePayload);
                 return false;
             }
 
-            // 2. Перевірка ліміту маси ракети для обраної орбіти
             float maxMassKg = GetMaxRocketMassForOrbit(rocket, orbit.Type);
             if (totalMassKg > maxMassKg + 0.0001f)
             {
-                float excessKg = totalMassKg - maxMassKg;
                 errorMessage = string.Format(
                     CultureInfo.InvariantCulture,
-                    "Перевищено ліміт маси ракети «{0}» для орбіти «{1}»: маса супутника {2:F1} кг, максимум ракети {3:F1} кг (перевантаження +{4:F1} кг). Оберіть важчу ракету або легші деталі.",
+                    GetErrorMessage(LaunchValidationError.MassLimitExceeded),
                     rocket.Name,
                     orbit.Name,
                     totalMassKg,
-                    maxMassKg,
-                    excessKg);
+                    maxMassKg);
                 return false;
             }
 
-            // 3. Перевірка бюджету контракту (у Пісочниці BudgetLimitThousands може бути <= 0 або дуже великим)
             float totalCostThousands = componentsCostThousands + rocket.CostThousands;
             if (goal.BudgetLimitThousands > 0.0f && totalCostThousands > goal.BudgetLimitThousands + 0.0001f)
             {
-                float excessCost = totalCostThousands - goal.BudgetLimitThousands;
                 errorMessage = string.Format(
                     CultureInfo.InvariantCulture,
-                    "Перевищено бюджет контракту «{0}»: вартість збірки з ракетою ${1:F0}k при ліміті ${2:F0}k (перевитрата +${3:F0}k). Здешевіть комплектацію або ракету.",
+                    GetErrorMessage(LaunchValidationError.BudgetLimitExceeded),
                     goal.Title,
                     totalCostThousands,
-                    goal.BudgetLimitThousands,
-                    excessCost);
+                    goal.BudgetLimitThousands);
                 return false;
             }
 
-            // 4. Перевірка обов'язкового наукового сенсора контракту
             if (!hasRequiredSensor)
             {
                 errorMessage = string.Format(
                     CultureInfo.InvariantCulture,
-                    "Контракт «{0}» вимагає встановлення приладу типу «{1}» ({2}). Замініть науковий сенсор у конструкторі.",
+                    GetErrorMessage(LaunchValidationError.MissingRequiredSensor),
                     goal.Title,
-                    goal.RequiredSensorTag,
-                    GetSensorUkrainianName(goal.RequiredSensorTag));
+                    goal.RequiredSensorTag);
                 return false;
             }
 
-            errorMessage = string.Empty;
+            errorMessage = GetErrorMessage(LaunchValidationError.None);
             return true;
         }
 
@@ -188,26 +217,6 @@ namespace AstraLink.Core
                 case OrbitType.DeepSpace:
                 default:
                     return rocket.MaxMassDeepSpaceKg;
-            }
-        }
-
-        public static string GetSensorUkrainianName(string sensorTag)
-        {
-            if (string.IsNullOrWhiteSpace(sensorTag))
-                return "будь-який сенсор";
-
-            switch (sensorTag.Trim().ToLowerInvariant())
-            {
-                case "camera":
-                    return "Метео-камера HD";
-                case "radar":
-                    return "Радар синтезованої апертури SAR";
-                case "spectrometer":
-                    return "Міжпланетний спектрометр";
-                case "magnetometer":
-                    return "Магнітометр плазми";
-                default:
-                    return sensorTag;
             }
         }
     }

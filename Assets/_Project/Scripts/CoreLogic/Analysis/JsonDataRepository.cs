@@ -7,38 +7,36 @@ using Newtonsoft.Json.Converters;
 namespace AstraLink.Core
 {
     /// <summary>
-    /// S1-05 (Саша Г): Реалізація інтерфейсу IGameDataRepository.
-    /// Завантажує та парсить усі 5 JSON-файлів (components.json, rockets.json, orbits.json,
-    /// missions.json, events.json) через Newtonsoft.Json без використання UnityEngine.
+    /// Loads and deserializes game data catalogs (components, rockets, orbits, missions, and events) from JSON strings.
     /// </summary>
     public class JsonDataRepository : IGameDataRepository
     {
         [Serializable]
-        public class ComponentCatalogWrapper
+        public class ComponentCatalog
         {
             public List<SatelliteComponent> components = new List<SatelliteComponent>();
         }
 
         [Serializable]
-        public class RocketCatalogWrapper
+        public class RocketCatalog
         {
             public List<RocketOption> rockets = new List<RocketOption>();
         }
 
         [Serializable]
-        public class OrbitCatalogWrapper
+        public class OrbitCatalog
         {
             public List<OrbitDefinition> orbits = new List<OrbitDefinition>();
         }
 
         [Serializable]
-        public class MissionCatalogWrapper
+        public class MissionCatalog
         {
             public List<MissionGoal> missions = new List<MissionGoal>();
         }
 
         [Serializable]
-        public class EventCatalogWrapper
+        public class EventCatalog
         {
             public List<SpaceEventDefinition> events = new List<SpaceEventDefinition>();
         }
@@ -70,10 +68,6 @@ namespace AstraLink.Core
             LoadFromJsonStrings(componentsJson, rocketsJson, orbitsJson, missionsJson, eventsJson);
         }
 
-        /// <summary>
-        /// Десеріалізує всі 5 JSON-рядків у колекції даних гри.
-        /// Підтримує як формат з кореневим об'єктом ({ "components": [...] }), так і прямий масив ([...]).
-        /// </summary>
         public void LoadFromJsonStrings(
             string componentsJson,
             string rocketsJson,
@@ -82,15 +76,15 @@ namespace AstraLink.Core
             string eventsJson)
         {
             if (string.IsNullOrWhiteSpace(componentsJson))
-                throw new ArgumentException("Порожній JSON-рядок для components.json", nameof(componentsJson));
+                throw new ArgumentException("Components JSON string cannot be empty.", nameof(componentsJson));
             if (string.IsNullOrWhiteSpace(rocketsJson))
-                throw new ArgumentException("Порожній JSON-рядок для rockets.json", nameof(rocketsJson));
+                throw new ArgumentException("Rockets JSON string cannot be empty.", nameof(rocketsJson));
             if (string.IsNullOrWhiteSpace(orbitsJson))
-                throw new ArgumentException("Порожній JSON-рядок для orbits.json", nameof(orbitsJson));
+                throw new ArgumentException("Orbits JSON string cannot be empty.", nameof(orbitsJson));
             if (string.IsNullOrWhiteSpace(missionsJson))
-                throw new ArgumentException("Порожній JSON-рядок для missions.json", nameof(missionsJson));
+                throw new ArgumentException("Missions JSON string cannot be empty.", nameof(missionsJson));
             if (string.IsNullOrWhiteSpace(eventsJson))
-                throw new ArgumentException("Порожній JSON-рядок для events.json", nameof(eventsJson));
+                throw new ArgumentException("Events JSON string cannot be empty.", nameof(eventsJson));
 
             _components.Clear();
             if (componentsJson.TrimStart().StartsWith("[", StringComparison.Ordinal))
@@ -100,8 +94,8 @@ namespace AstraLink.Core
             }
             else
             {
-                ComponentCatalogWrapper wrapper = JsonConvert.DeserializeObject<ComponentCatalogWrapper>(componentsJson, SerializerSettings);
-                if (wrapper != null && wrapper.components != null) _components.AddRange(wrapper.components);
+                ComponentCatalog catalog = JsonConvert.DeserializeObject<ComponentCatalog>(componentsJson, SerializerSettings);
+                if (catalog != null && catalog.components != null) _components.AddRange(catalog.components);
             }
 
             _rockets.Clear();
@@ -112,8 +106,8 @@ namespace AstraLink.Core
             }
             else
             {
-                RocketCatalogWrapper wrapper = JsonConvert.DeserializeObject<RocketCatalogWrapper>(rocketsJson, SerializerSettings);
-                if (wrapper != null && wrapper.rockets != null) _rockets.AddRange(wrapper.rockets);
+                RocketCatalog catalog = JsonConvert.DeserializeObject<RocketCatalog>(rocketsJson, SerializerSettings);
+                if (catalog != null && catalog.rockets != null) _rockets.AddRange(catalog.rockets);
             }
 
             _orbits.Clear();
@@ -124,8 +118,8 @@ namespace AstraLink.Core
             }
             else
             {
-                OrbitCatalogWrapper wrapper = JsonConvert.DeserializeObject<OrbitCatalogWrapper>(orbitsJson, SerializerSettings);
-                if (wrapper != null && wrapper.orbits != null) _orbits.AddRange(wrapper.orbits);
+                OrbitCatalog catalog = JsonConvert.DeserializeObject<OrbitCatalog>(orbitsJson, SerializerSettings);
+                if (catalog != null && catalog.orbits != null) _orbits.AddRange(catalog.orbits);
             }
 
             _missions.Clear();
@@ -136,8 +130,8 @@ namespace AstraLink.Core
             }
             else
             {
-                MissionCatalogWrapper wrapper = JsonConvert.DeserializeObject<MissionCatalogWrapper>(missionsJson, SerializerSettings);
-                if (wrapper != null && wrapper.missions != null) _missions.AddRange(wrapper.missions);
+                MissionCatalog catalog = JsonConvert.DeserializeObject<MissionCatalog>(missionsJson, SerializerSettings);
+                if (catalog != null && catalog.missions != null) _missions.AddRange(catalog.missions);
             }
 
             _events.Clear();
@@ -148,18 +142,15 @@ namespace AstraLink.Core
             }
             else
             {
-                EventCatalogWrapper wrapper = JsonConvert.DeserializeObject<EventCatalogWrapper>(eventsJson, SerializerSettings);
-                if (wrapper != null && wrapper.events != null) _events.AddRange(wrapper.events);
+                EventCatalog catalog = JsonConvert.DeserializeObject<EventCatalog>(eventsJson, SerializerSettings);
+                if (catalog != null && catalog.events != null) _events.AddRange(catalog.events);
             }
         }
 
-        /// <summary>
-        /// Допоміжний метод для завантаження всіх 5 JSON-файлів із локальної папки під час тестування.
-        /// </summary>
         public static JsonDataRepository LoadFromDirectory(string directoryPath)
         {
             if (string.IsNullOrWhiteSpace(directoryPath) || !Directory.Exists(directoryPath))
-                throw new DirectoryNotFoundException("Папку з JSON-файлами не знайдено: " + directoryPath);
+                throw new DirectoryNotFoundException("Data directory not found: " + directoryPath);
 
             string componentsJson = File.ReadAllText(Path.Combine(directoryPath, "components.json"));
             string rocketsJson = File.ReadAllText(Path.Combine(directoryPath, "rockets.json"));
