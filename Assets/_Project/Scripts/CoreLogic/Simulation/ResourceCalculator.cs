@@ -5,11 +5,7 @@ namespace AstraLink.Core
 {
     public class ResourceCalculator
     {
-        public ResourceSummary CalculateResources(
-            List<SatelliteComponent> components,
-            RocketOption rocketOption,
-            OrbitDefinition orbitDefinition,
-            MissionGoal missionGoal)
+        public ResourceSummary CalculateResources(List<SatelliteComponent> components, RocketOption rocketOption, OrbitDefinition orbitDefinition, MissionGoal missionGoal)
         {
             var summary = new ResourceSummary();
             if (components == null || rocketOption == null || orbitDefinition == null || missionGoal == null)
