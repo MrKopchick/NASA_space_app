@@ -323,19 +323,32 @@ namespace AstraLink.UI.Flight
 
         private void Start()
         {
-            if (_currentOrbit == null || _simulator == null)
+            if (_simulator == null)
             {
-                IMissionSimulator sim = _simulator;
-                if (sim == null)
-                {
-                    sim = (GameManager.Instance != null && GameManager.Instance.Simulator != null)
-                        ? GameManager.Instance.Simulator
-                        : new MockMissionSimulator();
-                }
-
-                OrbitDefinition defaultOrbit = _currentOrbit ?? CreateDefaultLeoOrbit();
-                Initialize(sim, defaultOrbit, _currentRocket, _currentGoal, _currentComponents, _currentRules);
+                _simulator = (GameManager.Instance != null && GameManager.Instance.Simulator != null)
+                    ? GameManager.Instance.Simulator
+                    : new MockMissionSimulator();
             }
+
+            if (_activeReport == null && _currentOrbit == null)
+            {
+                OrbitDefinition defaultOrbit = _currentOrbit ?? CreateDefaultLeoOrbit();
+                Initialize(_simulator, defaultOrbit, _currentRocket, _currentGoal, _currentComponents, _currentRules);
+            }
+        }
+
+        public void SetSimulationContext(
+            IMissionSimulator simulator,
+            RocketOption rocket,
+            MissionGoal goal,
+            List<SatelliteComponent> components,
+            List<AutopilotRule> rules)
+        {
+            if (simulator != null) _simulator = simulator;
+            if (rocket != null) _currentRocket = rocket;
+            if (goal != null) _currentGoal = goal;
+            if (components != null) _currentComponents = components;
+            if (rules != null) _currentRules = rules;
         }
 
         /// <summary>
@@ -708,7 +721,8 @@ namespace AstraLink.UI.Flight
                 else
                 {
                     // Smoothly interpolate the final tick of the orbit (0.95 -> 1.00)
-                    float stepSize = 1.0f / Mathf.Max(1, MockMissionSimulator.TicksPerOrbit);
+                    const int ticksPerOrbit = 20;
+                    float stepSize = 1.0f / ticksPerOrbit;
                     endProgress = Mathf.Min(1.0f, startProgress + stepSize);
                 }
 

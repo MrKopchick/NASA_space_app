@@ -153,6 +153,12 @@ namespace AstraLink.UI.Debrief
         private MissionReport _currentReport;
         private MissionReport _lastRewardedReport;
         private bool _isLiveFlightViewActive = true;
+        private bool _hasExplicitRules;
+        private bool _hasExplicitEvents;
+        private bool _allowPayoutForCurrentReport = true;
+        private GameObject _sampleOrbitLeoBtn;
+        private GameObject _sampleOrbitLunarBtn;
+        private GameObject _sampleOrbitMarsBtn;
 
         /// <summary>
         /// Gets the currently displayed <see cref="MissionReport"/>.
@@ -200,6 +206,21 @@ namespace AstraLink.UI.Debrief
         /// </summary>
         public event Action<MissionReport> OnReportDisplayed;
 
+        /// <summary>
+        /// Fired when live orbital radar playback finishes all ticks.
+        /// </summary>
+        public event Action<MissionReport> OnFlightPlaybackCompleted;
+
+        /// <summary>
+        /// Fired when the user clicks the [S2-04] Live Flight &amp; Radar tab button.
+        /// </summary>
+        public event Action OnRequestLiveFlightView;
+
+        /// <summary>
+        /// Fired when the user clicks the [S2-05] Post-Flight Debrief tab button.
+        /// </summary>
+        public event Action OnRequestDebriefSummaryView;
+
         private void Awake()
         {
             Instance = this;
@@ -211,10 +232,25 @@ namespace AstraLink.UI.Debrief
         {
             if (_currentReport == null)
             {
+                if (GameManager.Instance != null && !(GameManager.Instance.Simulator is MockMissionSimulator))
+                {
+                    GameManager.Instance.PrepareFlightFromWorkshopIfNeeded();
+                    return;
+                }
+
                 ResolveContextFromScene();
                 SetViewMode(startInLiveFlightMode);
                 StartSampleLiveFlightScenario(0);
             }
+        }
+
+        public void ConfigureServices(IGameDataRepository repository, IMissionSimulator simulator, AgencyState agencyState, bool showVerificationControls = false)
+        {
+            _repository = repository ?? _repository;
+            _simulator = simulator ?? _simulator;
+            if (agencyState != null) _agencyState = agencyState;
+            showVerificationBar = showVerificationControls;
+            ApplyVerificationVisibility();
         }
 
         private void OnEnable()
@@ -248,8 +284,17 @@ namespace AstraLink.UI.Debrief
             _simulator = simulator ?? _simulator;
             if (components != null && components.Count > 0) _activeComponents = new List<SatelliteComponent>(components);
             if (rocket != null) _activeRocket = rocket;
-            if (rules != null && rules.Count > 0) _activeRules = new List<AutopilotRule>(rules);
-            if (events != null) _activeEvents = new List<SpaceEventDefinition>(events);
+            if (rules != null)
+            {
+                _activeRules = new List<AutopilotRule>(rules);
+                _hasExplicitRules = true;
+            }
+            if (events != null)
+            {
+                _activeEvents = new List<SpaceEventDefinition>(events);
+                _hasExplicitEvents = true;
+            }
+            _activeResources = resources;
 
             if (agencyState != null)
             {
@@ -262,6 +307,7 @@ namespace AstraLink.UI.Debrief
                     : new AgencyState();
             }
 
+            SetViewMode(startInLiveFlightMode);
             ShowReport(report, goal, resources, orbit, true);
         }
 
@@ -279,12 +325,13 @@ namespace AstraLink.UI.Debrief
             ResolveContextFromScene(goal, resources, orbit);
 
             _currentReport = report ?? BuildFullFlightSampleReport(_activeOrbit, _activeGoal, _activeRules, activeManualCommands, _activeEvents);
+            _allowPayoutForCurrentReport = applyContractPayoutOnSuccess;
 
             if (_currentReport.Status == MissionStatus.Failed)
             {
                 EnsureFailureDebriefPopulated(_currentReport);
             }
-            else if (_currentReport.Status == MissionStatus.Success && applyContractPayoutOnSuccess)
+            else if (_currentReport.Status == MissionStatus.Success && _allowPayoutForCurrentReport && !_isLiveFlightViewActive)
             {
                 ApplySuccessPayoutIfNeeded(_currentReport);
             }
@@ -307,6 +354,17 @@ namespace AstraLink.UI.Debrief
         /// </summary>
         public void ShowLiveFlightView()
         {
+            if (OnRequestLiveFlightView != null)
+            {
+                OnRequestLiveFlightView.Invoke();
+                return;
+            }
+
+            ShowLiveFlightViewInternal();
+        }
+
+        public void ShowLiveFlightViewInternal()
+        {
             SetViewMode(true);
             if (orbitRadarUI != null && !orbitRadarUI.IsPlaying && _currentReport != null && _currentReport.Ticks != null && _currentReport.Ticks.Count > 1)
             {
@@ -320,7 +378,26 @@ namespace AstraLink.UI.Debrief
         /// </summary>
         public void ShowDebriefSummaryView()
         {
+            if (OnRequestDebriefSummaryView != null)
+            {
+                OnRequestDebriefSummaryView.Invoke();
+                return;
+            }
+
+            ShowDebriefSummaryViewInternal();
+        }
+
+        public void ShowDebriefSummaryViewInternal()
+        {
             SetViewMode(false);
+            if (_currentReport != null && _currentReport.Status == MissionStatus.Failed)
+            {
+                EnsureFailureDebriefPopulated(_currentReport);
+            }
+            else if (_currentReport != null && _currentReport.Status == MissionStatus.Success && _allowPayoutForCurrentReport)
+            {
+                ApplySuccessPayoutIfNeeded(_currentReport);
+            }
             RefreshUI();
         }
 
@@ -500,7 +577,19 @@ namespace AstraLink.UI.Debrief
                 EnsureFailureDebriefPopulated(_currentReport);
             }
 
-            RefreshTelemetryMetricsColumn(_currentReport);
+            RefreshUI();
+        }
+
+        private void HandleRadarTestFlightCompleted(MissionReport completedReport)
+        {
+            if (OnFlightPlaybackCompleted != null)
+            {
+                OnFlightPlaybackCompleted.Invoke(_currentReport ?? completedReport);
+            }
+            else
+            {
+                ShowDebriefSummaryViewInternal();
+            }
         }
 
         private void SyncFlightComponentsWithReport(MissionReport report, bool autoPlay, bool resetTickIndex)
@@ -526,10 +615,13 @@ namespace AstraLink.UI.Debrief
 
             if (orbitRadarUI != null)
             {
+                orbitRadarUI.SetSimulationContext(_simulator, _activeRocket, _activeGoal, _activeComponents, _activeRules);
                 orbitRadarUI.OnTickUpdated -= HandleRadarTickUpdated;
                 orbitRadarUI.OnTickUpdated += HandleRadarTickUpdated;
                 orbitRadarUI.OnSpeedChanged -= HandleRadarSpeedChanged;
                 orbitRadarUI.OnSpeedChanged += HandleRadarSpeedChanged;
+                orbitRadarUI.OnTestFlightCompleted -= HandleRadarTestFlightCompleted;
+                orbitRadarUI.OnTestFlightCompleted += HandleRadarTestFlightCompleted;
 
                 orbitRadarUI.LoadMissionReport(report, _activeOrbit, autoPlay: autoPlay, resetTickIndex: resetTickIndex);
                 UpdatePlaybackSpeedButtonHighlights(orbitRadarUI.SpeedMultiplier);
@@ -688,12 +780,12 @@ namespace AstraLink.UI.Debrief
                 }
             }
 
-            if (_activeRules == null || _activeRules.Count == 0)
+            if (!_hasExplicitRules && (_activeRules == null || _activeRules.Count == 0))
             {
                 _activeRules = TelemetryHUD.BuildDefaultSampleRules();
             }
 
-            if (_activeEvents == null || _activeEvents.Count == 0)
+            if (!_hasExplicitEvents && (_activeEvents == null || _activeEvents.Count == 0))
             {
                 _activeEvents = BuildDefaultEventsForMission(_activeGoal);
             }
@@ -704,20 +796,28 @@ namespace AstraLink.UI.Debrief
             }
             else if (_activeResources == null)
             {
-                _activeResources = new ResourceSummary
+                if (_simulator != null && _activeComponents != null && _activeComponents.Count > 0)
                 {
-                    TotalMassKg = 15.0f,
-                    TotalCostThousands = 90.0f,
-                    MaxSolarWatts = 45.0f,
-                    RtgWatts = 0.0f,
-                    MaxBatteryWh = 45.0f,
-                    MaxSsdGb = 16.0f,
-                    DownlinkGbPerTick = 2.0f,
-                    OverallReliability = 0.92f,
-                    TotalShielding = 15.0f,
-                    IsBudgetValid = true,
-                    IsMassValid = true
-                };
+                    _activeResources = _simulator.CalculateResources(_activeComponents, _activeRocket, _activeOrbit, _activeGoal);
+                }
+
+                if (_activeResources == null)
+                {
+                    _activeResources = new ResourceSummary
+                    {
+                        TotalMassKg = 15.0f,
+                        TotalCostThousands = 90.0f,
+                        MaxSolarWatts = 45.0f,
+                        RtgWatts = 0.0f,
+                        MaxBatteryWh = 45.0f,
+                        MaxSsdGb = 16.0f,
+                        DownlinkGbPerTick = 2.0f,
+                        OverallReliability = 0.92f,
+                        TotalShielding = 15.0f,
+                        IsBudgetValid = true,
+                        IsMassValid = true
+                    };
+                }
             }
         }
 
@@ -819,7 +919,7 @@ namespace AstraLink.UI.Debrief
             bool isSuccess = _currentReport.Status == MissionStatus.Success;
             if (successStateRoot != null) successStateRoot.SetActive(isSuccess);
             if (failureStateRoot != null) failureStateRoot.SetActive(!isSuccess);
-            if (verificationBarRoot != null) verificationBarRoot.SetActive(showVerificationBar);
+            ApplyVerificationVisibility();
 
             if (isSuccess)
             {
@@ -1267,7 +1367,7 @@ namespace AstraLink.UI.Debrief
             OrbitDefinition activeOrbit = orbit ?? OrbitRadarUI.CreateDefaultLeoOrbit();
             MissionGoal activeGoal = goal ?? BuildDefaultMissionGoal();
 
-            // Always invoke IMissionSimulator.SimulateFullMission first when available
+            // Always invoke IMissionSimulator.SimulateFullMission directly when real simulator is available
             if (_simulator != null && !(_simulator is MockMissionSimulator))
             {
                 MissionReport simReport = _simulator.SimulateFullMission(
@@ -1279,9 +1379,8 @@ namespace AstraLink.UI.Debrief
                     manualCommands,
                     events);
 
-                if (simReport != null && simReport.Ticks != null && simReport.Ticks.Count > 0)
+                if (simReport != null)
                 {
-                    ManualOverrideUI.ApplyManualOverridesToReportSnapshots(simReport, manualCommands);
                     return simReport;
                 }
             }
@@ -1771,8 +1870,18 @@ namespace AstraLink.UI.Debrief
             }
         }
 
+        private void ApplyVerificationVisibility()
+        {
+            if (verificationBarRoot != null) verificationBarRoot.SetActive(showVerificationBar);
+            if (_sampleOrbitLeoBtn != null) _sampleOrbitLeoBtn.SetActive(showVerificationBar);
+            if (_sampleOrbitLunarBtn != null) _sampleOrbitLunarBtn.SetActive(showVerificationBar);
+            if (_sampleOrbitMarsBtn != null) _sampleOrbitMarsBtn.SetActive(showVerificationBar);
+        }
+
         private void Update()
         {
+            if (!showVerificationBar) return;
+
             if (Input.GetKeyDown(KeyCode.F5)) TriggerSampleSuccessScenario(true);
             else if (Input.GetKeyDown(KeyCode.F6)) TriggerSampleSuccessScenario(false);
             else if (Input.GetKeyDown(KeyCode.F7)) TriggerSampleFailureScenario(FailureScenarioType.BatteryDepleted);
@@ -1989,7 +2098,7 @@ namespace AstraLink.UI.Debrief
             speedLayout.childForceExpandWidth = false;
             speedLayout.childForceExpandHeight = true;
 
-            CreateActionButton(
+            _sampleOrbitLeoBtn = CreateActionButton(
                 speedBar.transform,
                 "Btn_Orbit_LEO",
                 "LEO (1s Delay)",
@@ -1997,9 +2106,9 @@ namespace AstraLink.UI.Debrief
                 122f,
                 38f,
                 font,
-                () => StartSampleLiveFlightScenario(0));
+                () => StartSampleLiveFlightScenario(0)).gameObject;
 
-            CreateActionButton(
+            _sampleOrbitLunarBtn = CreateActionButton(
                 speedBar.transform,
                 "Btn_Orbit_Lunar",
                 "MOON + OVERHEAT (3s)",
@@ -2007,9 +2116,9 @@ namespace AstraLink.UI.Debrief
                 168f,
                 38f,
                 font,
-                () => StartSampleLiveFlightScenario(1));
+                () => StartSampleLiveFlightScenario(1)).gameObject;
 
-            CreateActionButton(
+            _sampleOrbitMarsBtn = CreateActionButton(
                 speedBar.transform,
                 "Btn_Orbit_Mars",
                 "MARS + CME STORM (10s)",
@@ -2017,7 +2126,9 @@ namespace AstraLink.UI.Debrief
                 178f,
                 38f,
                 font,
-                () => StartSampleLiveFlightScenario(2));
+                () => StartSampleLiveFlightScenario(2)).gameObject;
+
+            ApplyVerificationVisibility();
 
             playbackPlayPauseButton = CreateActionButton(
                 speedBar.transform,

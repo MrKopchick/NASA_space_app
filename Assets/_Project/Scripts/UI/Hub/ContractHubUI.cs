@@ -42,10 +42,11 @@ namespace AstraLink.UI.Hub
         {
             if (_missions.Count == 0)
             {
+                IGameDataRepository repo = _repository ?? (GameManager.Instance != null ? GameManager.Instance.Repository : null);
                 AgencyState state = GameManager.Instance != null
                     ? GameManager.Instance.CurrentAgencyState
                     : new AgencyState();
-                Initialize(_repository, state);
+                Initialize(repo, state);
             }
         }
 
@@ -81,6 +82,32 @@ namespace AstraLink.UI.Hub
             RefreshCards();
         }
 
+        private Transform GetHubRootTransform()
+        {
+            if (string.Equals(gameObject.name, "HubPanel", StringComparison.OrdinalIgnoreCase))
+            {
+                return transform;
+            }
+            Transform foundChild = transform.Find("HubPanel");
+            if (foundChild != null)
+            {
+                return foundChild;
+            }
+            return transform;
+        }
+
+        private static void EnsurePanelRectUnderNavBar(Transform panelTransform)
+        {
+            RectTransform rt = panelTransform != null ? panelTransform.GetComponent<RectTransform>() : null;
+            if (rt == null) return;
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = new Vector2(0f, -70f);
+            rt.localScale = Vector3.one;
+        }
+
         /// <summary>
         /// Generates the clean contract selection UI in the Editor.
         /// </summary>
@@ -96,10 +123,21 @@ namespace AstraLink.UI.Hub
                 _agencyState = new AgencyState();
             }
 
-            Transform existing = transform.Find("HubContentRoot");
-            if (existing != null)
+            Transform hubRoot = GetHubRootTransform();
+            EnsurePanelRectUnderNavBar(hubRoot);
+
+            Transform existingOnSelf = transform.Find("HubContentRoot");
+            if (existingOnSelf != null)
             {
-                DestroyImmediate(existing.gameObject);
+                DestroyImmediate(existingOnSelf.gameObject);
+            }
+            if (hubRoot != transform)
+            {
+                Transform existingOnHub = hubRoot.Find("HubContentRoot");
+                if (existingOnHub != null)
+                {
+                    DestroyImmediate(existingOnHub.gameObject);
+                }
             }
 
             EnsureHubUIHierarchy();
@@ -197,21 +235,17 @@ namespace AstraLink.UI.Hub
 
             if (backgroundImage != null)
             {
-                if (targetSprite != null)
-                {
-                    backgroundImage.sprite = targetSprite;
-                    backgroundImage.color = Color.white;
-                }
-                else
-                {
-                    backgroundImage.color = fallbackTint;
-                }
+                backgroundImage.sprite = targetSprite;
+                backgroundImage.color = targetSprite != null ? Color.white : fallbackTint;
             }
         }
 
         private void EnsureHubUIHierarchy()
         {
-            Transform placeholder = transform.Find("PlaceholderTitle");
+            Transform hubRoot = GetHubRootTransform();
+            EnsurePanelRectUnderNavBar(hubRoot);
+
+            Transform placeholder = hubRoot.Find("PlaceholderTitle");
             if (placeholder != null)
             {
                 placeholder.gameObject.SetActive(false);
@@ -219,20 +253,21 @@ namespace AstraLink.UI.Hub
 
             if (backgroundImage == null)
             {
-                backgroundImage = GetComponent<Image>();
-                if (backgroundImage == null) backgroundImage = gameObject.AddComponent<Image>();
+                backgroundImage = hubRoot.GetComponent<Image>();
+                if (backgroundImage == null) backgroundImage = hubRoot.gameObject.AddComponent<Image>();
             }
 
-            Transform existingRoot = transform.Find("HubContentRoot");
+            Transform existingRoot = hubRoot.Find("HubContentRoot");
             if (existingRoot != null)
             {
+                StretchFull(existingRoot.GetComponent<RectTransform>());
                 BindExistingHierarchy(existingRoot);
                 return;
             }
 
             Font defaultFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
-            GameObject rootObj = CreateUIObject("HubContentRoot", transform);
+            GameObject rootObj = CreateUIObject("HubContentRoot", hubRoot);
             RectTransform rootRt = rootObj.GetComponent<RectTransform>();
             StretchFull(rootRt);
 

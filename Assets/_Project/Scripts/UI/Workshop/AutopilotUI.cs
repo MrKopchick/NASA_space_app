@@ -266,7 +266,7 @@ namespace AstraLink.UI.Workshop
                     Enabled = true,
                     Metric = SensorMetric.SolarWatts,
                     Operator = ComparisonOp.LessThan,
-                    Threshold = 5f,
+                    Threshold = 0f,
                     ThenAction = AutopilotAction.ScienceOff,
                     ElseAction = AutopilotAction.ScienceOn
                 };
@@ -279,7 +279,7 @@ namespace AstraLink.UI.Workshop
                     Enabled = false,
                     Metric = SensorMetric.RadiationLevel,
                     Operator = ComparisonOp.GreaterThan,
-                    Threshold = 50f,
+                    Threshold = 0f,
                     ThenAction = AutopilotAction.SafeModeOn,
                     ElseAction = AutopilotAction.SafeModeOff
                 };
@@ -292,7 +292,7 @@ namespace AstraLink.UI.Workshop
                     Enabled = false,
                     Metric = SensorMetric.SsdUsedPercent,
                     Operator = ComparisonOp.GreaterThan,
-                    Threshold = 85f,
+                    Threshold = 0f,
                     ThenAction = AutopilotAction.CommsOn,
                     ElseAction = AutopilotAction.None
                 };
@@ -303,7 +303,7 @@ namespace AstraLink.UI.Workshop
                 Enabled = false,
                 Metric = SensorMetric.BatteryPercent,
                 Operator = ComparisonOp.LessThan,
-                Threshold = 20f,
+                Threshold = 0f,
                 ThenAction = AutopilotAction.ScienceOff,
                 ElseAction = AutopilotAction.None
             };
@@ -323,11 +323,22 @@ namespace AstraLink.UI.Workshop
 
             if (w.ThresholdInput != null)
             {
-                float parsed;
-                if (float.TryParse(w.ThresholdInput.text, NumberStyles.Float, CultureInfo.InvariantCulture, out parsed) ||
-                    float.TryParse(w.ThresholdInput.text, out parsed))
+                bool isPercentage = IsPercentageMetric(r.Metric);
+                string raw = w.ThresholdInput.text ?? string.Empty;
+                if (raw.Length > 0)
                 {
-                    r.Threshold = parsed;
+                    float normalizedValue;
+                    bool shouldRewriteText = TryNormalizeThresholdInput(raw, isPercentage, out normalizedValue);
+                    r.Threshold = normalizedValue;
+
+                    if (shouldRewriteText)
+                    {
+                        _suppressCallbacks = true;
+                        string formatted = normalizedValue.ToString("0.#", CultureInfo.InvariantCulture);
+                        w.ThresholdInput.SetTextWithoutNotify(formatted);
+                        w.ThresholdInput.caretPosition = formatted.Length;
+                        _suppressCallbacks = false;
+                    }
                 }
             }
 
@@ -624,8 +635,10 @@ namespace AstraLink.UI.Workshop
                     EnabledToggle = FindChild<Toggle>(row, "ControlsRow/Toggle_Enabled"),
                     MetricDropdown = FindChild<TMP_Dropdown>(row, "ControlsRow/ObjectBlock/Dropdown_Metric"),
                     InstalledObjectSubText = FindChild<Text>(row, "ControlsRow/ObjectBlock/InstalledPartSubText"),
-                    OperatorDropdown = FindChild<TMP_Dropdown>(row, "ControlsRow/ConditionBlock/Dropdown_Operator"),
-                    ThresholdInput = FindChild<InputField>(row, "ControlsRow/ConditionBlock/Input_Threshold"),
+                    OperatorDropdown = FindChild<TMP_Dropdown>(row, "ControlsRow/ConditionBlock/CondInnerRow/Dropdown_Operator")
+                                       ?? FindChild<TMP_Dropdown>(row, "ControlsRow/ConditionBlock/Dropdown_Operator"),
+                    ThresholdInput = FindChild<InputField>(row, "ControlsRow/ConditionBlock/CondInnerRow/Input_Threshold")
+                                     ?? FindChild<InputField>(row, "ControlsRow/ConditionBlock/Input_Threshold"),
                     ThenDropdown = FindChild<TMP_Dropdown>(row, "ControlsRow/ThenBlock/Dropdown_Then"),
                     ElseDropdown = FindChild<TMP_Dropdown>(row, "ControlsRow/ElseBlock/Dropdown_Else"),
                     LockedOverlayText = FindChild<Text>(row, "LockedOverlay/LockedText")
@@ -698,7 +711,7 @@ namespace AstraLink.UI.Workshop
                 OperatorOptions, tmpFont, 165f, 38f);
 
             InputField thresholdInput = CreateThresholdInputField(condInnerRow.transform, "Input_Threshold",
-                "5", legacyFont, 88f, 38f);
+                "0", legacyFont, 88f, 38f);
 
             CreateText("CondHint", condBlock.transform, legacyFont,
                 "Evaluated every orbital tick", 11, FontStyle.Normal,
@@ -807,7 +820,10 @@ namespace AstraLink.UI.Workshop
             }
             if (w.ThresholdInput != null)
             {
+                w.ThresholdInput.contentType = InputField.ContentType.Standard;
+                w.ThresholdInput.onValidateInput = null;
                 w.ThresholdInput.onEndEdit.RemoveAllListeners();
+                w.ThresholdInput.onEndEdit.AddListener(_ => OnThresholdEndEdit(captured));
                 w.ThresholdInput.onValueChanged.RemoveAllListeners();
                 w.ThresholdInput.onValueChanged.AddListener(_ => OnRowChanged(captured));
             }
@@ -824,6 +840,89 @@ namespace AstraLink.UI.Workshop
         }
 
         // --- UI Factory Helpers (with full TMP_Dropdown template builder) ---
+
+        private static bool IsPercentageMetric(SensorMetric metric)
+        {
+            return metric == SensorMetric.BatteryPercent || metric == SensorMetric.SsdUsedPercent;
+        }
+
+        private static bool TryNormalizeThresholdInput(string raw, bool isPercentageMetric, out float result)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                result = 0f;
+                return true;
+            }
+
+            int separatorCount = 0;
+            for (int i = 0; i < raw.Length; i++)
+            {
+                char ch = raw[i];
+                if (ch >= '0' && ch <= '9')
+                {
+                    continue;
+                }
+
+                if (ch == '.' || ch == ',')
+                {
+                    separatorCount++;
+                    if (separatorCount <= 1)
+                    {
+                        continue;
+                    }
+                }
+
+                // Negative sign or any unsuitable character resets the value to 0
+                result = 0f;
+                return true;
+            }
+
+            string normalized = raw.Replace(',', '.');
+            if (normalized == ".")
+            {
+                result = 0f;
+                return false;
+            }
+
+            float parsed;
+            if (!float.TryParse(normalized, NumberStyles.Float, CultureInfo.InvariantCulture, out parsed) ||
+                float.IsNaN(parsed) ||
+                float.IsInfinity(parsed) ||
+                parsed < 0f)
+            {
+                result = 0f;
+                return true;
+            }
+
+            if (isPercentageMetric && parsed > 100f)
+            {
+                result = 99f;
+                return true;
+            }
+
+            result = parsed;
+            return false;
+        }
+
+        private void OnThresholdEndEdit(int index)
+        {
+            if (_suppressCallbacks || index < 0 || index >= _rowWidgets.Count || index >= _rules.Count) return;
+
+            RuleRowWidgets w = _rowWidgets[index];
+            AutopilotRule r = _rules[index];
+            if (w == null || r == null || w.ThresholdInput == null) return;
+
+            float normalizedValue;
+            TryNormalizeThresholdInput(w.ThresholdInput.text ?? string.Empty, IsPercentageMetric(r.Metric), out normalizedValue);
+            r.Threshold = normalizedValue;
+
+            _suppressCallbacks = true;
+            string formatted = r.Threshold.ToString("0.#", CultureInfo.InvariantCulture);
+            w.ThresholdInput.SetTextWithoutNotify(formatted);
+            _suppressCallbacks = false;
+
+            NotifyRulesChanged();
+        }
 
         private static TMP_FontAsset GetOrCreateTmpFont(Font legacyFont)
         {
@@ -921,7 +1020,7 @@ namespace AstraLink.UI.Workshop
             InputField input = inputObj.AddComponent<InputField>();
             input.targetGraphic = bg;
             input.textComponent = txt;
-            input.contentType = InputField.ContentType.DecimalNumber;
+            input.contentType = InputField.ContentType.Standard;
             input.text = defaultVal;
 
             return input;

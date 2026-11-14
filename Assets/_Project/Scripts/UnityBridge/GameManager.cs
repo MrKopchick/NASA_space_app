@@ -1,4 +1,9 @@
 using System;
+using System.Collections.Generic;
+using AstraLink.UI.Debrief;
+using AstraLink.UI.Hub;
+using AstraLink.UI.Workshop;
+using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -20,9 +25,9 @@ namespace AstraLink.Core
     }
 
     /// <summary>
-    /// Central coordinator in MainScene (Task S1-01).
+    /// Central coordinator in MainScene (Tasks S1-01 / S2-06).
     /// Manages screen transitions (Hub, Workshop, Flight, Debrief), AgencyState persistence,
-    /// and holds the active IMissionSimulator instance.
+    /// JsonDataRepository loading, IAstraAuditor diagnostics, and the real OrbitSimulator.
     /// </summary>
     public class GameManager : MonoBehaviour
     {
@@ -39,14 +44,33 @@ namespace AstraLink.Core
         [SerializeField] private GameObject flightPanel;
         [SerializeField] private GameObject debriefPanel;
 
+        [Header("Core Bridge & Screen Controllers (S2-06)")]
+        [SerializeField] private JsonDataLoader jsonDataLoader;
+        [SerializeField] private ContractHubUI contractHubUI;
+        [SerializeField] private BuilderPanelUI builderPanelUI;
+        [SerializeField] private MissionReportUI missionReportUI;
+
         [Header("Initial Screen")]
         [SerializeField] private GameScreen initialScreen = GameScreen.Hub;
 
+        private bool _controllersInitialized;
+        private bool _isLaunchingOrPreparingFlight;
+        private GameObject _topNavBar;
+
         public GameScreen CurrentScreen { get; private set; }
         public AgencyState CurrentAgencyState { get; private set; }
+        public IGameDataRepository Repository { get; private set; }
         public IMissionSimulator Simulator { get; private set; }
+        public IAstraAuditor Auditor { get; private set; }
+        public MissionGoal ActiveMission { get; private set; }
+        public MissionReport LastMissionReport { get; private set; }
+
+        public ContractHubUI HubController => contractHubUI;
+        public BuilderPanelUI WorkshopController => builderPanelUI;
+        public MissionReportUI ReportController => missionReportUI;
 
         public event Action<GameScreen> OnScreenChanged;
+        public event Action<MissionGoal> OnActiveMissionChanged;
 
         private void Awake()
         {
@@ -58,24 +82,86 @@ namespace AstraLink.Core
 
             Instance = this;
 
-            // Sprint 1: Initialize with MockMissionSimulator; swap to real simulator in Sprint 2.
-            Simulator = new MockMissionSimulator();
+            InitializeCoreServices();
             LoadOrCreateAgencyState();
             EnsureSceneUIStructure();
         }
 
         private void Start()
         {
+            InitializeControllersAndEvents();
             ShowScreen(initialScreen);
+        }
+
+        private void OnApplicationPause(bool pauseStatus)
+        {
+            if (pauseStatus)
+            {
+                SaveAgencyState();
+            }
+        }
+
+        private void OnApplicationQuit()
+        {
+            SaveAgencyState();
         }
 
         private void Update()
         {
+            if (IsTextInputFocused())
+            {
+                return;
+            }
+
             // Quick keyboard shortcuts (F1-F4 or 1-4) for fast testing in the Editor
             if (Input.GetKeyDown(KeyCode.F1) || Input.GetKeyDown(KeyCode.Alpha1)) ShowHub();
             else if (Input.GetKeyDown(KeyCode.F2) || Input.GetKeyDown(KeyCode.Alpha2)) ShowWorkshop();
             else if (Input.GetKeyDown(KeyCode.F3) || Input.GetKeyDown(KeyCode.Alpha3)) ShowFlight();
             else if (Input.GetKeyDown(KeyCode.F4) || Input.GetKeyDown(KeyCode.Alpha4)) ShowDebrief();
+        }
+
+        private static bool IsTextInputFocused()
+        {
+            if (EventSystem.current == null)
+            {
+                return false;
+            }
+
+            GameObject selected = EventSystem.current.currentSelectedGameObject;
+            if (selected == null)
+            {
+                return false;
+            }
+
+            InputField legacyInput = selected.GetComponent<InputField>();
+            if (legacyInput != null && legacyInput.isFocused)
+            {
+                return true;
+            }
+
+            TMP_InputField tmpInput = selected.GetComponent<TMP_InputField>();
+            return tmpInput != null && tmpInput.isFocused;
+        }
+
+        private void InitializeCoreServices()
+        {
+            if (jsonDataLoader == null)
+            {
+                jsonDataLoader = GetComponent<JsonDataLoader>() ?? FindObjectOfType<JsonDataLoader>(true);
+            }
+
+            Repository = jsonDataLoader != null
+                ? jsonDataLoader.GetOrLoadRepository()
+                : JsonDataLoader.LoadRepository();
+
+            if (Repository == null)
+            {
+                Debug.LogError("[GameManager] JsonDataRepository could not be loaded from Resources/Data/*.json.");
+            }
+
+            List<SpaceEventDefinition> events = Repository != null ? Repository.GetEvents() : null;
+            Simulator = new OrbitSimulator(events);
+            Auditor = new AstraAuditor(new ResourceCalculator(), Repository);
         }
 
         public void SetMissionSimulator(IMissionSimulator simulator)
@@ -91,12 +177,23 @@ namespace AstraLink.Core
 
         public void ShowScreen(GameScreen screen)
         {
+            InitializeControllersAndEvents();
+
             CurrentScreen = screen;
+
+            if (screen == GameScreen.Flight || screen == GameScreen.Debrief)
+            {
+                EnsureReportContainerForScreen(screen);
+            }
 
             if (hubPanel != null) hubPanel.SetActive(screen == GameScreen.Hub);
             if (workshopPanel != null) workshopPanel.SetActive(screen == GameScreen.Workshop);
             if (flightPanel != null) flightPanel.SetActive(screen == GameScreen.Flight);
             if (debriefPanel != null) debriefPanel.SetActive(screen == GameScreen.Debrief);
+
+            RefreshControllerForScreen(screen);
+            UpdateTopNavHighlight(screen);
+            SaveAgencyState();
 
             Debug.Log("[GameManager] Switched active screen to: " + screen);
             OnScreenChanged?.Invoke(screen);
@@ -126,17 +223,168 @@ namespace AstraLink.Core
 
         public void ShowFlight()
         {
+            InitializeControllersAndEvents();
+
+            if (LastMissionReport == null)
+            {
+                TryLaunchActiveMission(transitionToFlight: true, stayInWorkshopOnInvalid: true);
+                return;
+            }
+
             ShowScreen(GameScreen.Flight);
         }
 
         public void ShowDebrief()
         {
+            InitializeControllersAndEvents();
+
+            if (LastMissionReport == null)
+            {
+                bool simulated = TryLaunchActiveMission(transitionToFlight: false, stayInWorkshopOnInvalid: true);
+                if (!simulated)
+                {
+                    return;
+                }
+            }
+
             ShowScreen(GameScreen.Debrief);
+        }
+
+        /// <summary>
+        /// Validates the active Workshop build via IMissionSimulator, simulates the full mission,
+        /// and transitions to Live Flight playback.
+        /// </summary>
+        public void LaunchActiveMission()
+        {
+            TryLaunchActiveMission(transitionToFlight: true, stayInWorkshopOnInvalid: true);
+        }
+
+        public bool TryLaunchActiveMission(bool transitionToFlight = true, bool stayInWorkshopOnInvalid = true)
+        {
+            if (_isLaunchingOrPreparingFlight)
+            {
+                return false;
+            }
+
+            _isLaunchingOrPreparingFlight = true;
+            try
+            {
+                InitializeControllersAndEvents();
+
+                if (builderPanelUI == null || Simulator == null)
+                {
+                    Debug.LogError("[GameManager] Cannot launch mission because BuilderPanelUI or Simulator is missing.");
+                    return false;
+                }
+
+                MissionGoal goal = builderPanelUI.GetActiveMissionGoal() ?? ActiveMission;
+                if (goal == null && Repository != null)
+                {
+                    List<MissionGoal> missions = Repository.GetMissions();
+                    if (missions != null && missions.Count > 0)
+                    {
+                        goal = missions[0];
+                    }
+                }
+
+                if (goal == null)
+                {
+                    builderPanelUI.ShowLaunchValidationError("Select a contract before launching.");
+                    if (stayInWorkshopOnInvalid && CurrentScreen != GameScreen.Workshop)
+                    {
+                        ShowScreen(GameScreen.Workshop);
+                    }
+                    return false;
+                }
+
+                OrbitDefinition orbit = builderPanelUI.GetActiveOrbit(goal);
+                List<SatelliteComponent> components = builderPanelUI.GetSelectedComponentsList();
+                RocketOption rocket = builderPanelUI.GetSelectedRocket();
+                List<AutopilotRule> rules = builderPanelUI.GetActiveAutopilotRules() ?? new List<AutopilotRule>();
+
+                if (!Simulator.ValidateLaunch(components, rocket, orbit, goal, out string errorMsg))
+                {
+                    string message = string.IsNullOrWhiteSpace(errorMsg) ? "Invalid satellite or rocket configuration." : errorMsg;
+                    builderPanelUI.ShowLaunchValidationError(message);
+                    Debug.LogWarning("[GameManager] Launch blocked: " + message);
+                    if (stayInWorkshopOnInvalid && CurrentScreen != GameScreen.Workshop)
+                    {
+                        ShowScreen(GameScreen.Workshop);
+                    }
+                    return false;
+                }
+
+                builderPanelUI.ClearLaunchValidationError();
+                SetActiveMissionInternal(goal, syncWorkshop: false);
+
+                ResourceSummary resources = Simulator.CalculateResources(components, rocket, orbit, goal);
+                List<SpaceEventDefinition> events = ResolveEventsForGoal(goal);
+                MissionReport report = Simulator.SimulateFullMission(components, rocket, orbit, goal, rules, null, events);
+
+                if (report == null)
+                {
+                    builderPanelUI.ShowLaunchValidationError("Simulation failed to generate a mission report.");
+                    return false;
+                }
+
+                LastMissionReport = report;
+                SaveAgencyState();
+
+                if (missionReportUI != null)
+                {
+                    missionReportUI.ConfigureServices(Repository, Simulator, CurrentAgencyState, showVerificationControls: false);
+                    missionReportUI.Initialize(
+                        report,
+                        goal,
+                        CurrentAgencyState,
+                        resources,
+                        orbit,
+                        Repository,
+                        Simulator,
+                        components,
+                        rocket,
+                        rules,
+                        events);
+                }
+
+                if (transitionToFlight)
+                {
+                    ShowScreen(GameScreen.Flight);
+                }
+
+                return true;
+            }
+            finally
+            {
+                _isLaunchingOrPreparingFlight = false;
+            }
+        }
+
+        public bool PrepareFlightFromWorkshopIfNeeded()
+        {
+            if (LastMissionReport != null && missionReportUI != null)
+            {
+                return true;
+            }
+
+            if (_isLaunchingOrPreparingFlight)
+            {
+                return false;
+            }
+
+            bool targetDebrief = CurrentScreen == GameScreen.Debrief;
+            bool ok = TryLaunchActiveMission(transitionToFlight: !targetDebrief, stayInWorkshopOnInvalid: true);
+            if (ok && targetDebrief)
+            {
+                ShowScreen(GameScreen.Debrief);
+            }
+            return ok;
         }
 
         public void SaveAgencyState()
         {
             if (CurrentAgencyState == null) return;
+            SanitizeAgencyState(CurrentAgencyState);
             string json = JsonUtility.ToJson(CurrentAgencyState);
             PlayerPrefs.SetString(AgencyStatePrefsKey, json);
             PlayerPrefs.Save();
@@ -144,12 +392,21 @@ namespace AstraLink.Core
 
         public void LoadOrCreateAgencyState()
         {
+            CurrentAgencyState = null;
+
             if (PlayerPrefs.HasKey(AgencyStatePrefsKey))
             {
                 string json = PlayerPrefs.GetString(AgencyStatePrefsKey);
                 if (!string.IsNullOrEmpty(json))
                 {
-                    CurrentAgencyState = JsonUtility.FromJson<AgencyState>(json);
+                    try
+                    {
+                        CurrentAgencyState = JsonUtility.FromJson<AgencyState>(json);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning("[GameManager] Failed to parse saved AgencyState JSON, creating fresh state: " + ex.Message);
+                    }
                 }
             }
 
@@ -158,8 +415,255 @@ namespace AstraLink.Core
                 CurrentAgencyState = new AgencyState
                 {
                     CapitalThousands = StartingCapitalThousands,
-                    AutopilotSlotsUnlocked = 2
+                    AutopilotSlotsUnlocked = AgencyState.InitialAutopilotSlots
                 };
+            }
+
+            SanitizeAgencyState(CurrentAgencyState);
+        }
+
+        public void ResetAgencyState()
+        {
+            PlayerPrefs.DeleteKey(AgencyStatePrefsKey);
+            PlayerPrefs.Save();
+            CurrentAgencyState = new AgencyState
+            {
+                CapitalThousands = StartingCapitalThousands,
+                AutopilotSlotsUnlocked = AgencyState.InitialAutopilotSlots
+            };
+            SanitizeAgencyState(CurrentAgencyState);
+            LastMissionReport = null;
+
+            contractHubUI?.Initialize(Repository, CurrentAgencyState);
+            builderPanelUI?.Initialize(Repository, Simulator, CurrentAgencyState, ActiveMission, Auditor);
+        }
+
+        private static void SanitizeAgencyState(AgencyState state)
+        {
+            if (state == null) return;
+            if (state.UnlockedComponentIds == null) state.UnlockedComponentIds = new List<string>();
+            if (state.CompletedMissionIds == null) state.CompletedMissionIds = new List<string>();
+            if (state.AutopilotSlotsUnlocked < AgencyState.InitialAutopilotSlots)
+            {
+                state.AutopilotSlotsUnlocked = AgencyState.InitialAutopilotSlots;
+            }
+            else if (state.AutopilotSlotsUnlocked > AgencyState.Tier3AutopilotSlots)
+            {
+                state.AutopilotSlotsUnlocked = AgencyState.Tier3AutopilotSlots;
+            }
+        }
+
+        private void InitializeControllersAndEvents()
+        {
+            ResolveSceneControllers();
+
+            if (_controllersInitialized)
+            {
+                return;
+            }
+
+            _controllersInitialized = true;
+
+            if (contractHubUI != null)
+            {
+                contractHubUI.Initialize(Repository, CurrentAgencyState);
+                contractHubUI.OnMissionSelected -= HandleMissionSelectedFromHub;
+                contractHubUI.OnMissionSelected += HandleMissionSelectedFromHub;
+            }
+
+            if (ActiveMission == null)
+            {
+                MissionGoal initialMission = contractHubUI != null ? contractHubUI.SelectedMission : null;
+                if (initialMission == null && Repository != null)
+                {
+                    List<MissionGoal> missions = Repository.GetMissions();
+                    if (missions != null && missions.Count > 0)
+                    {
+                        initialMission = missions[0];
+                    }
+                }
+                SetActiveMissionInternal(initialMission, syncWorkshop: false);
+            }
+
+            if (builderPanelUI != null)
+            {
+                builderPanelUI.Initialize(Repository, Simulator, CurrentAgencyState, ActiveMission, Auditor);
+                builderPanelUI.OnLaunchMissionRequested -= LaunchActiveMission;
+                builderPanelUI.OnLaunchMissionRequested += LaunchActiveMission;
+            }
+
+            if (missionReportUI != null)
+            {
+                missionReportUI.ConfigureServices(Repository, Simulator, CurrentAgencyState, showVerificationControls: false);
+                missionReportUI.OnFlightPlaybackCompleted -= HandleFlightPlaybackCompleted;
+                missionReportUI.OnFlightPlaybackCompleted += HandleFlightPlaybackCompleted;
+                missionReportUI.OnRequestLiveFlightView -= ShowFlight;
+                missionReportUI.OnRequestLiveFlightView += ShowFlight;
+                missionReportUI.OnRequestDebriefSummaryView -= ShowDebrief;
+                missionReportUI.OnRequestDebriefSummaryView += ShowDebrief;
+                missionReportUI.OnReturnToHubRequested -= ShowHub;
+                missionReportUI.OnReturnToHubRequested += ShowHub;
+                missionReportUI.OnReturnToWorkshopRequested -= ShowWorkshop;
+                missionReportUI.OnReturnToWorkshopRequested += ShowWorkshop;
+            }
+        }
+
+        private void HandleMissionSelectedFromHub(MissionGoal mission)
+        {
+            if (mission == null) return;
+            SetActiveMissionInternal(mission, syncWorkshop: true);
+            SaveAgencyState();
+            ShowWorkshop();
+        }
+
+        private void HandleFlightPlaybackCompleted(MissionReport completedReport)
+        {
+            if (completedReport != null)
+            {
+                LastMissionReport = completedReport;
+            }
+
+            SaveAgencyState();
+
+            if (CurrentScreen == GameScreen.Flight)
+            {
+                ShowScreen(GameScreen.Debrief);
+            }
+            else
+            {
+                missionReportUI?.ShowDebriefSummaryViewInternal();
+            }
+        }
+
+        private void SetActiveMissionInternal(MissionGoal mission, bool syncWorkshop)
+        {
+            if (mission == null) return;
+
+            bool changed = ActiveMission == null || !string.Equals(ActiveMission.Id, mission.Id, StringComparison.Ordinal);
+            ActiveMission = mission;
+
+            if (changed)
+            {
+                LastMissionReport = null;
+            }
+
+            if (syncWorkshop && builderPanelUI != null)
+            {
+                builderPanelUI.SetActiveMission(mission);
+            }
+
+            if (changed)
+            {
+                OnActiveMissionChanged?.Invoke(mission);
+            }
+        }
+
+        private List<SpaceEventDefinition> ResolveEventsForGoal(MissionGoal goal)
+        {
+            var resolved = new List<SpaceEventDefinition>();
+            if (goal == null || Repository == null || string.IsNullOrWhiteSpace(goal.EventId))
+            {
+                return resolved;
+            }
+
+            SpaceEventDefinition ev = Repository.GetEvent(goal.EventId);
+            if (ev != null)
+            {
+                resolved.Add(ev);
+            }
+
+            return resolved;
+        }
+
+        private void ResolveSceneControllers()
+        {
+            if (contractHubUI == null)
+            {
+                contractHubUI = hubPanel != null
+                    ? hubPanel.GetComponentInChildren<ContractHubUI>(true)
+                    : FindObjectOfType<ContractHubUI>(true);
+            }
+
+            if (builderPanelUI == null)
+            {
+                builderPanelUI = workshopPanel != null
+                    ? workshopPanel.GetComponentInChildren<BuilderPanelUI>(true)
+                    : FindObjectOfType<BuilderPanelUI>(true);
+            }
+
+            if (missionReportUI == null)
+            {
+                missionReportUI = (flightPanel != null ? flightPanel.GetComponentInChildren<MissionReportUI>(true) : null)
+                    ?? (debriefPanel != null ? debriefPanel.GetComponentInChildren<MissionReportUI>(true) : null)
+                    ?? FindObjectOfType<MissionReportUI>(true);
+            }
+        }
+
+        private void EnsureReportContainerForScreen(GameScreen screen)
+        {
+            if (missionReportUI == null) return;
+
+            GameObject targetPanel = screen == GameScreen.Flight ? flightPanel : debriefPanel;
+            if (targetPanel == null) return;
+
+            if (!targetPanel.activeSelf)
+            {
+                targetPanel.SetActive(true);
+            }
+
+            Transform reportTransform = missionReportUI.transform;
+            if (reportTransform.parent != targetPanel.transform)
+            {
+                reportTransform.SetParent(targetPanel.transform, false);
+                reportTransform.SetAsFirstSibling();
+            }
+
+            var rt = reportTransform as RectTransform;
+            if (rt != null)
+            {
+                rt.anchorMin = Vector2.zero;
+                rt.anchorMax = Vector2.one;
+                rt.offsetMin = Vector2.zero;
+                rt.offsetMax = Vector2.zero;
+                rt.localScale = Vector3.one;
+            }
+        }
+
+        private void RefreshControllerForScreen(GameScreen screen)
+        {
+            switch (screen)
+            {
+                case GameScreen.Hub:
+                    contractHubUI?.RefreshCards();
+                    break;
+
+                case GameScreen.Workshop:
+                    if (builderPanelUI != null)
+                    {
+                        if (ActiveMission != null && (builderPanelUI.GetActiveMissionGoal() == null || !string.Equals(builderPanelUI.GetActiveMissionGoal().Id, ActiveMission.Id, StringComparison.Ordinal)))
+                        {
+                            builderPanelUI.SetActiveMission(ActiveMission);
+                        }
+                        else
+                        {
+                            builderPanelUI.RefreshWorkshopUI();
+                        }
+                    }
+                    break;
+
+                case GameScreen.Flight:
+                    if (missionReportUI != null && LastMissionReport != null)
+                    {
+                        missionReportUI.ShowLiveFlightViewInternal();
+                    }
+                    break;
+
+                case GameScreen.Debrief:
+                    if (missionReportUI != null && LastMissionReport != null)
+                    {
+                        missionReportUI.ShowDebriefSummaryViewInternal();
+                    }
+                    break;
             }
         }
 
@@ -191,10 +695,12 @@ namespace AstraLink.Core
             if (flightPanel == null) flightPanel = FindOrCreatePanel(root, "FlightPanel");
             if (debriefPanel == null) debriefPanel = FindOrCreatePanel(root, "DebriefPanel");
 
-            PopulatePlaceholderIfEmpty(hubPanel, "1. ХАБ КОНТРАКТІВ ТА R&D (HubPanel)", new Color(0.08f, 0.13f, 0.22f, 1f));
-            PopulatePlaceholderIfEmpty(workshopPanel, "2. АНГАР ТА КОНСТРУКТОР (WorkshopPanel)", new Color(0.11f, 0.16f, 0.20f, 1f));
-            PopulatePlaceholderIfEmpty(flightPanel, "3. ОРБІТАЛЬНИЙ ПОЛІТ (FlightPanel)", new Color(0.05f, 0.08f, 0.16f, 1f));
-            PopulatePlaceholderIfEmpty(debriefPanel, "4. ДЕБРИФІНГ МІСІЇ (DebriefPanel)", new Color(0.14f, 0.11f, 0.20f, 1f));
+            ResolveSceneControllers();
+
+            CleanupOrPopulatePanel(hubPanel, contractHubUI != null, "1. ХАБ КОНТРАКТІВ ТА R&D (HubPanel)", new Color(0.08f, 0.13f, 0.22f, 1f));
+            CleanupOrPopulatePanel(workshopPanel, builderPanelUI != null, "2. АНГАР ТА КОНСТРУКТОР (WorkshopPanel)", new Color(0.11f, 0.16f, 0.20f, 1f));
+            CleanupOrPopulatePanel(flightPanel, missionReportUI != null, "3. ОРБІТАЛЬНИЙ ПОЛІТ (FlightPanel)", new Color(0.05f, 0.08f, 0.16f, 1f));
+            CleanupOrPopulatePanel(debriefPanel, missionReportUI != null, "4. ДЕБРИФІНГ МІСІЇ (DebriefPanel)", new Color(0.14f, 0.11f, 0.20f, 1f));
 
             EnsureTopNavBar(root);
         }
@@ -214,14 +720,24 @@ namespace AstraLink.Core
             return panelObj;
         }
 
-        private static void PopulatePlaceholderIfEmpty(GameObject panel, string titleText, Color bgColor)
+        private static void CleanupOrPopulatePanel(GameObject panel, bool hasScreenController, string titleText, Color bgColor)
         {
             if (panel == null) return;
 
             Image img = panel.GetComponent<Image>();
             if (img == null) img = panel.AddComponent<Image>();
-            img.color = bgColor;
 
+            if (hasScreenController)
+            {
+                Transform stalePlaceholder = panel.transform.Find("PlaceholderTitle");
+                if (stalePlaceholder != null)
+                {
+                    Destroy(stalePlaceholder.gameObject);
+                }
+                return;
+            }
+
+            img.color = bgColor;
             if (panel.transform.childCount > 0) return;
 
             var labelObj = new GameObject("PlaceholderTitle", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
@@ -254,6 +770,8 @@ namespace AstraLink.Core
                 navBar = navTransform.gameObject;
             }
 
+            _topNavBar = navBar;
+
             var navRt = navBar.GetComponent<RectTransform>();
             navRt.anchorMin = new Vector2(0f, 1f);
             navRt.anchorMax = new Vector2(1f, 1f);
@@ -281,6 +799,25 @@ namespace AstraLink.Core
                 CreateNavButton(navBar.transform, "Btn_Workshop", "2. Ангар (Workshop)", ShowWorkshop);
                 CreateNavButton(navBar.transform, "Btn_Flight", "3. Політ (Flight)", ShowFlight);
                 CreateNavButton(navBar.transform, "Btn_Debrief", "4. Дебрифінг (Debrief)", ShowDebrief);
+            }
+        }
+
+        private void UpdateTopNavHighlight(GameScreen activeScreen)
+        {
+            if (_topNavBar == null) return;
+
+            string[] btnNames = { "Btn_Hub", "Btn_Workshop", "Btn_Flight", "Btn_Debrief" };
+            for (int i = 0; i < btnNames.Length; i++)
+            {
+                Transform btnTransform = _topNavBar.transform.Find(btnNames[i]);
+                if (btnTransform == null) continue;
+                Image img = btnTransform.GetComponent<Image>();
+                if (img != null)
+                {
+                    img.color = ((int)activeScreen == i)
+                        ? new Color(0.20f, 0.52f, 0.78f, 1f)
+                        : new Color(0.16f, 0.27f, 0.44f, 1f);
+                }
             }
         }
 

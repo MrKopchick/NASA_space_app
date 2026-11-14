@@ -83,6 +83,11 @@ namespace AstraLink.Core
                 return false;
             }
 
+            if (!MissionValidator.Validate(components, rocket, orbit, goal, out errorMessage))
+            {
+                return false;
+            }
+
             ResourceSummary resources = _resourceCalculator.CalculateResources(components, rocket, orbit, goal);
             if (!resources.IsBudgetValid)
             {
@@ -155,6 +160,14 @@ namespace AstraLink.Core
                 report.Status = MissionStatus.Failed; 
                 report.FailureTitle = GetLogMessage(OrbitLogType.MissingRequiredResources); 
                 report.FailureCause = GetLogMessage(OrbitLogType.InvalidResourceValues); 
+                return report;
+            }
+
+            if (!isDryRun && !MissionValidator.Validate(components, rocket, orbit, goal, out string validationError))
+            {
+                report.Status = MissionStatus.Failed;
+                report.FailureTitle = GetLogMessage(OrbitLogType.InvalidLaunchConfiguration);
+                report.FailureCause = validationError;
                 return report;
             }
 
