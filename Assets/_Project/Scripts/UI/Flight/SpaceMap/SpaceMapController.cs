@@ -2,143 +2,197 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using AstraLink.Core;
+using AstraLink.UI.Flight.SpaceMap;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace AstraLink.UI.Flight
 {
     /// <summary>
-    /// 2D Pixel-Art Space Map, Automatic Rocket Launch Sequence (Phase 1 & Phase 2),
-    /// and Live Orbital Satellite Movement Controller (Ivan V).
-    /// Path: Assets/_Project/Scripts/UI/Flight/SpaceMap/SpaceMapController.cs
-    /// Prefab: SpaceMapFlightView.prefab
+    /// Full-viewport interactive, astronomically ordered animated Solar System Space Map.
+    /// Renders pixel twinkling starfield, blazing Sun, Mercury-to-Neptune animated GIF sprite sheets,
+    /// moons (Earth Moon &amp; Jovian Io), random multi-variant animated Main Asteroid Belt,
+    /// interactive pan/zoom/inspect camera, and live player spacecraft mission telemetry/launch trajectory.
     /// </summary>
-    public class SpaceMapController : MonoBehaviour
+    public class SpaceMapController : MonoBehaviour,
+        IBeginDragHandler, IDragHandler, IScrollHandler, IPointerClickHandler
     {
         public static SpaceMapController Instance { get; private set; }
 
-        private const int BezierDotCount = 26;
-        private const int SmokeCount = 3;
+        private const int AsteroidCount = 110;
+        private const int TransferDotCount = 24;
+        private const float MinZoom = 0.22f;
+        private const float MaxZoom = 14.00f;
 
-        [Header("Background & Environment Sprites (64x64 Point Filter — Optional, uses placeholders if null)")]
+        [Header("Background & Environment Sprites (Fallback / Inspector Compatibility)")]
         [SerializeField] private Sprite starfieldSprite;
         [SerializeField] private Sprite launchPadSprite;
         [SerializeField] private Sprite eclipseOverlaySprite;
 
-        [Header("Planet Sprites (earth.png, moon.png, mars.png, venus_planet.png)")]
+        [Header("Planet Sprites (Fallback / Inspector Compatibility)")]
         [SerializeField] private Sprite earthSprite;
         [SerializeField] private Sprite moonSprite;
         [SerializeField] private Sprite marsSprite;
         [SerializeField] private Sprite venusSprite;
 
-        [Header("Rocket & VFX Sprites (small_rocket, reusable_rocket, heavy_lift_rocket, flame, smoke)")]
+        [Header("Rocket & VFX Sprites")]
         [SerializeField] private Sprite smallRocketSprite;
         [SerializeField] private Sprite reusableRocketSprite;
         [SerializeField] private Sprite heavyLiftRocketSprite;
         [SerializeField] private Sprite rocketFlameSprite;
         [SerializeField] private Sprite launchSmokeSprite;
 
-        [Header("Satellite Sprites (cubesat.png, satellite.png, deep_space_probe.png)")]
+        [Header("Satellite Sprites")]
         [SerializeField] private Sprite cubesatSprite;
         [SerializeField] private Sprite satelliteSprite;
         [SerializeField] private Sprite deepSpaceProbeSprite;
 
-        [Header("Animation Timings")]
-        [SerializeField] private float phase1AscentDurationSeconds = 4.0f;
-        [SerializeField] private float phase2SeparationDurationSeconds = 1.0f;
-        [SerializeField] private bool showSandboxTestBar = true;
+        [Header("Animation Timings & Mode")]
+        [SerializeField] private float phase1AscentDurationSeconds = 1.6f;
+        [SerializeField] private float phase2SeparationDurationSeconds = 0.45f;
+        [SerializeField] private bool showSandboxTestBar = false;
         [SerializeField] private bool autoSetupDemoOnStart = true;
+
+        private sealed class CelestialRuntimeNode
+        {
+            public SolarSystemBodyCatalog.BodyDefinition Spec;
+            public RectTransform Rect;
+            public Image PlanetImage;
+            public RectTransform OrbitRingRect;
+            public Image OrbitRingImage;
+            public Image SelectionReticle;
+            public Text LabelText;
+            public Sprite[] Frames;
+            public float FrameRate;
+            public float AnimTime;
+            public float CurrentOrbitAngleDeg;
+            public Vector2 CurrentStagePos;
+            public float HoverBlend;
+        }
+
+        private sealed class AsteroidRuntimeNode
+        {
+            public RectTransform Rect;
+            public Image Img;
+            public Sprite[] Frames;
+            public float FrameRate;
+            public float AnimTime;
+            public float OrbitRadiusPx;
+            public float OrbitAngleDeg;
+            public float OrbitSpeedDegPerSec;
+            public float SpinSpeedDegPerSec;
+            public float SpinAngleDeg;
+            public float RadialWobbleAmp;
+            public float WobblePhase;
+        }
+
+        private sealed class SolarBodyHitProxy : MonoBehaviour,
+            IPointerEnterHandler, IPointerExitHandler, IPointerClickHandler,
+            IBeginDragHandler, IDragHandler, IScrollHandler
+        {
+            public SpaceMapController Owner;
+            public string BodyId;
+
+            public void OnPointerEnter(PointerEventData eventData) => Owner?.SetHoveredBody(BodyId);
+            public void OnPointerExit(PointerEventData eventData) => Owner?.ClearHoveredBody(BodyId);
+            public void OnPointerClick(PointerEventData eventData)
+            {
+                if (!eventData.dragging)
+                {
+                    Owner?.SelectBodyById(BodyId, focusCamera: true);
+                }
+            }
+            public void OnBeginDrag(PointerEventData eventData) => Owner?.OnBeginDrag(eventData);
+            public void OnDrag(PointerEventData eventData) => Owner?.OnDrag(eventData);
+            public void OnScroll(PointerEventData eventData) => Owner?.OnScroll(eventData);
+        }
+
+        private SolarSystemArtBank _artBank;
+        private PixelStarfieldLayer _starfieldLayer;
 
         // Cached mission config
         private MissionGoal _currentGoal;
         private OrbitDefinition _currentOrbit;
         private RocketOption _currentRocket;
-        private List<SatelliteComponent> _currentComponents = new List<SatelliteComponent>();
+        private readonly List<SatelliteComponent> _currentComponents = new List<SatelliteComponent>();
 
-        // UI Hierarchy References
+        // Hierarchy containers
         private RectTransform _mapViewportRect;
         private RectTransform _stageRect;
-        private RectTransform _starfieldLayerA;
-        private RectTransform _starfieldLayerB;
-        private Image _starfieldImageA;
-        private Image _starfieldImageB;
+        private RectTransform _orbitsLayerRect;
+        private RectTransform _asteroidsLayerRect;
+        private RectTransform _bodiesLayerRect;
+        private RectTransform _missionLayerRect;
 
-        // Earth & Launch Pad
-        private RectTransform _earthRect;
-        private Image _earthImage;
-        private Text _earthPlaceholderLabel;
-        private RectTransform _launchPadRect;
-        private Image _launchPadImage;
-        private Text _launchPadPlaceholderLabel;
+        private readonly List<CelestialRuntimeNode> _bodies = new List<CelestialRuntimeNode>();
+        private readonly Dictionary<string, CelestialRuntimeNode> _bodyMap = new Dictionary<string, CelestialRuntimeNode>(StringComparer.Ordinal);
+        private readonly List<AsteroidRuntimeNode> _asteroids = new List<AsteroidRuntimeNode>();
 
-        // Target Planet (used for Moon, Mars, Venus)
-        private RectTransform _targetPlanetRect;
-        private Image _targetPlanetImage;
-        private Text _targetPlanetPlaceholderLabel;
+        // Mission overlay elements (transfer arc, target orbit halo, sectors, player spacecraft & launch rocket)
+        private Image _sunCoronaGlow;
+        private RectTransform _sunlightSectorRect;
+        private Image _sunlightSectorImg;
+        private RectTransform _eclipseSectorRect;
+        private Image _eclipseSectorImg;
+        private RectTransform _commsSectorRect;
+        private Image _commsSectorImg;
+        private RectTransform _missionOrbitHaloRect;
+        private Image _missionOrbitHaloImg;
+        private Image _commsPulseRingImg;
+        private Image _eclipseShadowBadgeImg;
+        private readonly List<RectTransform> _transferDots = new List<RectTransform>();
+        private readonly List<Image> _transferDotImages = new List<Image>();
 
-        // Orbit Ring, Eclipse Cone & Comm Window Arc (around active orbit planet)
-        private RectTransform _orbitContainerRect;
-        private Image _orbitRingImage;
-        private Image _eclipseSectorImage;
-        private Image _commSectorImage;
-        private Text _eclipseTagText;
-        private Text _commTagText;
-
-        // Bezier Transfer Trajectory Dots (Earth -> Target Planet)
-        private RectTransform _bezierContainerRect;
-        private readonly List<RectTransform> _bezierDotRects = new List<RectTransform>();
-
-        // Rocket + Flame + Smoke + Mars Aerobraking Glow
         private RectTransform _rocketRootRect;
         private Image _rocketBodyImage;
-        private Text _rocketPlaceholderLabel;
-        private RectTransform _rocketFlameRect;
         private Image _rocketFlameImage;
-        private Image _aerobrakeGlowImage;
-        private readonly RectTransform[] _smokeRects = new RectTransform[3];
-        private readonly Image[] _smokeImages = new Image[3];
-
-        // Player Satellite + Deploy Flash
         private RectTransform _satelliteRootRect;
         private Image _satelliteBodyImage;
-        private Text _satellitePlaceholderLabel;
-        private Image _deployFlashImage;
+        private Image _safeModeShieldImg;
+        private Image _deployFlashImg;
 
-        // Launch Controls (Skip / 2x) & Status Banner
-        private GameObject _launchControlsPanel;
-        private Text _statusBannerText;
-        private Text _speedButtonText;
-        private GameObject _sandboxToolbarObj;
+        // Camera pan & zoom state
+        private Vector2 _currentPanPx = new Vector2(-110f, 0f);
+        private Vector2 _targetPanPx = new Vector2(-110f, 0f);
+        private float _currentZoom = 0.56f;
+        private float _targetZoom = 0.56f;
+        private bool _isFollowingSelected;
+        private string _selectedBodyId = "earth";
+        private string _hoveredBodyId;
+        private bool _hasInitialOverviewFit;
 
-        // State
+        // Launch & orbital flight playback state
         private Coroutine _launchCoroutine;
         private bool _isLaunchPlaying;
         private bool _skipRequested;
         private float _launchSpeedMultiplier = 1.0f;
-        private float _orbitRadiusPx = 220f;
-        private Vector2 _activeOrbitCenterPos = Vector2.zero;
+        private string _targetPlanetBodyId = "earth";
+        private float _spacecraftOrbitDeg;
+        private bool _spacecraftInEclipse;
+        private bool _spacecraftInComm;
+        private bool _spacecraftSafeMode;
+        private bool _spacecraftCommsOn = true;
+        private bool _spacecraftStormActive;
+
+        // Demo/sandbox state
+        private GameObject _sandboxToolbarObj;
         private bool _isDemoAutoOrbiting;
         private float _demoOrbitProgress;
 
-        // Procedural fallback sprites (Point filter 64x64)
-        private static Sprite _procStarfieldSprite;
-        private static Sprite _procPlanetCircleSprite;
-        private static Sprite _procDashedRingSprite;
-        private static Sprite _procSectorArcSprite;
-        private static Sprite _procEclipseConeSprite;
-        private static Sprite _procLaunchPadSprite;
-        private static Sprite _procRocketSprite;
-        private static Sprite _procFlameSprite;
-        private static Sprite _procSmokeSprite;
-        private static Sprite _procSatelliteSprite;
+        // Procedural sprites
+        private static Sprite _procRingSprite;
+        private static Sprite _procSolidGlowSprite;
         private static Sprite _procDotSprite;
+        private static Sprite _procReticleSprite;
+        private static Sprite _procDiscSprite;
 
-        /// <summary>
-        /// Fired when Phase 1 (Rocket Ascent) and Phase 2 (Satellite Deployment) complete.
-        /// </summary>
         public event Action OnLaunchSequenceCompleted;
+        public event Action<SolarSystemBodyCatalog.BodyDefinition> OnCelestialBodySelected;
 
         public bool IsLaunchPlaying => _isLaunchPlaying;
+        public SolarSystemBodyCatalog.BodyDefinition SelectedBody =>
+            _bodyMap.TryGetValue(_selectedBodyId, out CelestialRuntimeNode n) ? n.Spec : null;
 
         private void Awake()
         {
@@ -147,6 +201,7 @@ namespace AstraLink.UI.Flight
 
         private void Start()
         {
+            EnsureSpaceMapHierarchy();
             if (autoSetupDemoOnStart && _currentOrbit == null)
             {
                 SetupDemoPreset(0);
@@ -155,14 +210,29 @@ namespace AstraLink.UI.Flight
 
         private void Update()
         {
-            AnimateStarfieldDrift();
-            UpdateStageScale();
+            if (_stageRect == null)
+            {
+                return;
+            }
+
+            float dt = Time.deltaTime;
+            float unscaledDt = Time.unscaledDeltaTime;
+
+            FitOverviewOnFirstValidLayout();
+            AdvanceCelestialOrbitsAndSprites(dt, unscaledDt);
+            AdvanceAsteroidBelt(dt, unscaledDt);
+            UpdateMissionOverlayVisuals(unscaledDt);
+            UpdateCameraPanAndZoom(unscaledDt);
+
+            if (_starfieldLayer != null)
+            {
+                _starfieldLayer.Animate(Time.unscaledTime, _currentPanPx);
+            }
 
             if (_isDemoAutoOrbiting && !_isLaunchPlaying)
             {
                 float prev = _demoOrbitProgress;
-                _demoOrbitProgress = (_demoOrbitProgress + Time.deltaTime * 0.12f) % 1.0f;
-
+                _demoOrbitProgress = (_demoOrbitProgress + dt * 0.12f) % 1.0f;
                 var curSnap = new SimulationTickSnapshot
                 {
                     OrbitProgress = prev,
@@ -191,8 +261,6 @@ namespace AstraLink.UI.Flight
             {
                 _sandboxToolbarObj.SetActive(visible);
             }
-
-            UpdateStageScale();
         }
 
         public void ConfigureSprites(
@@ -228,20 +296,9 @@ namespace AstraLink.UI.Flight
             if (satellite != null) satelliteSprite = satellite;
             if (deepSpaceProbe != null) deepSpaceProbeSprite = deepSpaceProbe;
 
-            if (_currentOrbit != null && _mapViewportRect != null)
-            {
-                ConfigureLayoutForMission();
-            }
+            RefreshMissionVehicleSprites();
         }
 
-        // =====================================================================
-        // PUBLIC INTEGRATION API (Required by Spec)
-        // =====================================================================
-
-        /// <summary>
-        /// Initializes the Space Map layout (planets, orbit ring, eclipse/comm sectors, rocket, and satellite sprites)
-        /// for the given mission contract, orbit, rocket, and assembled satellite components.
-        /// </summary>
         public void Initialize(
             MissionGoal goal,
             OrbitDefinition orbit,
@@ -256,24 +313,28 @@ namespace AstraLink.UI.Flight
 
             _isLaunchPlaying = false;
             _skipRequested = false;
-
-            _currentGoal = goal;
-            _currentOrbit = orbit ?? CreateFallbackOrbit(OrbitType.LowEarth, "orbit_leo", "LEO 400 km (Earth)", 0.35f, 0.25f);
-            _currentRocket = rocket ?? new RocketOption { Id = "rocket_light", Name = "Light Rocket 'Arrow-1'" };
-            _currentComponents = components ?? new List<SatelliteComponent>();
             _isDemoAutoOrbiting = false;
 
+            _currentGoal = goal;
+            _currentOrbit = orbit;
+            _currentRocket = rocket;
+            _currentComponents.Clear();
+            if (components != null)
+            {
+                _currentComponents.AddRange(components);
+            }
+
             EnsureSpaceMapHierarchy();
-            ConfigureLayoutForMission();
-            ResetRocketOnLaunchPad();
+
+            _targetPlanetBodyId = SolarSystemBodyCatalog.MapOrbitToBodyId(_currentOrbit, _currentGoal);
+            RefreshMissionVehicleSprites();
+
+            _hasInitialOverviewFit = false;
+            FitOverviewOnFirstValidLayout();
+            SelectBodyById(_targetPlanetBodyId, focusCamera: false);
+            ResetCameraToSystemOverview();
         }
 
-        /// <summary>
-        /// Starts the automatic rocket launch animation:
-        /// - Phase 1 (~3-5s, with Skip / 2x controls): Liftoff with pulsing flame + smoke, ascent to LEO or Bezier transfer to Moon/Mars/Venus.
-        /// - Phase 2 (~1s): Flame extinguishes, rocket fades out (alpha 1 -> 0) while satellite pops in (scale 0.2 -> 1.0).
-        /// Invokes OnLaunchSequenceCompleted at the end.
-        /// </summary>
         public void PlayLaunchSequence()
         {
             EnsureSpaceMapHierarchy();
@@ -285,19 +346,20 @@ namespace AstraLink.UI.Flight
                 _launchCoroutine = null;
             }
 
-            if (Application.isPlaying && gameObject.activeInHierarchy)
+            _skipRequested = false;
+            _isLaunchPlaying = true;
+            _launchSpeedMultiplier = 1.0f;
+
+            if (gameObject.activeInHierarchy)
             {
-                _launchCoroutine = StartCoroutine(RunLaunchSequenceRoutine());
+                _launchCoroutine = StartCoroutine(RunTransferLaunchRoutine());
             }
             else
             {
-                CompleteLaunchInstantly();
+                CompleteLaunchImmediate();
             }
         }
 
-        /// <summary>
-        /// Smoothly moves the player's satellite around the target planet's orbital ring according to OrbitProgress.
-        /// </summary>
         public void UpdateFlightTick(
             SimulationTickSnapshot currentTick,
             SimulationTickSnapshot nextTick,
@@ -306,42 +368,91 @@ namespace AstraLink.UI.Flight
             EnsureSpaceMapHierarchy();
             if (currentTick == null) return;
 
-            float progressA = Mathf.Clamp01(currentTick.OrbitProgress);
-            float progressB = nextTick != null ? Mathf.Clamp01(nextTick.OrbitProgress) : progressA;
-
-            // Handle wrap-around from end of orbit (e.g. 0.95 -> 0.0)
-            if (progressB < progressA && (progressA - progressB) > 0.5f)
+            float clampedT = Mathf.Clamp01(lerpT);
+            float prevProg = Mathf.Repeat(currentTick.OrbitProgress, 1.0f);
+            float nextProg = nextTick != null ? Mathf.Repeat(nextTick.OrbitProgress, 1.0f) : prevProg;
+            if (nextProg < prevProg && prevProg - nextProg > 0.5f)
             {
-                progressB += 1.0f;
+                nextProg += 1.0f;
             }
 
-            float interpolatedProgress = Mathf.Repeat(Mathf.Lerp(progressA, progressB, Mathf.Clamp01(lerpT)), 1.0f);
-            PositionSatelliteAtOrbitProgress(interpolatedProgress, currentTick);
-        }
+            float smoothProg = Mathf.Repeat(Mathf.Lerp(prevProg, nextProg, clampedT), 1.0f);
+            _spacecraftOrbitDeg = 90f - smoothProg * 360f;
 
-        // =====================================================================
-        // LAUNCH CONTROLS (2x Speed / Skip) & SANDBOX PRESETS
-        // =====================================================================
+            _spacecraftInEclipse = currentTick.IsInEclipse;
+            _spacecraftInComm = currentTick.IsInCommWindow;
+            _spacecraftSafeMode = currentTick.SafeModeActive;
+            _spacecraftCommsOn = currentTick.CommsActive;
+            _spacecraftStormActive = !string.IsNullOrEmpty(currentTick.ActiveEventTitle) || currentTick.RadiationLevel >= 50f;
+        }
 
         public void ToggleLaunchSpeed2x()
         {
-            _launchSpeedMultiplier = (_launchSpeedMultiplier < 1.5f) ? 2.0f : 1.0f;
-            if (_speedButtonText != null)
-            {
-                _speedButtonText.text = _launchSpeedMultiplier > 1.5f ? "SPEED: 2x (ACTIVE)" : "SPEED: 1x -> 2x";
-            }
+            _launchSpeedMultiplier = _launchSpeedMultiplier < 1.5f ? 2.0f : 1.0f;
         }
 
         public void SkipLaunchSequence()
         {
+            _skipRequested = true;
             if (_isLaunchPlaying)
             {
-                _skipRequested = true;
+                CompleteLaunchImmediate();
             }
-            else
+        }
+
+        public void SelectNextBody(int step)
+        {
+            if (_bodies.Count == 0) return;
+            int idx = _bodies.FindIndex(b => string.Equals(b.Spec.Id, _selectedBodyId, StringComparison.Ordinal));
+            if (idx < 0) idx = 0;
+            idx = ((idx + step) % _bodies.Count + _bodies.Count) % _bodies.Count;
+            SelectBodyById(_bodies[idx].Spec.Id, focusCamera: true);
+        }
+
+        public void SelectBodyById(string bodyId, bool focusCamera)
+        {
+            if (string.IsNullOrEmpty(bodyId) || !_bodyMap.TryGetValue(bodyId, out CelestialRuntimeNode node))
             {
-                CompleteLaunchInstantly();
+                return;
             }
+
+            _selectedBodyId = bodyId;
+            for (int i = 0; i < _bodies.Count; i++)
+            {
+                CelestialRuntimeNode b = _bodies[i];
+                bool isSel = string.Equals(b.Spec.Id, _selectedBodyId, StringComparison.Ordinal);
+                if (b.SelectionReticle != null)
+                {
+                    b.SelectionReticle.gameObject.SetActive(isSel || string.Equals(b.Spec.Id, _hoveredBodyId, StringComparison.Ordinal));
+                    b.SelectionReticle.color = isSel ? b.Spec.AccentColor : new Color(0.85f, 0.95f, 1f, 0.7f);
+                }
+            }
+
+            if (focusCamera)
+            {
+                _isFollowingSelected = !string.Equals(bodyId, "sun", StringComparison.Ordinal) && !node.Spec.IsAsteroidBelt;
+                float idealZoom = !string.IsNullOrEmpty(node.Spec.ParentId)
+                    ? 7.50f
+                    : (node.Spec.OrbitRadiusPx > 600f
+                        ? 2.20f
+                        : (string.Equals(bodyId, "sun", StringComparison.Ordinal)
+                            ? 0.95f
+                            : (node.Spec.IsAsteroidBelt ? 0.72f : 5.80f)));
+                _targetZoom = Mathf.Clamp(idealZoom, MinZoom, MaxZoom);
+                _targetPanPx = -node.CurrentStagePos * _targetZoom - new Vector2(110f, 0f);
+            }
+
+            OnCelestialBodySelected?.Invoke(node.Spec);
+        }
+
+        public void ResetCameraToSystemOverview()
+        {
+            _isFollowingSelected = false;
+            float vw = _mapViewportRect != null && _mapViewportRect.rect.width > 100f ? _mapViewportRect.rect.width : 1920f;
+            float vh = _mapViewportRect != null && _mapViewportRect.rect.height > 100f ? _mapViewportRect.rect.height : 1010f;
+            float fitDim = Mathf.Min(vw * 0.78f, vh * 0.94f);
+            _targetZoom = Mathf.Clamp(fitDim / 2580f, 0.24f, 0.72f);
+            _targetPanPx = new Vector2(-135f, 0f);
         }
 
         [ContextMenu("Generate SpaceMap UI In Scene")]
@@ -352,1411 +463,1040 @@ namespace AstraLink.UI.Flight
             {
                 DestroyImmediate(existing.gameObject);
             }
-
+            _stageRect = null;
             EnsureSpaceMapHierarchy();
-            SetupDemoPreset(0);
-            Debug.Log("[SpaceMapController] SpaceMapFlightView UI Hierarchy generated with placeholders & animations!");
         }
 
-#if UNITY_EDITOR
-        [ContextMenu("Auto-Assign Real Pixel-Art Sprites From Assets/_Project/Art")]
+        [ContextMenu("Auto-Assign Real Pixel Art Sprites")]
         public void AutoAssignRealSpritesInEditor()
         {
-            starfieldSprite = LoadSpriteAt("Assets/_Project/Art/Planets/Backgrounds/orbital_starfield.png");
-            earthSprite = LoadSpriteAt("Assets/_Project/Art/Planets/earth.png");
-            eclipseOverlaySprite = LoadSpriteAt("Assets/_Project/Art/Planets/eclipse.png");
-            moonSprite = LoadSpriteAt("Assets/_Project/Art/Planets/moon.png");
-            marsSprite = LoadSpriteAt("Assets/_Project/Art/Planets/mars.png");
-            venusSprite = LoadSpriteAt("Assets/_Project/Art/Planets/venus_planet.png");
-
-            launchPadSprite = LoadSpriteAt("Assets/_Project/Art/Spacecraft/Launch/launch_pad.png");
-            smallRocketSprite = LoadSpriteAt("Assets/_Project/Art/Spacecraft/small_rocket.png");
-            reusableRocketSprite = LoadSpriteAt("Assets/_Project/Art/Spacecraft/reusable_rocket.png");
-            heavyLiftRocketSprite = LoadSpriteAt("Assets/_Project/Art/Spacecraft/heavy_lift_rocket.png");
-            rocketFlameSprite = LoadSpriteAt("Assets/_Project/Art/Spacecraft/Launch/rocket_flame.png");
-            launchSmokeSprite = LoadSpriteAt("Assets/_Project/Art/Spacecraft/Launch/launch_smoke.png");
-
-            cubesatSprite = LoadSpriteAt("Assets/_Project/Art/Spacecraft/cubesat.png");
-            satelliteSprite = LoadSpriteAt("Assets/_Project/Art/Spacecraft/satellite.png");
-            deepSpaceProbeSprite = LoadSpriteAt("Assets/_Project/Art/Spacecraft/deep_space_probe.png");
-
-            UnityEditor.EditorUtility.SetDirty(this);
-            ConfigureLayoutForMission();
-            Debug.Log("[SpaceMapController] Assigned all 15 pixel-art sprites from Assets/_Project/Art!");
+            _artBank = SolarSystemArtBank.Load();
+            RefreshMissionVehicleSprites();
         }
-
-        private static Sprite LoadSpriteAt(string assetPath)
-        {
-            return UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(assetPath);
-        }
-#endif
 
         public void SetupDemoPreset(int presetIndex)
         {
-            OrbitDefinition orbit;
+            EnsureSpaceMapHierarchy();
+            _isDemoAutoOrbiting = false;
+            if (_launchCoroutine != null)
+            {
+                StopCoroutine(_launchCoroutine);
+                _launchCoroutine = null;
+            }
+
             MissionGoal goal;
+            OrbitDefinition orbit;
             RocketOption rocket;
-            var comps = new List<SatelliteComponent>();
 
             switch (presetIndex)
             {
-                case 1: // Mission 2: Moon (Lunar Orbit)
-                    orbit = CreateFallbackOrbit(OrbitType.Lunar, "orbit_lunar", "Lunar Orbit (100 km)", 0.45f, 0.15f);
+                case 1:
                     goal = new MissionGoal { Id = "m2_lunar_mapper", Title = "2. Lunar Radar Mapper", OrbitId = "orbit_lunar" };
-                    rocket = new RocketOption { Id = "rocket_medium", Name = "Medium Rocket 'Falcon-M'" };
-                    comps.Add(new SatelliteComponent { Id = "bus_smallsat", Name = "SmallSat Bus 'Orion-S'", Category = ComponentCategory.CorePlatform });
+                    orbit = new OrbitDefinition { Id = "orbit_lunar", Name = "Lunar Orbit (100 km)", Type = OrbitType.Lunar, OrbitPeriodHours = 2.0f, EclipseFraction = 0.45f, CommWindowFraction = 0.15f, SolarFluxFactor = 1.0f, SignalDelaySeconds = 3.0f, BaseRadiation = 15.0f };
+                    rocket = new RocketOption { Id = "rocket_medium", Name = "Soyuz-K Medium", MaxMassLeoKg = 35f, MaxMassLunarKg = 35f, CostThousands = 35f };
                     break;
-
-                case 2: // Mission 3: Mars (with Atmospheric Aerobraking)
-                    orbit = CreateFallbackOrbit(OrbitType.Mars, "orbit_mars", "Mars Orbit (350 km)", 0.35f, 0.15f);
+                case 2:
                     goal = new MissionGoal { Id = "m3_mars_probe", Title = "3. Mars Deep-Space Probe", OrbitId = "orbit_mars" };
-                    rocket = new RocketOption { Id = "rocket_heavy", Name = "Heavy Interplanetary 'Titan-9'" };
-                    comps.Add(new SatelliteComponent { Id = "bus_deepspace", Name = "DeepSpace Bus 'Voyager-M'", Category = ComponentCategory.CorePlatform });
+                    orbit = new OrbitDefinition { Id = "orbit_mars", Name = "Mars Orbit (350 km)", Type = OrbitType.Mars, OrbitPeriodHours = 2.0f, EclipseFraction = 0.35f, CommWindowFraction = 0.15f, SolarFluxFactor = 0.43f, SignalDelaySeconds = 10.0f, BaseRadiation = 20.0f };
+                    rocket = new RocketOption { Id = "rocket_heavy", Name = "Titan Heavy Lift", MaxMassMarsKg = 80f, CostThousands = 85f };
                     break;
-
-                case 3: // Venus (DeepSpace)
-                    orbit = CreateFallbackOrbit(OrbitType.DeepSpace, "orbit_venus", "Venus Orbit (300 km)", 0.40f, 0.15f);
+                case 3:
                     goal = new MissionGoal { Id = "m4_venus_probe", Title = "4. Venus Atmospheric Probe", OrbitId = "orbit_venus" };
-                    rocket = new RocketOption { Id = "rocket_heavy", Name = "Heavy Interplanetary 'Titan-9'" };
-                    comps.Add(new SatelliteComponent { Id = "bus_deepspace", Name = "DeepSpace Bus 'Voyager-M'", Category = ComponentCategory.CorePlatform });
+                    orbit = new OrbitDefinition { Id = "orbit_venus", Name = "Venus Orbit (300 km)", Type = OrbitType.DeepSpace, OrbitPeriodHours = 1.6f, EclipseFraction = 0.40f, CommWindowFraction = 0.15f, SolarFluxFactor = 1.90f, SignalDelaySeconds = 12.0f, BaseRadiation = 35.0f };
+                    rocket = new RocketOption { Id = "rocket_heavy", Name = "Titan Heavy Lift", MaxMassDeepSpaceKg = 80f, CostThousands = 85f };
                     break;
-
-                default: // Mission 1: LEO (Earth Centered)
-                    orbit = CreateFallbackOrbit(OrbitType.LowEarth, "orbit_leo", "LEO 400 km (Earth)", 0.35f, 0.25f);
+                default:
                     goal = new MissionGoal { Id = "m1_leo_weather", Title = "1. LEO Weather CubeSat", OrbitId = "orbit_leo" };
-                    rocket = new RocketOption { Id = "rocket_light", Name = "Light Rocket 'Arrow-1'" };
-                    comps.Add(new SatelliteComponent { Id = "bus_cubesat_3u", Name = "CubeSat 3U Bus", Category = ComponentCategory.CorePlatform });
+                    orbit = new OrbitDefinition { Id = "orbit_leo", Name = "LEO 400 km", Type = OrbitType.LowEarth, OrbitPeriodHours = 1.5f, EclipseFraction = 0.35f, CommWindowFraction = 0.25f, SolarFluxFactor = 1.0f, SignalDelaySeconds = 1.0f, BaseRadiation = 5.0f };
+                    rocket = new RocketOption { Id = "rocket_light", Name = "Vega-Light", MaxMassLeoKg = 14f, CostThousands = 15f };
                     break;
             }
 
-            Initialize(goal, orbit, rocket, comps);
+            Initialize(goal, orbit, rocket, null);
         }
 
         public void StartDemoLaunchAndOrbit()
         {
-            _OnLaunchCompletedDemoSubscribe();
+            if (_currentOrbit == null) SetupDemoPreset(0);
+            _isDemoAutoOrbiting = false;
+            OnLaunchSequenceCompleted -= OnDemoCompleted;
+            OnLaunchSequenceCompleted += OnDemoCompleted;
             PlayLaunchSequence();
         }
 
-        private void _OnLaunchCompletedDemoSubscribe()
+        private void OnDemoCompleted()
         {
-            OnLaunchSequenceCompleted -= EnableDemoOrbitAfterLaunch;
-            OnLaunchSequenceCompleted += EnableDemoOrbitAfterLaunch;
-        }
-
-        private void EnableDemoOrbitAfterLaunch()
-        {
-            OnLaunchSequenceCompleted -= EnableDemoOrbitAfterLaunch;
-            _demoOrbitProgress = 0f;
+            OnLaunchSequenceCompleted -= OnDemoCompleted;
             _isDemoAutoOrbiting = true;
         }
 
-        // =====================================================================
-        // PLANET, ORBIT & BEZIER LAYOUT CONFIGURATION
-        // =====================================================================
-
-        private bool IsTwoPlanetTransferMission()
+        public void OnBeginDrag(PointerEventData eventData)
         {
-            if (_currentOrbit == null) return false;
-            if (_currentOrbit.Type != OrbitType.LowEarth) return true;
-            string id = _currentOrbit.Id ?? string.Empty;
-            return id.IndexOf("lunar", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   id.IndexOf("moon", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   id.IndexOf("mars", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   id.IndexOf("venus", StringComparison.OrdinalIgnoreCase) >= 0;
+            _isFollowingSelected = false;
         }
 
-        private bool IsMarsMission()
+        public void OnDrag(PointerEventData eventData)
         {
-            if (_currentOrbit == null) return false;
-            if (_currentOrbit.Type == OrbitType.Mars) return true;
-            string id = _currentOrbit.Id ?? string.Empty;
-            return id.IndexOf("mars", StringComparison.OrdinalIgnoreCase) >= 0;
+            _isFollowingSelected = false;
+            float scale = GetCanvasScaleFactor();
+            _targetPanPx += eventData.delta / scale;
+            ClampTargetPan();
         }
 
-        private bool IsVenusMission()
+        private float GetCanvasScaleFactor()
         {
-            if (_currentOrbit == null) return false;
-            string id = _currentOrbit.Id ?? string.Empty;
-            return id.IndexOf("venus", StringComparison.OrdinalIgnoreCase) >= 0;
+            Canvas c = GetComponentInParent<Canvas>();
+            return (c != null && c.scaleFactor > 0.01f) ? c.scaleFactor : 1f;
         }
 
-        private void ConfigureLayoutForMission()
+        public void OnScroll(PointerEventData eventData)
         {
-            EnsureProceduralSprites();
-
-            // 1. Starfield Background
-            AssignSpriteWithPointFilter(_starfieldImageA, starfieldSprite, _procStarfieldSprite, Color.white);
-            AssignSpriteWithPointFilter(_starfieldImageB, starfieldSprite, _procStarfieldSprite, new Color(0.8f, 0.9f, 1f, 0.55f));
-
-            bool isTwoPlanets = IsTwoPlanetTransferMission();
-
-            // 2. Earth & Launch Pad positioning
-            AssignSpriteWithPointFilter(_earthImage, earthSprite, _procPlanetCircleSprite,
-                earthSprite != null ? Color.white : new Color(0.22f, 0.58f, 0.95f, 1f));
-            SetPlaceholderVisible(_earthPlaceholderLabel, earthSprite == null, "EARTH\n(earth.png)");
-
-            AssignSpriteWithPointFilter(_launchPadImage, launchPadSprite, _procLaunchPadSprite,
-                launchPadSprite != null ? Color.white : new Color(0.85f, 0.88f, 0.92f, 1f));
-            SetPlaceholderVisible(_launchPadPlaceholderLabel, launchPadSprite == null, "PAD");
-
-            if (!isTwoPlanets)
+            float factor = eventData.scrollDelta.y > 0f ? 1.14f : 0.875f;
+            float newZoom = Mathf.Clamp(_targetZoom * factor, MinZoom, MaxZoom);
+            if (_mapViewportRect != null &&
+                RectTransformUtility.ScreenPointToLocalPointInRectangle(_mapViewportRect, eventData.position, eventData.pressEventCamera, out Vector2 localCursor))
             {
-                // Mission 1 (LEO): Earth centered and large, orbit around Earth
-                _earthRect.anchoredPosition = new Vector2(0f, -10f);
-                _earthRect.sizeDelta = new Vector2(210f, 210f);
-
-                // Launch pad attached at top-left edge of Earth
-                _launchPadRect.anchoredPosition = new Vector2(-10f, -118f);
-                _launchPadRect.localEulerAngles = new Vector3(0f, 0f, 180f);
-
-                _targetPlanetRect.gameObject.SetActive(false);
-                _bezierContainerRect.gameObject.SetActive(false);
-
-                _activeOrbitCenterPos = _earthRect.anchoredPosition;
-                _orbitRadiusPx = 240f;
+                float ratio = newZoom / Mathf.Max(0.05f, _targetZoom);
+                _targetPanPx = localCursor + (_targetPanPx - localCursor) * ratio;
             }
-            else
-            {
-                // Mission 2 (Moon), Mission 3 (Mars), or Venus: TWO PLANETS IN FRAME
-                _earthRect.anchoredPosition = new Vector2(-520f, -60f);
-                _earthRect.sizeDelta = new Vector2(165f, 165f);
-
-                // Launch pad on right/top side of Earth facing target planet
-                _launchPadRect.anchoredPosition = new Vector2(-438f, -35f);
-                _launchPadRect.localEulerAngles = new Vector3(0f, 0f, -65f);
-
-                _targetPlanetRect.gameObject.SetActive(true);
-                _targetPlanetRect.anchoredPosition = new Vector2(430f, 20f);
-                _targetPlanetRect.sizeDelta = new Vector2(170f, 170f);
-
-                Sprite customTargetSprite;
-                Color fallbackPlanetColor;
-                string planetLabel;
-
-                if (IsMarsMission())
-                {
-                    customTargetSprite = marsSprite;
-                    fallbackPlanetColor = new Color(0.90f, 0.38f, 0.22f, 1f);
-                    planetLabel = "MARS\n(mars.png)";
-                }
-                else if (IsVenusMission())
-                {
-                    customTargetSprite = venusSprite;
-                    fallbackPlanetColor = new Color(0.95f, 0.78f, 0.36f, 1f);
-                    planetLabel = "VENUS\n(venus_planet.png)";
-                }
-                else
-                {
-                    customTargetSprite = moonSprite;
-                    fallbackPlanetColor = new Color(0.76f, 0.80f, 0.86f, 1f);
-                    planetLabel = "MOON\n(moon.png)";
-                }
-
-                AssignSpriteWithPointFilter(_targetPlanetImage, customTargetSprite, _procPlanetCircleSprite,
-                    customTargetSprite != null ? Color.white : fallbackPlanetColor);
-                SetPlaceholderVisible(_targetPlanetPlaceholderLabel, customTargetSprite == null, planetLabel);
-
-                _activeOrbitCenterPos = _targetPlanetRect.anchoredPosition;
-                _orbitRadiusPx = 210f;
-
-                // Build dashed Bezier curve between Earth LaunchPad and Target Orbit entry point
-                _bezierContainerRect.gameObject.SetActive(true);
-                UpdateBezierTransferDots();
-            }
-
-            // 3. Configure Orbit Ring + Eclipse Cone + Comm Window Arc around _activeOrbitCenterPos
-            _orbitContainerRect.anchoredPosition = _activeOrbitCenterPos;
-            float diameter = _orbitRadiusPx * 2f;
-            _orbitContainerRect.sizeDelta = new Vector2(diameter, diameter);
-
-            float eclipseFrac = _currentOrbit != null ? Mathf.Clamp(_currentOrbit.EclipseFraction, 0.1f, 0.6f) : 0.35f;
-            float commFrac = _currentOrbit != null ? Mathf.Clamp(_currentOrbit.CommWindowFraction, 0.1f, 0.6f) : 0.25f;
-
-            // Comm Window Sector (OrbitProgress 0 .. commFrac) -> Green Arc on ground station side
-            if (_commSectorImage != null)
-            {
-                _commSectorImage.type = Image.Type.Filled;
-                _commSectorImage.fillMethod = Image.FillMethod.Radial360;
-                _commSectorImage.fillOrigin = (int)Image.Origin360.Top;
-                _commSectorImage.fillClockwise = true;
-                _commSectorImage.fillAmount = commFrac;
-                _commSectorImage.rectTransform.localEulerAngles = Vector3.zero;
-            }
-
-            // Eclipse Shadow Sector (OrbitProgress (1 - eclipseFrac) .. 1.0) -> Dark semi-transparent cone/sector
-            if (_eclipseSectorImage != null)
-            {
-                if (eclipseOverlaySprite != null)
-                {
-                    _eclipseSectorImage.sprite = eclipseOverlaySprite;
-                }
-                _eclipseSectorImage.type = Image.Type.Filled;
-                _eclipseSectorImage.fillMethod = Image.FillMethod.Radial360;
-                _eclipseSectorImage.fillOrigin = (int)Image.Origin360.Top;
-                _eclipseSectorImage.fillClockwise = false;
-                _eclipseSectorImage.fillAmount = eclipseFrac;
-                _eclipseSectorImage.rectTransform.localEulerAngles = Vector3.zero;
-            }
-
-            // Position sector labels around orbit ring
-            if (_commTagText != null)
-            {
-                float midCommProgress = commFrac * 0.5f;
-                _commTagText.rectTransform.anchoredPosition = GetLocalOrbitPoint(midCommProgress, _orbitRadiusPx + 28f);
-            }
-            if (_eclipseTagText != null)
-            {
-                float midEclipseProgress = 1.0f - (eclipseFrac * 0.5f);
-                _eclipseTagText.rectTransform.anchoredPosition = GetLocalOrbitPoint(midEclipseProgress, _orbitRadiusPx + 28f);
-            }
-
-            // 4. Configure Rocket & Satellite sprites based on selection
-            Sprite chosenRocketSprite = SelectRocketSprite(_currentRocket);
-            AssignSpriteWithPointFilter(_rocketBodyImage, chosenRocketSprite, _procRocketSprite,
-                chosenRocketSprite != null ? Color.white : new Color(0.95f, 0.96f, 1f, 1f));
-            SetPlaceholderVisible(_rocketPlaceholderLabel, chosenRocketSprite == null, GetRocketShortTag(_currentRocket));
-
-            AssignSpriteWithPointFilter(_rocketFlameImage, rocketFlameSprite, _procFlameSprite,
-                rocketFlameSprite != null ? Color.white : new Color(1f, 0.68f, 0.18f, 1f));
-
-            for (int i = 0; i < _smokeImages.Length; i++)
-            {
-                AssignSpriteWithPointFilter(_smokeImages[i], launchSmokeSprite, _procSmokeSprite,
-                    new Color(0.88f, 0.90f, 0.94f, 0f));
-            }
-
-            Sprite chosenSatSprite = SelectSatelliteSprite(_currentComponents, _currentOrbit);
-            AssignSpriteWithPointFilter(_satelliteBodyImage, chosenSatSprite, _procSatelliteSprite,
-                chosenSatSprite != null ? Color.white : new Color(0.45f, 0.88f, 1f, 1f));
-            SetPlaceholderVisible(_satellitePlaceholderLabel, chosenSatSprite == null, GetSatelliteShortTag(_currentComponents));
-
-            UpdateStageScale();
+            _targetZoom = newZoom;
+            ClampTargetPan();
         }
 
-        private void UpdateStageScale()
+        public void OnPointerClick(PointerEventData eventData)
         {
-            if (_stageRect == null || _mapViewportRect == null) return;
-
-            float vw = _mapViewportRect.rect.width;
-            float vh = _mapViewportRect.rect.height;
-            if (vw <= 10f || vh <= 10f) return;
-
-            float topMargin = (_launchControlsPanel != null && _launchControlsPanel.activeSelf) ? 62f : 12f;
-            float bottomMargin = (_sandboxToolbarObj != null && _sandboxToolbarObj.activeSelf) ? 64f : 14f;
-            float availW = Mathf.Max(200f, vw - 24f);
-            float availH = Mathf.Max(200f, vh - topMargin - bottomMargin);
-
-            bool isTwoPlanets = IsTwoPlanetTransferMission();
-            float designW = isTwoPlanets ? 1320f : 620f;
-            float designH = isTwoPlanets ? 580f : 560f;
-            float maxScale = isTwoPlanets ? 1.0f : 1.15f;
-
-            float scale = Mathf.Clamp(Mathf.Min(availW / designW, availH / designH), 0.35f, maxScale);
-            _stageRect.localScale = new Vector3(scale, scale, 1f);
-
-            // In two-planet mode content spans roughly [-605..+665] horizontally (midpoint +30)
-            float centerOffsetX = isTwoPlanets ? -30f * scale : 0f;
-            float centerOffsetY = (bottomMargin - topMargin) * 0.5f;
-            _stageRect.anchoredPosition = new Vector2(centerOffsetX, centerOffsetY);
-        }
-
-        private void UpdateBezierTransferDots()
-        {
-            Vector2 p0 = _launchPadRect.anchoredPosition;
-            Vector2 p3 = GetWorldOrbitPoint(0.75f); // Left-side entry into target planet's orbital ring (for braking arc 0.75 -> 1.0)
-            Vector2 p1 = p0 + new Vector2(190f, 240f);
-            Vector2 p2 = p3 + new Vector2(-180f, -130f);
-
-            for (int i = 0; i < _bezierDotRects.Count; i++)
+            if (eventData.dragging)
             {
-                float t = (i + 1f) / (_bezierDotRects.Count + 1f);
-                Vector2 pt = EvaluateCubicBezier(p0, p1, p2, p3, t);
-                _bezierDotRects[i].anchoredPosition = pt;
-            }
-        }
-
-        // =====================================================================
-        // PHASE 1 & PHASE 2 LAUNCH ANIMATION COROUTINE
-        // =====================================================================
-
-        private void ResetRocketOnLaunchPad()
-        {
-            _rocketRootRect.gameObject.SetActive(true);
-            _rocketRootRect.anchoredPosition = _launchPadRect.anchoredPosition;
-            _rocketRootRect.localScale = Vector3.one;
-            _rocketRootRect.localEulerAngles = _launchPadRect.localEulerAngles;
-
-            SetImageAlpha(_rocketBodyImage, 1f);
-            if (_rocketPlaceholderLabel != null) SetTextAlpha(_rocketPlaceholderLabel, 1f);
-
-            _rocketFlameRect.gameObject.SetActive(false);
-            if (_aerobrakeGlowImage != null) _aerobrakeGlowImage.gameObject.SetActive(false);
-
-            for (int i = 0; i < _smokeRects.Length; i++)
-            {
-                if (_smokeRects[i] != null) _smokeRects[i].gameObject.SetActive(false);
-            }
-
-            _satelliteRootRect.gameObject.SetActive(false);
-            if (_deployFlashImage != null) _deployFlashImage.gameObject.SetActive(false);
-
-            if (_statusBannerText != null)
-            {
-                string missionTitle = _currentGoal != null && !string.IsNullOrEmpty(_currentGoal.Title) ? _currentGoal.Title : "Orbital Mission";
-                string orbitName = _currentOrbit != null ? _currentOrbit.Name : "LEO";
-                _statusBannerText.text = string.Format("{0}  |  {1} -> {2}",
-                    missionTitle, _currentRocket != null ? _currentRocket.Name : "Rocket", orbitName);
-            }
-        }
-
-        private IEnumerator RunLaunchSequenceRoutine()
-        {
-            _isLaunchPlaying = true;
-            _skipRequested = false;
-            if (_launchControlsPanel != null) _launchControlsPanel.SetActive(true);
-
-            ResetRocketOnLaunchPad();
-
-            // Enable Flame & Smoke Puffs at Liftoff
-            _rocketFlameRect.gameObject.SetActive(true);
-            Vector2 padOrigin = _launchPadRect.anchoredPosition;
-            for (int i = 0; i < _smokeRects.Length; i++)
-            {
-                if (_smokeRects[i] != null)
-                {
-                    _smokeRects[i].gameObject.SetActive(true);
-                    _smokeRects[i].anchoredPosition = padOrigin;
-                    _smokeRects[i].localScale = Vector3.one * 0.5f;
-                    SetImageAlpha(_smokeImages[i], 0.85f);
-                }
-            }
-
-            bool isTwoPlanets = IsTwoPlanetTransferMission();
-            bool isMars = IsMarsMission();
-            Vector2 orbitInsertionPoint = GetWorldOrbitPoint(0.0f);
-
-            // Control points for smooth trajectory
-            Vector2 p0 = padOrigin;
-            Vector2 p1, p2, p3;
-
-            if (!isTwoPlanets)
-            {
-                // LEO curved ascent from bottom of Earth around the left side up to top of LEO ring
-                p3 = orbitInsertionPoint;
-                p1 = padOrigin + new Vector2(-260f, -40f);
-                p2 = orbitInsertionPoint + new Vector2(-240f, -20f);
-            }
-            else
-            {
-                // Interplanetary / Lunar Bezier transfer from Earth pad to left entry of Target Planet orbit (0.75f),
-                // followed by a braking orbital turn (0.75f -> 1.0f) around the target planet!
-                p3 = GetWorldOrbitPoint(0.75f);
-                p1 = p0 + new Vector2(190f, 240f);
-                p2 = p3 + new Vector2(-180f, -130f);
-            }
-
-            // --- PHASE 1: ROCKET ASCENT & TRANSFER (~3–5 seconds) ---
-            float elapsed = 0f;
-            float duration = Mathf.Max(2.5f, phase1AscentDurationSeconds);
-
-            while (elapsed < duration && !_skipRequested)
-            {
-                float dt = Time.deltaTime * _launchSpeedMultiplier;
-                elapsed += dt;
-                float t = Mathf.Clamp01(elapsed / duration);
-
-                if (!isTwoPlanets)
-                {
-                    float smoothT = Mathf.SmoothStep(0f, 1f, t);
-                    Vector2 pos = EvaluateCubicBezier(p0, p1, p2, p3, smoothT);
-                    Vector2 tangent = EvaluateCubicBezierTangent(p0, p1, p2, p3, Mathf.Clamp(smoothT, 0.01f, 0.99f));
-                    _rocketRootRect.anchoredPosition = pos;
-
-                    if (tangent.sqrMagnitude > 0.0001f)
-                    {
-                        float angleDeg = Mathf.Atan2(tangent.y, tangent.x) * Mathf.Rad2Deg - 90f;
-                        _rocketRootRect.localEulerAngles = new Vector3(0f, 0f, angleDeg);
-                    }
-                }
-                else
-                {
-                    // First 72%: Bezier transfer from Earth to target planet's orbit entry (0.75f)
-                    // Last 28%: Braking orbital turn along target planet's orbit (0.75f -> 1.0f)
-                    const float transferSplit = 0.72f;
-                    if (t < transferSplit)
-                    {
-                        float bezierT = Mathf.SmoothStep(0f, 1f, t / transferSplit);
-                        Vector2 pos = EvaluateCubicBezier(p0, p1, p2, p3, bezierT);
-                        Vector2 tangent = EvaluateCubicBezierTangent(p0, p1, p2, p3, Mathf.Clamp(bezierT, 0.01f, 0.99f));
-                        _rocketRootRect.anchoredPosition = pos;
-
-                        if (tangent.sqrMagnitude > 0.0001f)
-                        {
-                            float angleDeg = Mathf.Atan2(tangent.y, tangent.x) * Mathf.Rad2Deg - 90f;
-                            _rocketRootRect.localEulerAngles = new Vector3(0f, 0f, angleDeg);
-                        }
-                    }
-                    else
-                    {
-                        float brakeU = Mathf.SmoothStep(0f, 1f, (t - transferSplit) / (1f - transferSplit));
-                        float arcProgress = Mathf.Lerp(0.75f, 1.0f, brakeU);
-                        Vector2 pos = GetWorldOrbitPoint(arcProgress);
-                        Vector2 nextPos = GetWorldOrbitPoint(Mathf.Min(1.0f, arcProgress + 0.01f));
-                        Vector2 tangent = nextPos - pos;
-                        _rocketRootRect.anchoredPosition = pos;
-
-                        if (tangent.sqrMagnitude > 0.0001f)
-                        {
-                            float angleDeg = Mathf.Atan2(tangent.y, tangent.x) * Mathf.Rad2Deg - 90f;
-                            _rocketRootRect.localEulerAngles = new Vector3(0f, 0f, angleDeg);
-                        }
-                    }
-                }
-
-                // Pulsing nozzle flame (scale pulse)
-                float flamePulse = 0.85f + 0.35f * Mathf.Sin(Time.time * 28f);
-                _rocketFlameRect.localScale = new Vector3(1f, flamePulse, 1f);
-
-                // Launch smoke puffs expanding & fading during first 1.8s
-                if (elapsed < 1.8f)
-                {
-                    float smokeT = elapsed / 1.8f;
-                    Vector2[] offsets =
-                    {
-                        new Vector2(-42f, -28f),
-                        new Vector2(38f, -34f),
-                        new Vector2(-12f, -52f)
-                    };
-                    for (int i = 0; i < _smokeRects.Length; i++)
-                    {
-                        if (_smokeRects[i] == null) continue;
-                        _smokeRects[i].anchoredPosition = padOrigin + offsets[i] * smokeT;
-                        float s = Mathf.Lerp(0.5f, 1.9f + i * 0.25f, smokeT);
-                        _smokeRects[i].localScale = new Vector3(s, s, 1f);
-                        SetImageAlpha(_smokeImages[i], Mathf.Lerp(0.85f, 0f, smokeT));
-                    }
-                }
-                else
-                {
-                    for (int i = 0; i < _smokeRects.Length; i++)
-                    {
-                        if (_smokeRects[i] != null && _smokeRects[i].gameObject.activeSelf)
-                            _smokeRects[i].gameObject.SetActive(false);
-                    }
-                }
-
-                // Mars Atmospheric Braking Glow near arrival (t = 0.72 .. 0.98)
-                if (_aerobrakeGlowImage != null)
-                {
-                    bool showMarsGlow = isMars && t >= 0.72f && t <= 0.98f;
-                    _aerobrakeGlowImage.gameObject.SetActive(showMarsGlow);
-                    if (showMarsGlow)
-                    {
-                        float glowT = Mathf.Sin(((t - 0.72f) / 0.26f) * Mathf.PI);
-                        _aerobrakeGlowImage.color = new Color(1.0f, 0.48f, 0.12f, 0.85f * glowT);
-                    }
-                }
-
-                if (_statusBannerText != null)
-                {
-                    if (!isTwoPlanets)
-                        _statusBannerText.text = string.Format("PHASE 1: LEO ORBITAL ASCENT ({0:0}%)", t * 100f);
-                    else if (isMars && t >= 0.72f)
-                        _statusBannerText.text = "PHASE 1: MARS ATMOSPHERIC AEROBRAKING MANEUVER!";
-                    else
-                        _statusBannerText.text = string.Format("PHASE 1: INTERPLANETARY TRANSFER TRAJECTORY ({0:0}%)", t * 100f);
-                }
-
-                yield return null;
-            }
-
-            // Ensure smoke & aerobrake glow are off at end of Phase 1
-            _rocketFlameRect.gameObject.SetActive(false);
-            if (_aerobrakeGlowImage != null) _aerobrakeGlowImage.gameObject.SetActive(false);
-            for (int i = 0; i < _smokeRects.Length; i++)
-            {
-                if (_smokeRects[i] != null) _smokeRects[i].gameObject.SetActive(false);
-            }
-
-            // --- PHASE 2: ROCKET FADE-OUT & SATELLITE DEPLOYMENT (~1 second) ---
-            _rocketRootRect.anchoredPosition = orbitInsertionPoint;
-            _rocketRootRect.localEulerAngles = new Vector3(0f, 0f, -90f); // Aligned along clockwise top tangent
-
-            _satelliteRootRect.gameObject.SetActive(true);
-            _satelliteRootRect.anchoredPosition = orbitInsertionPoint;
-            _satelliteRootRect.localScale = Vector3.one * 0.2f;
-            _satelliteRootRect.localEulerAngles = Vector3.zero;
-            SetImageAlpha(_satelliteBodyImage, 1f);
-
-            if (_deployFlashImage != null)
-            {
-                _deployFlashImage.gameObject.SetActive(true);
-                _deployFlashImage.rectTransform.anchoredPosition = orbitInsertionPoint;
-            }
-
-            float sepElapsed = 0f;
-            float sepDuration = Mathf.Max(0.4f, phase2SeparationDurationSeconds);
-
-            while (sepElapsed < sepDuration && !_skipRequested)
-            {
-                float dt = Time.deltaTime * _launchSpeedMultiplier;
-                sepElapsed += dt;
-                float u = Mathf.Clamp01(sepElapsed / sepDuration);
-
-                // Rocket fades out (alpha 1 -> 0) and drifts slightly sideways/behind
-                _rocketRootRect.anchoredPosition = orbitInsertionPoint + new Vector2(-36f * u, 16f * u);
-                SetImageAlpha(_rocketBodyImage, 1f - u);
-                if (_rocketPlaceholderLabel != null) SetTextAlpha(_rocketPlaceholderLabel, 1f - u);
-
-                // Satellite pops in (scale 0.2 -> 1.0)
-                float satScale = Mathf.Lerp(0.2f, 1.0f, Mathf.SmoothStep(0f, 1f, u));
-                _satelliteRootRect.localScale = new Vector3(satScale, satScale, 1f);
-
-                // Flash ring expands & fades
-                if (_deployFlashImage != null)
-                {
-                    float flashScale = Mathf.Lerp(0.4f, 2.2f, u);
-                    _deployFlashImage.rectTransform.localScale = new Vector3(flashScale, flashScale, 1f);
-                    _deployFlashImage.color = new Color(0.75f, 0.96f, 1f, Mathf.Lerp(0.9f, 0f, u));
-                }
-
-                if (_statusBannerText != null)
-                {
-                    _statusBannerText.text = "PHASE 2: PAYLOAD FAIRING SEPARATION & SATELLITE DEPLOYMENT...";
-                }
-
-                yield return null;
-            }
-
-            CompleteLaunchInstantly();
-        }
-
-        private void CompleteLaunchInstantly()
-        {
-            _isLaunchPlaying = false;
-            _skipRequested = false;
-            _launchCoroutine = null;
-
-            _rocketFlameRect.gameObject.SetActive(false);
-            if (_aerobrakeGlowImage != null) _aerobrakeGlowImage.gameObject.SetActive(false);
-            if (_deployFlashImage != null) _deployFlashImage.gameObject.SetActive(false);
-            for (int i = 0; i < _smokeRects.Length; i++)
-            {
-                if (_smokeRects[i] != null) _smokeRects[i].gameObject.SetActive(false);
-            }
-
-            _rocketRootRect.gameObject.SetActive(false);
-
-            Vector2 orbitInsertionPoint = GetWorldOrbitPoint(0.0f);
-            _satelliteRootRect.gameObject.SetActive(true);
-            _satelliteRootRect.anchoredPosition = orbitInsertionPoint;
-            _satelliteRootRect.localScale = Vector3.one;
-            SetImageAlpha(_satelliteBodyImage, 1f);
-
-            if (_statusBannerText != null)
-            {
-                _statusBannerText.text = "ORBITAL INSERTION COMPLETE — SATELLITE ONLINE IN ORBIT";
-            }
-
-            OnLaunchSequenceCompleted?.Invoke();
-        }
-
-        // =====================================================================
-        // ORBITAL TICK MOVEMENT (UpdateFlightTick)
-        // =====================================================================
-
-        private void PositionSatelliteAtOrbitProgress(float orbitProgress01, SimulationTickSnapshot tick)
-        {
-            if (!_satelliteRootRect.gameObject.activeSelf)
-            {
-                _rocketRootRect.gameObject.SetActive(false);
-                _satelliteRootRect.gameObject.SetActive(true);
-                _satelliteRootRect.localScale = Vector3.one;
-            }
-
-            Vector2 worldPos = GetWorldOrbitPoint(orbitProgress01);
-            _satelliteRootRect.anchoredPosition = worldPos;
-
-            // Slight orientation along orbit tangent
-            float angleDeg = -orbitProgress01 * 360f;
-            _satelliteRootRect.localEulerAngles = new Vector3(0f, 0f, angleDeg);
-
-            if (tick != null && _statusBannerText != null && !_isLaunchPlaying)
-            {
-                string zone = tick.IsInEclipse
-                    ? "ECLIPSE SHADOW"
-                    : (tick.IsInCommWindow ? "COMM WINDOW (LINK ACTIVE)" : "SUNLIGHT");
-                _statusBannerText.text = string.Format(
-                    "ORBIT #{0}  |  Progress: {1:0}%  |  Zone: {2}  |  Bat: {3:0}%",
-                    Mathf.Max(1, tick.OrbitNumber), orbitProgress01 * 100f, zone, tick.BatteryPercent);
-            }
-        }
-
-        private Vector2 GetLocalOrbitPoint(float progress01, float radius)
-        {
-            // Progress 0 = Top (90 deg), moves clockwise around the planet
-            float rad = (90f - progress01 * 360f) * Mathf.Deg2Rad;
-            return new Vector2(Mathf.Cos(rad) * radius, Mathf.Sin(rad) * radius);
-        }
-
-        private Vector2 GetWorldOrbitPoint(float progress01)
-        {
-            return _activeOrbitCenterPos + GetLocalOrbitPoint(progress01, _orbitRadiusPx);
-        }
-
-        private static Vector2 EvaluateCubicBezier(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 p3, float t)
-        {
-            float u = 1f - t;
-            float tt = t * t;
-            float uu = u * u;
-            float uuu = uu * u;
-            float ttt = tt * t;
-            return uuu * p0 + 3f * uu * t * p1 + 3f * u * tt * p2 + ttt * p3;
-        }
-
-        private static Vector2 EvaluateCubicBezierTangent(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 p3, float t)
-        {
-            float u = 1f - t;
-            return 3f * u * u * (p1 - p0) + 6f * u * t * (p2 - p1) + 3f * t * t * (p3 - p2);
-        }
-
-        private void AnimateStarfieldDrift()
-        {
-            if (_starfieldLayerA != null)
-            {
-                Vector2 offset = new Vector2(Mathf.Sin(Time.time * 0.15f) * 18f, Mathf.Cos(Time.time * 0.12f) * 12f);
-                _starfieldLayerA.anchoredPosition = offset;
-            }
-            if (_starfieldImageB != null)
-            {
-                float twinkle = 0.35f + 0.30f * Mathf.Sin(Time.time * 2.2f);
-                _starfieldImageB.color = new Color(0.8f, 0.9f, 1f, twinkle);
-            }
-        }
-
-        // =====================================================================
-        // SPRITE SELECTION & PROCEDURAL 64x64 PLACEHOLDERS (FilterMode.Point)
-        // =====================================================================
-
-        private Sprite SelectRocketSprite(RocketOption rocket)
-        {
-            string id = rocket != null && rocket.Id != null ? rocket.Id : string.Empty;
-            if (id.IndexOf("heavy", StringComparison.OrdinalIgnoreCase) >= 0) return heavyLiftRocketSprite;
-            if (id.IndexOf("medium", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                id.IndexOf("reusable", StringComparison.OrdinalIgnoreCase) >= 0) return reusableRocketSprite;
-            return smallRocketSprite;
-        }
-
-        private static string GetRocketShortTag(RocketOption rocket)
-        {
-            string id = rocket != null && rocket.Id != null ? rocket.Id : string.Empty;
-            if (id.IndexOf("heavy", StringComparison.OrdinalIgnoreCase) >= 0) return "HEAVY\nROCKET";
-            if (id.IndexOf("medium", StringComparison.OrdinalIgnoreCase) >= 0) return "REUSABLE\nROCKET";
-            return "SMALL\nROCKET";
-        }
-
-        private Sprite SelectSatelliteSprite(List<SatelliteComponent> components, OrbitDefinition orbit)
-        {
-            if (components != null)
-            {
-                for (int i = 0; i < components.Count; i++)
-                {
-                    var c = components[i];
-                    if (c == null || c.Id == null) continue;
-                    if (c.Id.IndexOf("deepspace", StringComparison.OrdinalIgnoreCase) >= 0) return deepSpaceProbeSprite;
-                    if (c.Id.IndexOf("smallsat", StringComparison.OrdinalIgnoreCase) >= 0) return satelliteSprite;
-                    if (c.Id.IndexOf("cubesat", StringComparison.OrdinalIgnoreCase) >= 0) return cubesatSprite;
-                }
-            }
-            if (orbit != null && (orbit.Type == OrbitType.Mars || orbit.Type == OrbitType.DeepSpace))
-                return deepSpaceProbeSprite;
-            if (orbit != null && orbit.Type == OrbitType.Lunar)
-                return satelliteSprite;
-            return cubesatSprite;
-        }
-
-        private static string GetSatelliteShortTag(List<SatelliteComponent> components)
-        {
-            if (components != null)
-            {
-                for (int i = 0; i < components.Count; i++)
-                {
-                    var c = components[i];
-                    if (c == null || c.Id == null) continue;
-                    if (c.Id.IndexOf("deepspace", StringComparison.OrdinalIgnoreCase) >= 0) return "PROBE";
-                    if (c.Id.IndexOf("smallsat", StringComparison.OrdinalIgnoreCase) >= 0) return "SAT";
-                }
-            }
-            return "CUBESAT";
-        }
-
-        private static void AssignSpriteWithPointFilter(Image img, Sprite customSprite, Sprite fallbackSprite, Color tint)
-        {
-            if (img == null) return;
-            Sprite chosen = customSprite != null ? customSprite : fallbackSprite;
-            if (chosen != null && chosen.texture != null)
-            {
-                chosen.texture.filterMode = FilterMode.Point;
-            }
-            img.sprite = chosen;
-            img.color = tint;
-        }
-
-        private static void SetPlaceholderVisible(Text label, bool visible, string textContent)
-        {
-            if (label == null) return;
-            label.gameObject.SetActive(visible);
-            if (visible) label.text = textContent;
-        }
-
-        private static void SetImageAlpha(Image img, float alpha)
-        {
-            if (img == null) return;
-            Color c = img.color;
-            c.a = Mathf.Clamp01(alpha);
-            img.color = c;
-        }
-
-        private static void SetTextAlpha(Text txt, float alpha)
-        {
-            if (txt == null) return;
-            Color c = txt.color;
-            c.a = Mathf.Clamp01(alpha);
-            txt.color = c;
-        }
-
-        private static void EnsureProceduralSprites()
-        {
-            if (_procPlanetCircleSprite != null) return;
-
-            _procStarfieldSprite = CreateStarfieldSprite(128, 128);
-            _procPlanetCircleSprite = CreateCircleSprite(64, true);
-            _procDashedRingSprite = CreateDashedRingSprite(128);
-            _procSectorArcSprite = CreateRingArcBandSprite(128, 0.86f, 1.0f);
-            _procEclipseConeSprite = CreateRingArcBandSprite(128, 0.42f, 1.0f);
-            _procLaunchPadSprite = CreateLaunchPadSprite(32);
-            _procRocketSprite = CreateRocketPlaceholderSprite(64);
-            _procFlameSprite = CreateFlamePlaceholderSprite(32);
-            _procSmokeSprite = CreateCircleSprite(32, false);
-            _procSatelliteSprite = CreateSatellitePlaceholderSprite(64);
-            _procDotSprite = CreateCircleSprite(16, false);
-        }
-
-        private static Sprite CreateStarfieldSprite(int w, int h)
-        {
-            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point };
-            var pixels = new Color[w * h];
-            Color bg = new Color(0.02f, 0.04f, 0.09f, 1f);
-            for (int i = 0; i < pixels.Length; i++) pixels[i] = bg;
-
-            int seed = 1337;
-            for (int s = 0; s < 95; s++)
-            {
-                seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-                int x = seed % w;
-                seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-                int y = seed % h;
-                float b = 0.45f + (s % 5) * 0.12f;
-                pixels[y * w + x] = new Color(b, b * 1.05f, 1f, 1f);
-            }
-            tex.SetPixels(pixels);
-            tex.Apply();
-            return Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f));
-        }
-
-        private static Sprite CreateCircleSprite(int size, bool withPixelGridShading)
-        {
-            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point };
-            float r = size * 0.46f;
-            Vector2 center = new Vector2(size * 0.5f, size * 0.5f);
-
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    float dist = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), center);
-                    if (dist <= r)
-                    {
-                        float shade = 1f;
-                        if (withPixelGridShading)
-                        {
-                            if (dist > r - 2.2f) shade = 1.18f;
-                            else if ((x + y) % 7 == 0) shade = 0.86f;
-                        }
-                        tex.SetPixel(x, y, new Color(shade, shade, shade, 1f));
-                    }
-                    else
-                    {
-                        tex.SetPixel(x, y, Color.clear);
-                    }
-                }
-            }
-            tex.Apply();
-            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
-        }
-
-        private static Sprite CreateDashedRingSprite(int size)
-        {
-            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point };
-            Vector2 center = new Vector2(size * 0.5f, size * 0.5f);
-            float outerR = size * 0.48f;
-            float innerR = size * 0.45f;
-
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    Vector2 d = new Vector2(x + 0.5f, y + 0.5f) - center;
-                    float dist = d.magnitude;
-                    if (dist >= innerR && dist <= outerR)
-                    {
-                        float angle = Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg + 180f;
-                        bool dashOn = ((int)(angle / 5f) % 2) == 0;
-                        tex.SetPixel(x, y, dashOn ? Color.white : Color.clear);
-                    }
-                    else
-                    {
-                        tex.SetPixel(x, y, Color.clear);
-                    }
-                }
-            }
-            tex.Apply();
-            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
-        }
-
-        private static Sprite CreateRingArcBandSprite(int size, float innerRatio, float outerRatio)
-        {
-            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point };
-            Vector2 center = new Vector2(size * 0.5f, size * 0.5f);
-            float outerR = size * 0.49f * outerRatio;
-            float innerR = size * 0.49f * innerRatio;
-
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    float dist = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), center);
-                    tex.SetPixel(x, y, (dist >= innerR && dist <= outerR) ? Color.white : Color.clear);
-                }
-            }
-            tex.Apply();
-            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
-        }
-
-        private static Sprite CreateLaunchPadSprite(int size)
-        {
-            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point };
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    bool basePad = y < 8 && x >= 4 && x < size - 4;
-                    bool tower = x >= 6 && x <= 10 && y >= 8 && y < size - 4;
-                    tex.SetPixel(x, y, (basePad || tower) ? Color.white : Color.clear);
-                }
-            }
-            tex.Apply();
-            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
-        }
-
-        private static Sprite CreateRocketPlaceholderSprite(int size)
-        {
-            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point };
-            int mid = size / 2;
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    int halfWidth = y > size * 0.65f
-                        ? Mathf.Max(1, (int)((size - y) * 0.45f))
-                        : 8;
-                    bool body = y >= 8 && y < size - 4 && Mathf.Abs(x - mid) <= halfWidth;
-                    bool fins = y >= 8 && y <= 20 && Mathf.Abs(x - mid) <= 15;
-                    tex.SetPixel(x, y, (body || fins) ? Color.white : Color.clear);
-                }
-            }
-            tex.Apply();
-            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
-        }
-
-        private static Sprite CreateFlamePlaceholderSprite(int size)
-        {
-            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point };
-            int mid = size / 2;
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    int maxW = (int)((y / (float)size) * (size * 0.35f));
-                    bool inside = y > 2 && Mathf.Abs(x - mid) <= maxW;
-                    tex.SetPixel(x, y, inside ? Color.white : Color.clear);
-                }
-            }
-            tex.Apply();
-            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 1.0f));
-        }
-
-        private static Sprite CreateSatellitePlaceholderSprite(int size)
-        {
-            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point };
-            int mid = size / 2;
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    bool coreBus = Mathf.Abs(x - mid) <= 9 && Mathf.Abs(y - mid) <= 9;
-                    bool solarWings = Mathf.Abs(y - mid) <= 5 && Mathf.Abs(x - mid) >= 11 && Mathf.Abs(x - mid) <= 27;
-                    tex.SetPixel(x, y, (coreBus || solarWings) ? Color.white : Color.clear);
-                }
-            }
-            tex.Apply();
-            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
-        }
-
-        // =====================================================================
-        // HIERARCHY GENERATION & BINDING
-        // =====================================================================
-
-        public void EnsureSpaceMapHierarchy()
-        {
-            EnsureProceduralSprites();
-
-            Transform existing = transform.Find("SpaceMapContentRoot");
-            if (existing != null)
-            {
-                BindExistingHierarchy(existing);
                 return;
             }
 
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            if (eventData.clickCount >= 2)
+            {
+                ResetCameraToSystemOverview();
+                return;
+            }
 
+            if (_stageRect != null &&
+                RectTransformUtility.ScreenPointToLocalPointInRectangle(_stageRect, eventData.position, eventData.pressEventCamera, out Vector2 stagePt))
+            {
+                float dist = stagePt.magnitude;
+                if (dist >= 325f && dist <= 445f)
+                {
+                    SelectBodyById("belt", focusCamera: true);
+                }
+            }
+        }
+
+        public void EnsureSpaceMapHierarchy()
+        {
+            if (_stageRect != null && _bodies.Count > 0)
+            {
+                return;
+            }
+
+            EnsureProceduralSprites();
+            _artBank = SolarSystemArtBank.Load();
+
+            RectTransform hostRt = GetComponent<RectTransform>();
+            if (hostRt == null) hostRt = gameObject.AddComponent<RectTransform>();
+
+            for (int i = transform.childCount - 1; i >= 0; i--)
+            {
+                Destroy(transform.GetChild(i).gameObject);
+            }
+
+            // Root viewport with mask
             GameObject rootObj = CreateUIObject("SpaceMapContentRoot", transform);
             _mapViewportRect = rootObj.GetComponent<RectTransform>();
             StretchFull(_mapViewportRect);
             rootObj.AddComponent<RectMask2D>();
+            Image catchBg = rootObj.AddComponent<Image>();
+            catchBg.color = new Color(0.01f, 0.02f, 0.05f, 1f);
+            catchBg.raycastTarget = true;
 
-            // 1. Starfield Background Layers
-            GameObject starA = CreateUIObject("StarfieldBg_Main", rootObj.transform);
-            _starfieldLayerA = starA.GetComponent<RectTransform>();
-            StretchFull(_starfieldLayerA);
-            _starfieldLayerA.sizeDelta = new Vector2(60f, 60f);
-            _starfieldImageA = starA.AddComponent<Image>();
-            _starfieldImageA.sprite = _procStarfieldSprite;
+            // Layer 1: Pixel twinkling starfield
+            GameObject starObj = CreateUIObject("PixelStarfieldBackdrop", rootObj.transform);
+            _starfieldLayer = starObj.AddComponent<PixelStarfieldLayer>();
+            _starfieldLayer.EnsureBuilt();
 
-            GameObject starB = CreateUIObject("StarfieldBg_Twinkle", rootObj.transform);
-            _starfieldLayerB = starB.GetComponent<RectTransform>();
-            StretchFull(_starfieldLayerB);
-            _starfieldImageB = starB.AddComponent<Image>();
-            _starfieldImageB.sprite = _procStarfieldSprite;
-            _starfieldImageB.color = new Color(0.8f, 0.9f, 1f, 0.45f);
-
-            // Stage Container (scales planets/orbits/vehicles uniformly to fit any panel width)
-            GameObject stageObj = CreateUIObject("SpaceMapStage", rootObj.transform);
+            // Layer 2: Interactive Solar System zoom/pan world stage
+            GameObject stageObj = CreateUIObject("SolarSystemStage", rootObj.transform);
             _stageRect = stageObj.GetComponent<RectTransform>();
             _stageRect.anchorMin = new Vector2(0.5f, 0.5f);
             _stageRect.anchorMax = new Vector2(0.5f, 0.5f);
             _stageRect.pivot = new Vector2(0.5f, 0.5f);
-            _stageRect.sizeDelta = new Vector2(1380f, 780f);
+            _stageRect.anchoredPosition = _currentPanPx;
+            _stageRect.sizeDelta = new Vector2(2600f, 2600f);
 
-            // 2. Bezier Transfer Trajectory Container (Earth -> Moon/Mars/Venus)
-            GameObject bezierObj = CreateUIObject("BezierTransferTrajectory", stageObj.transform);
-            _bezierContainerRect = bezierObj.GetComponent<RectTransform>();
-            StretchFull(_bezierContainerRect);
+            _orbitsLayerRect = CreateUIObject("OrbitsLayer", _stageRect).GetComponent<RectTransform>();
+            _asteroidsLayerRect = CreateUIObject("AsteroidBeltLayer", _stageRect).GetComponent<RectTransform>();
+            _missionLayerRect = CreateUIObject("MissionTrajectoryLayer", _stageRect).GetComponent<RectTransform>();
+            _bodiesLayerRect = CreateUIObject("CelestialBodiesLayer", _stageRect).GetComponent<RectTransform>();
 
-            _bezierDotRects.Clear();
-            for (int i = 0; i < BezierDotCount; i++)
+            BuildAstronomicalSolarSystem();
+            BuildRandomAsteroidBelt();
+            BuildMissionOverlayLayer();
+
+            RefreshMissionVehicleSprites();
+            AdvanceCelestialOrbitsAndSprites(0f, 0f);
+            AdvanceAsteroidBelt(0f, 0f);
+        }
+
+        private void BuildAstronomicalSolarSystem()
+        {
+            _bodies.Clear();
+            _bodyMap.Clear();
+
+            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+
+            List<SolarSystemBodyCatalog.BodyDefinition> catalog = SolarSystemBodyCatalog.BuildStandardSolarSystem();
+
+            // Sun warm pulsating pixel glow underneath everything
+            GameObject glowObj = CreateUIObject("SunCoronaGlow", _bodiesLayerRect);
+            RectTransform glowRt = glowObj.GetComponent<RectTransform>();
+            glowRt.sizeDelta = new Vector2(440f, 440f);
+            _sunCoronaGlow = glowObj.AddComponent<Image>();
+            _sunCoronaGlow.sprite = _procSolidGlowSprite;
+            _sunCoronaGlow.color = new Color(1.0f, 0.65f, 0.18f, 0.24f);
+            _sunCoronaGlow.raycastTarget = false;
+
+            for (int i = 0; i < catalog.Count; i++)
             {
-                GameObject dotObj = CreateUIObject("BezierDot_" + i, _bezierContainerRect);
-                RectTransform dotRt = dotObj.GetComponent<RectTransform>();
-                dotRt.sizeDelta = new Vector2(7f, 7f);
-                Image dotImg = dotObj.AddComponent<Image>();
-                dotImg.sprite = _procDotSprite;
-                dotImg.color = new Color(0.65f, 0.86f, 1f, 0.65f);
-                _bezierDotRects.Add(dotRt);
+                SolarSystemBodyCatalog.BodyDefinition spec = catalog[i];
+
+                // Orbit ring
+                RectTransform ringRt = null;
+                Image ringImg = null;
+                if (spec.OrbitRadiusPx > 1f || spec.SatelliteOrbitRadiusPx > 1f)
+                {
+                    float a = spec.OrbitRadiusPx > 1f ? spec.OrbitRadiusPx : spec.SatelliteOrbitRadiusPx;
+                    float b = a * Mathf.Sqrt(Mathf.Max(0.25f, 1f - spec.Eccentricity * spec.Eccentricity));
+
+                    GameObject ringObj = CreateUIObject("Orbit_" + spec.Id, _orbitsLayerRect);
+                    ringRt = ringObj.GetComponent<RectTransform>();
+                    ringRt.sizeDelta = new Vector2(a * 2f, b * 2f);
+                    ringRt.localEulerAngles = new Vector3(0f, 0f, spec.PerihelionAngleDeg);
+
+                    float focusShift = -a * spec.Eccentricity;
+                    float tiltRad = spec.PerihelionAngleDeg * Mathf.Deg2Rad;
+                    ringRt.anchoredPosition = new Vector2(focusShift * Mathf.Cos(tiltRad), focusShift * Mathf.Sin(tiltRad));
+
+                    ringImg = ringObj.AddComponent<Image>();
+                    ringImg.sprite = _procRingSprite;
+                    ringImg.color = spec.OrbitColor;
+                    ringImg.raycastTarget = false;
+                }
+
+                // Planet / Sun / Belt marker node
+                GameObject nodeObj = CreateUIObject("Body_" + spec.Id, _bodiesLayerRect);
+                RectTransform nodeRt = nodeObj.GetComponent<RectTransform>();
+                nodeRt.sizeDelta = new Vector2(spec.VisualWidthPx, spec.VisualHeightPx);
+
+                Image planetImg = nodeObj.AddComponent<Image>();
+                planetImg.preserveAspect = true;
+                planetImg.raycastTarget = true;
+
+                Sprite[] frames = SolarSystemArtBank.GetAnimatedFrames(spec.SheetKey, out float fps);
+                if (frames != null && frames.Length > 0)
+                {
+                    planetImg.sprite = frames[0];
+                }
+                else
+                {
+                    planetImg.sprite = _procDotSprite;
+                    planetImg.color = spec.AccentColor;
+                }
+
+                // Selection & hover pixel reticle
+                GameObject retObj = CreateUIObject("Reticle", nodeObj.transform);
+                RectTransform retRt = retObj.GetComponent<RectTransform>();
+                retRt.anchorMin = new Vector2(0.5f, 0.5f);
+                retRt.anchorMax = new Vector2(0.5f, 0.5f);
+                retRt.sizeDelta = new Vector2(Mathf.Max(spec.VisualWidthPx, spec.VisualHeightPx) + 16f, Mathf.Max(spec.VisualWidthPx, spec.VisualHeightPx) + 16f);
+                Image retImg = retObj.AddComponent<Image>();
+                retImg.sprite = _procReticleSprite;
+                retImg.color = spec.AccentColor;
+                retImg.raycastTarget = false;
+                retObj.SetActive(false);
+
+                // Compact label underneath body
+                GameObject lblObj = CreateUIObject("Label", nodeObj.transform);
+                RectTransform lblRt = lblObj.GetComponent<RectTransform>();
+                lblRt.anchorMin = new Vector2(0.5f, 0f);
+                lblRt.anchorMax = new Vector2(0.5f, 0f);
+                lblRt.pivot = new Vector2(0.5f, 1f);
+                lblRt.anchoredPosition = new Vector2(0f, -4f);
+                lblRt.sizeDelta = new Vector2(140f, 18f);
+
+                Text lblText = lblObj.AddComponent<Text>();
+                lblText.font = font;
+                lblText.text = spec.DisplayName.ToUpperInvariant();
+                lblText.fontSize = string.IsNullOrEmpty(spec.ParentId) ? 13 : 10;
+                lblText.fontStyle = FontStyle.Bold;
+                lblText.color = new Color(0.90f, 0.95f, 1f, 0.90f);
+                lblText.alignment = TextAnchor.UpperCenter;
+                lblText.horizontalOverflow = HorizontalWrapMode.Overflow;
+                lblText.raycastTarget = false;
+
+                var proxy = nodeObj.AddComponent<SolarBodyHitProxy>();
+                proxy.Owner = this;
+                proxy.BodyId = spec.Id;
+
+                var runtimeNode = new CelestialRuntimeNode
+                {
+                    Spec = spec,
+                    Rect = nodeRt,
+                    PlanetImage = planetImg,
+                    OrbitRingRect = ringRt,
+                    OrbitRingImage = ringImg,
+                    SelectionReticle = retImg,
+                    LabelText = lblText,
+                    Frames = frames,
+                    FrameRate = fps,
+                    AnimTime = UnityEngine.Random.Range(0f, 8f),
+                    CurrentOrbitAngleDeg = spec.InitialPhaseDeg
+                };
+
+                _bodies.Add(runtimeNode);
+                _bodyMap[spec.Id] = runtimeNode;
+            }
+        }
+
+        private void BuildRandomAsteroidBelt()
+        {
+            _asteroids.Clear();
+
+            Sprite[][] asteroidVariants = new Sprite[6][];
+            float[] asteroidFps = new float[6];
+            for (int v = 0; v < 6; v++)
+            {
+                asteroidVariants[v] = SolarSystemArtBank.GetAnimatedFrames("asteroid_" + v + "_sheet", out asteroidFps[v]);
             }
 
-            // 3. Orbit Container (Dashed Orbit Ring + Eclipse Cone + Comm Window Green Arc)
-            GameObject orbitObj = CreateUIObject("OrbitRingContainer", _stageRect);
-            _orbitContainerRect = orbitObj.GetComponent<RectTransform>();
-            _orbitContainerRect.sizeDelta = new Vector2(480f, 480f);
-
-            // Eclipse Shadow Cone
-            GameObject eclipseObj = CreateUIObject("EclipseShadowSector", _orbitContainerRect);
-            StretchFull(eclipseObj.GetComponent<RectTransform>());
-            _eclipseSectorImage = eclipseObj.AddComponent<Image>();
-            _eclipseSectorImage.sprite = _procEclipseConeSprite;
-            _eclipseSectorImage.color = new Color(0.02f, 0.03f, 0.09f, 0.68f);
-            _eclipseSectorImage.type = Image.Type.Filled;
-            _eclipseSectorImage.fillMethod = Image.FillMethod.Radial360;
-            _eclipseSectorImage.fillOrigin = (int)Image.Origin360.Top;
-            _eclipseSectorImage.fillClockwise = false;
-            _eclipseSectorImage.fillAmount = 0.35f;
-
-            // Comm Window Green Arc
-            GameObject commObj = CreateUIObject("CommWindowArc", _orbitContainerRect);
-            StretchFull(commObj.GetComponent<RectTransform>());
-            _commSectorImage = commObj.AddComponent<Image>();
-            _commSectorImage.sprite = _procSectorArcSprite;
-            _commSectorImage.color = new Color(0.20f, 0.95f, 0.55f, 0.72f);
-            _commSectorImage.type = Image.Type.Filled;
-            _commSectorImage.fillMethod = Image.FillMethod.Radial360;
-            _commSectorImage.fillOrigin = (int)Image.Origin360.Top;
-            _commSectorImage.fillClockwise = true;
-            _commSectorImage.fillAmount = 0.25f;
-
-            // Thin Dashed Orbit Line
-            GameObject ringObj = CreateUIObject("DashedOrbitLine", _orbitContainerRect);
-            StretchFull(ringObj.GetComponent<RectTransform>());
-            _orbitRingImage = ringObj.AddComponent<Image>();
-            _orbitRingImage.sprite = _procDashedRingSprite;
-            _orbitRingImage.color = new Color(0.75f, 0.88f, 1f, 0.75f);
-
-            _commTagText = CreateText("CommSectorTag", _orbitContainerRect, font,
-                "COMM WINDOW", 11, FontStyle.Bold, new Color(0.35f, 1f, 0.65f, 0.9f), TextAnchor.MiddleCenter);
-            _commTagText.rectTransform.sizeDelta = new Vector2(120f, 22f);
-
-            _eclipseTagText = CreateText("EclipseSectorTag", _orbitContainerRect, font,
-                "ECLIPSE SHADOW", 11, FontStyle.Bold, new Color(0.62f, 0.75f, 1f, 0.85f), TextAnchor.MiddleCenter);
-            _eclipseTagText.rectTransform.sizeDelta = new Vector2(130f, 22f);
-
-            // 4. Earth + Launch Pad
-            GameObject earthObj = CreateUIObject("EarthPlanet", _stageRect);
-            _earthRect = earthObj.GetComponent<RectTransform>();
-            _earthRect.sizeDelta = new Vector2(210f, 210f);
-            _earthImage = earthObj.AddComponent<Image>();
-            _earthImage.preserveAspect = true;
-            _earthPlaceholderLabel = CreateText("EarthPlaceholderTag", earthObj.transform, font,
-                "EARTH\n(earth.png)", 14, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
-            StretchFull(_earthPlaceholderLabel.rectTransform);
-
-            GameObject padObj = CreateUIObject("LaunchPad", _stageRect);
-            _launchPadRect = padObj.GetComponent<RectTransform>();
-            _launchPadRect.sizeDelta = new Vector2(38f, 38f);
-            _launchPadImage = padObj.AddComponent<Image>();
-            _launchPadImage.preserveAspect = true;
-            _launchPadPlaceholderLabel = CreateText("PadPlaceholderTag", padObj.transform, font,
-                "PAD", 10, FontStyle.Bold, new Color(1f, 0.9f, 0.4f, 1f), TextAnchor.MiddleCenter);
-            StretchFull(_launchPadPlaceholderLabel.rectTransform);
-
-            // 5. Target Planet (Moon / Mars / Venus)
-            GameObject targetPlanetObj = CreateUIObject("TargetPlanet", _stageRect);
-            _targetPlanetRect = targetPlanetObj.GetComponent<RectTransform>();
-            _targetPlanetRect.sizeDelta = new Vector2(170f, 170f);
-            _targetPlanetImage = targetPlanetObj.AddComponent<Image>();
-            _targetPlanetImage.preserveAspect = true;
-            _targetPlanetPlaceholderLabel = CreateText("TargetPlaceholderTag", targetPlanetObj.transform, font,
-                "MOON / MARS", 13, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
-            StretchFull(_targetPlanetPlaceholderLabel.rectTransform);
-
-            // 6. Launch Smoke Puffs (3)
-            for (int i = 0; i < 3; i++)
+            // Reproducible spread yet randomized asteroid variant assignment across the 6 GIFs
+            for (int i = 0; i < AsteroidCount; i++)
             {
-                GameObject smokeObj = CreateUIObject("LaunchSmoke_" + i, _stageRect);
-                _smokeRects[i] = smokeObj.GetComponent<RectTransform>();
-                _smokeRects[i].sizeDelta = new Vector2(36f, 36f);
-                _smokeImages[i] = smokeObj.AddComponent<Image>();
-                _smokeImages[i].sprite = _procSmokeSprite;
-                smokeObj.SetActive(false);
+                int variantIdx = UnityEngine.Random.Range(0, 6);
+                Sprite[] frames = asteroidVariants[variantIdx];
+
+                GameObject astObj = CreateUIObject("BeltAsteroid_" + i, _asteroidsLayerRect);
+                RectTransform rt = astObj.GetComponent<RectTransform>();
+                float size = UnityEngine.Random.Range(6f, 13.5f);
+                rt.sizeDelta = new Vector2(size, size);
+
+                Image img = astObj.AddComponent<Image>();
+                img.preserveAspect = true;
+                img.raycastTarget = false;
+                float shade = UnityEngine.Random.Range(0.75f, 1.0f);
+                img.color = new Color(shade, shade * 0.97f, shade, UnityEngine.Random.Range(0.78f, 1.0f));
+                if (frames != null && frames.Length > 0)
+                {
+                    img.sprite = frames[0];
+                }
+
+                float radius = UnityEngine.Random.Range(500f, 620f);
+                float keplerSpeed = 2.4f * Mathf.Pow(560f / radius, 1.5f);
+
+                _asteroids.Add(new AsteroidRuntimeNode
+                {
+                    Rect = rt,
+                    Img = img,
+                    Frames = frames,
+                    FrameRate = UnityEngine.Random.Range(4.5f, 8.5f),
+                    AnimTime = UnityEngine.Random.Range(0f, 10f),
+                    OrbitRadiusPx = radius,
+                    OrbitAngleDeg = UnityEngine.Random.Range(0f, 360f),
+                    OrbitSpeedDegPerSec = keplerSpeed,
+                    SpinSpeedDegPerSec = UnityEngine.Random.Range(-24f, 24f),
+                    SpinAngleDeg = UnityEngine.Random.Range(0f, 360f),
+                    RadialWobbleAmp = UnityEngine.Random.Range(1.5f, 4.5f),
+                    WobblePhase = UnityEngine.Random.Range(0f, Mathf.PI * 2f)
+                });
+            }
+        }
+
+        private void BuildMissionOverlayLayer()
+        {
+            _transferDots.Clear();
+            _transferDotImages.Clear();
+
+            for (int i = 0; i < TransferDotCount; i++)
+            {
+                GameObject dotObj = CreateUIObject("TransferDot_" + i, _missionLayerRect);
+                RectTransform drt = dotObj.GetComponent<RectTransform>();
+                drt.sizeDelta = new Vector2(5f, 5f);
+                Image di = dotObj.AddComponent<Image>();
+                di.sprite = _procDotSprite;
+                di.color = new Color(0.40f, 0.90f, 1f, 0.72f);
+                di.raycastTarget = false;
+                dotObj.SetActive(false);
+                _transferDots.Add(drt);
+                _transferDotImages.Add(di);
             }
 
-            // 7. Rocket + Nozzle Flame + Mars Aerobraking Glow
-            GameObject rocketObj = CreateUIObject("RocketVehicle", _stageRect);
-            _rocketRootRect = rocketObj.GetComponent<RectTransform>();
-            _rocketRootRect.sizeDelta = new Vector2(54f, 54f);
+            // Orbital Sunlight, Shadow (Eclipse), and Comms Link Visual Sectors around Target Planet
+            _sunlightSectorImg = CreateRadialSector("SunlightSector", _missionLayerRect, new Color(1.0f, 0.86f, 0.32f, 0.14f), 0.50f, out _sunlightSectorRect);
+            _eclipseSectorImg = CreateRadialSector("EclipseShadowSector", _missionLayerRect, new Color(0.05f, 0.08f, 0.24f, 0.48f), 0.35f, out _eclipseSectorRect);
+            _commsSectorImg = CreateRadialSector("CommsLinkSector", _missionLayerRect, new Color(0.22f, 0.96f, 0.72f, 0.22f), 0.25f, out _commsSectorRect);
 
-            GameObject aeroGlowObj = CreateUIObject("MarsAerobrakeGlow", rocketObj.transform);
-            RectTransform aeroRt = aeroGlowObj.GetComponent<RectTransform>();
-            aeroRt.sizeDelta = new Vector2(76f, 76f);
-            _aerobrakeGlowImage = aeroGlowObj.AddComponent<Image>();
-            _aerobrakeGlowImage.sprite = _procPlanetCircleSprite;
-            _aerobrakeGlowImage.color = new Color(1f, 0.45f, 0.1f, 0.8f);
-            aeroGlowObj.SetActive(false);
+            // Target planet mission ring
+            GameObject haloObj = CreateUIObject("MissionOrbitHalo", _missionLayerRect);
+            _missionOrbitHaloRect = haloObj.GetComponent<RectTransform>();
+            _missionOrbitHaloRect.sizeDelta = new Vector2(84f, 84f);
+            _missionOrbitHaloImg = haloObj.AddComponent<Image>();
+            _missionOrbitHaloImg.sprite = _procRingSprite;
+            _missionOrbitHaloImg.color = new Color(0.35f, 0.95f, 0.75f, 0.72f);
+            _missionOrbitHaloImg.raycastTarget = false;
 
-            GameObject flameObj = CreateUIObject("RocketFlame", rocketObj.transform);
-            _rocketFlameRect = flameObj.GetComponent<RectTransform>();
-            _rocketFlameRect.anchorMin = new Vector2(0.5f, 0f);
-            _rocketFlameRect.anchorMax = new Vector2(0.5f, 0f);
-            _rocketFlameRect.pivot = new Vector2(0.5f, 1f);
-            _rocketFlameRect.anchoredPosition = new Vector2(0f, 4f);
-            _rocketFlameRect.sizeDelta = new Vector2(26f, 34f);
-            _rocketFlameImage = flameObj.AddComponent<Image>();
-            _rocketFlameImage.preserveAspect = true;
-
-            _rocketBodyImage = rocketObj.AddComponent<Image>();
-            _rocketBodyImage.preserveAspect = true;
-            _rocketPlaceholderLabel = CreateText("RocketPlaceholderTag", rocketObj.transform, font,
-                "ROCKET", 9, FontStyle.Bold, new Color(0.1f, 0.15f, 0.25f, 1f), TextAnchor.MiddleCenter);
-            StretchFull(_rocketPlaceholderLabel.rectTransform);
-
-            // 8. Player Satellite + Separation Flash
-            GameObject flashObj = CreateUIObject("SeparationFlash", _stageRect);
-            flashObj.GetComponent<RectTransform>().sizeDelta = new Vector2(68f, 68f);
-            _deployFlashImage = flashObj.AddComponent<Image>();
-            _deployFlashImage.sprite = _procPlanetCircleSprite;
-            flashObj.SetActive(false);
-
-            GameObject satObj = CreateUIObject("PlayerSatellite", _stageRect);
+            // Player Spacecraft (smaller than Moon 10x10 and orbiting inside Moon's orbit)
+            GameObject satObj = CreateUIObject("PlayerSpacecraft", _missionLayerRect);
             _satelliteRootRect = satObj.GetComponent<RectTransform>();
-            _satelliteRootRect.sizeDelta = new Vector2(52f, 52f);
+            _satelliteRootRect.sizeDelta = new Vector2(7f, 7f);
+
+            GameObject shieldObj = CreateUIObject("SafeModeShield", satObj.transform);
+            RectTransform shRt = shieldObj.GetComponent<RectTransform>();
+            shRt.sizeDelta = new Vector2(11f, 11f);
+            _safeModeShieldImg = shieldObj.AddComponent<Image>();
+            _safeModeShieldImg.sprite = _procRingSprite;
+            _safeModeShieldImg.color = new Color(1f, 0.85f, 0.28f, 0f);
+            _safeModeShieldImg.raycastTarget = false;
+
             _satelliteBodyImage = satObj.AddComponent<Image>();
             _satelliteBodyImage.preserveAspect = true;
-            _satellitePlaceholderLabel = CreateText("SatellitePlaceholderTag", satObj.transform, font,
-                "CUBESAT", 9, FontStyle.Bold, new Color(0.05f, 0.1f, 0.2f, 1f), TextAnchor.MiddleCenter);
-            StretchFull(_satellitePlaceholderLabel.rectTransform);
-            satObj.SetActive(false);
+            _satelliteBodyImage.raycastTarget = false;
 
-            // 9. Top Status & Launch Controls Bar (2x Speed / Skip Launch)
-            _launchControlsPanel = CreateUIObject("LaunchControlsBar", rootObj.transform);
-            RectTransform lcRt = _launchControlsPanel.GetComponent<RectTransform>();
-            lcRt.anchorMin = new Vector2(0f, 1f);
-            lcRt.anchorMax = new Vector2(1f, 1f);
-            lcRt.pivot = new Vector2(0.5f, 1f);
-            lcRt.anchoredPosition = new Vector2(0f, -10f);
-            lcRt.sizeDelta = new Vector2(-32f, 46f);
+            GameObject pulseObj = CreateUIObject("CommsLinkPulse", satObj.transform);
+            RectTransform pRt = pulseObj.GetComponent<RectTransform>();
+            pRt.sizeDelta = new Vector2(10f, 10f);
+            _commsPulseRingImg = pulseObj.AddComponent<Image>();
+            _commsPulseRingImg.sprite = _procRingSprite;
+            _commsPulseRingImg.color = new Color(0.35f, 0.96f, 1f, 0f);
+            _commsPulseRingImg.raycastTarget = false;
 
-            Image lcBg = _launchControlsPanel.AddComponent<Image>();
-            lcBg.color = new Color(0.05f, 0.10f, 0.18f, 0.90f);
+            GameObject eclipseObj = CreateUIObject("EclipseShadowBadge", satObj.transform);
+            RectTransform ecRt = eclipseObj.GetComponent<RectTransform>();
+            ecRt.sizeDelta = new Vector2(8.5f, 8.5f);
+            _eclipseShadowBadgeImg = eclipseObj.AddComponent<Image>();
+            _eclipseShadowBadgeImg.sprite = _procSolidGlowSprite;
+            _eclipseShadowBadgeImg.color = new Color(0.15f, 0.25f, 0.55f, 0f);
+            _eclipseShadowBadgeImg.raycastTarget = false;
 
-            HorizontalLayoutGroup lcLayout = _launchControlsPanel.AddComponent<HorizontalLayoutGroup>();
-            lcLayout.padding = new RectOffset(14, 14, 6, 6);
-            lcLayout.spacing = 10f;
-            lcLayout.childAlignment = TextAnchor.MiddleLeft;
-            lcLayout.childControlWidth = true;
-            lcLayout.childControlHeight = true;
-            lcLayout.childForceExpandWidth = false;
+            // Rocket during launch sequence
+            GameObject rocketObj = CreateUIObject("LaunchRocket", _missionLayerRect);
+            _rocketRootRect = rocketObj.GetComponent<RectTransform>();
+            _rocketRootRect.sizeDelta = new Vector2(26f, 36f);
+            _rocketBodyImage = rocketObj.AddComponent<Image>();
+            _rocketBodyImage.preserveAspect = true;
+            _rocketBodyImage.raycastTarget = false;
 
-            _statusBannerText = CreateText("StatusBannerText", _launchControlsPanel.transform, font,
-                "SPACE MAP READY", 14, FontStyle.Bold, new Color(0.88f, 0.95f, 1f, 1f), TextAnchor.MiddleLeft);
-            LayoutElement sbLe = _statusBannerText.gameObject.AddComponent<LayoutElement>();
-            sbLe.flexibleWidth = 1f;
+            GameObject flameObj = CreateUIObject("Flame", rocketObj.transform);
+            RectTransform fRt = flameObj.GetComponent<RectTransform>();
+            fRt.anchorMin = new Vector2(0.5f, 0f);
+            fRt.anchorMax = new Vector2(0.5f, 0f);
+            fRt.pivot = new Vector2(0.5f, 1f);
+            fRt.sizeDelta = new Vector2(16f, 18f);
+            _rocketFlameImage = flameObj.AddComponent<Image>();
+            _rocketFlameImage.preserveAspect = true;
+            _rocketFlameImage.raycastTarget = false;
+            rocketObj.SetActive(false);
 
-            Button speedBtn = CreateButton(_launchControlsPanel.transform, "Btn_Speed2x", "SPEED: 1x -> 2x",
-                new Color(0.18f, 0.36f, 0.58f, 1f), 145f, 34f, font, ToggleLaunchSpeed2x);
-            _speedButtonText = speedBtn.GetComponentInChildren<Text>();
-
-            CreateButton(_launchControlsPanel.transform, "Btn_SkipLaunch", "SKIP LAUNCH >>",
-                new Color(0.52f, 0.32f, 0.14f, 1f), 145f, 34f, font, SkipLaunchSequence);
-
-            // 10. Bottom Sandbox Test Bar (for testing LEO / Moon / Mars / Venus in _Sandbox)
-            _sandboxToolbarObj = CreateUIObject("SandboxTestBar", rootObj.transform);
-            RectTransform stbRt = _sandboxToolbarObj.GetComponent<RectTransform>();
-            stbRt.anchorMin = new Vector2(0f, 0f);
-            stbRt.anchorMax = new Vector2(1f, 0f);
-            stbRt.pivot = new Vector2(0.5f, 0f);
-            stbRt.anchoredPosition = new Vector2(0f, 10f);
-            stbRt.sizeDelta = new Vector2(-32f, 44f);
-
-            Image stbBg = _sandboxToolbarObj.AddComponent<Image>();
-            stbBg.color = new Color(0.05f, 0.09f, 0.16f, 0.88f);
-
-            HorizontalLayoutGroup stbLayout = _sandboxToolbarObj.AddComponent<HorizontalLayoutGroup>();
-            stbLayout.padding = new RectOffset(12, 12, 5, 5);
-            stbLayout.spacing = 8f;
-            stbLayout.childAlignment = TextAnchor.MiddleCenter;
-            stbLayout.childControlWidth = true;
-            stbLayout.childControlHeight = true;
-            stbLayout.childForceExpandWidth = true;
-
-            CreateButton(_sandboxToolbarObj.transform, "Btn_PresetLEO", "1. LEO (Earth)",
-                new Color(0.16f, 0.32f, 0.52f, 1f), 130f, 32f, font, () => SetupDemoPreset(0));
-            CreateButton(_sandboxToolbarObj.transform, "Btn_PresetMoon", "2. Moon (2 Planets)",
-                new Color(0.16f, 0.32f, 0.52f, 1f), 150f, 32f, font, () => SetupDemoPreset(1));
-            CreateButton(_sandboxToolbarObj.transform, "Btn_PresetMars", "3. Mars (Aerobrake)",
-                new Color(0.48f, 0.24f, 0.16f, 1f), 150f, 32f, font, () => SetupDemoPreset(2));
-            CreateButton(_sandboxToolbarObj.transform, "Btn_PresetVenus", "4. Venus",
-                new Color(0.42f, 0.34f, 0.14f, 1f), 110f, 32f, font, () => SetupDemoPreset(3));
-            CreateButton(_sandboxToolbarObj.transform, "Btn_PlayLaunch", "▶ PLAY LAUNCH + ORBIT",
-                new Color(0.14f, 0.52f, 0.34f, 1f), 190f, 32f, font, StartDemoLaunchAndOrbit);
-
-            _sandboxToolbarObj.SetActive(showSandboxTestBar);
+            GameObject flashObj = CreateUIObject("SeparationFlash", _missionLayerRect);
+            RectTransform flRt = flashObj.GetComponent<RectTransform>();
+            flRt.sizeDelta = new Vector2(54f, 54f);
+            _deployFlashImg = flashObj.AddComponent<Image>();
+            _deployFlashImg.sprite = _procSolidGlowSprite;
+            _deployFlashImg.color = new Color(0.75f, 0.98f, 1f, 0f);
+            _deployFlashImg.raycastTarget = false;
         }
 
-        private void BindExistingHierarchy(Transform root)
+        private void AdvanceCelestialOrbitsAndSprites(float dt, float unscaledDt)
         {
-            _mapViewportRect = root.GetComponent<RectTransform>();
-            _stageRect = FindChild<RectTransform>(root, "SpaceMapStage");
-            Transform worldRoot = _stageRect != null ? _stageRect : root;
-
-            _starfieldLayerA = FindChild<RectTransform>(root, "StarfieldBg_Main");
-            _starfieldLayerB = FindChild<RectTransform>(root, "StarfieldBg_Twinkle");
-            _starfieldImageA = FindChild<Image>(root, "StarfieldBg_Main");
-            _starfieldImageB = FindChild<Image>(root, "StarfieldBg_Twinkle");
-
-            _bezierContainerRect = FindChild<RectTransform>(worldRoot, "BezierTransferTrajectory");
-            _bezierDotRects.Clear();
-            if (_bezierContainerRect != null)
+            // Advance Sun & planets in heliocentric order first (parents appear before moons in catalog)
+            for (int i = 0; i < _bodies.Count; i++)
             {
-                for (int i = 0; i < BezierDotCount; i++)
+                CelestialRuntimeNode node = _bodies[i];
+                SolarSystemBodyCatalog.BodyDefinition spec = node.Spec;
+
+                node.CurrentOrbitAngleDeg = (node.CurrentOrbitAngleDeg + spec.OrbitalSpeedDegPerSec * dt) % 360f;
+
+                Vector2 pos = Vector2.zero;
+                if (string.IsNullOrEmpty(spec.ParentId))
                 {
-                    RectTransform d = FindChild<RectTransform>(_bezierContainerRect, "BezierDot_" + i);
-                    if (d != null) _bezierDotRects.Add(d);
+                    if (spec.OrbitRadiusPx > 0.5f)
+                    {
+                        pos = SolarSystemBodyCatalog.EvaluateEllipsePosition(
+                            spec.OrbitRadiusPx, spec.Eccentricity, spec.PerihelionAngleDeg, node.CurrentOrbitAngleDeg);
+                    }
+                }
+                else if (_bodyMap.TryGetValue(spec.ParentId, out CelestialRuntimeNode parent))
+                {
+                    Vector2 localMoonPos = SolarSystemBodyCatalog.EvaluateEllipsePosition(
+                        spec.SatelliteOrbitRadiusPx, spec.Eccentricity, spec.PerihelionAngleDeg, node.CurrentOrbitAngleDeg);
+                    pos = parent.CurrentStagePos + localMoonPos;
+
+                    if (node.OrbitRingRect != null)
+                    {
+                        node.OrbitRingRect.anchoredPosition = parent.CurrentStagePos;
+                    }
+                }
+
+                node.CurrentStagePos = pos;
+                if (node.Rect != null)
+                {
+                    node.Rect.anchoredPosition = pos;
+                    bool hovered = string.Equals(spec.Id, _hoveredBodyId, StringComparison.Ordinal);
+                    node.HoverBlend = Mathf.MoveTowards(node.HoverBlend, hovered ? 1f : 0f, unscaledDt * 9f);
+                    float scale = 1f + node.HoverBlend * 0.18f;
+                    node.Rect.localScale = new Vector3(scale, scale, 1f);
+                }
+
+                if (node.Frames != null && node.Frames.Length > 0 && node.PlanetImage != null)
+                {
+                    node.AnimTime += unscaledDt * node.FrameRate;
+                    int f = Mathf.FloorToInt(node.AnimTime) % node.Frames.Length;
+                    if (f < 0) f += node.Frames.Length;
+                    Sprite sp = node.Frames[f];
+                    if (sp != null && node.PlanetImage.sprite != sp)
+                    {
+                        node.PlanetImage.sprite = sp;
+                    }
                 }
             }
 
-            _orbitContainerRect = FindChild<RectTransform>(worldRoot, "OrbitRingContainer");
-            if (_orbitContainerRect != null)
+            if (_sunCoronaGlow != null)
             {
-                _eclipseSectorImage = FindChild<Image>(_orbitContainerRect, "EclipseShadowSector");
-                _commSectorImage = FindChild<Image>(_orbitContainerRect, "CommWindowArc");
-                _orbitRingImage = FindChild<Image>(_orbitContainerRect, "DashedOrbitLine");
-                _commTagText = FindChild<Text>(_orbitContainerRect, "CommSectorTag");
-                _eclipseTagText = FindChild<Text>(_orbitContainerRect, "EclipseSectorTag");
+                float pulse = 0.20f + 0.08f * Mathf.Sin(Time.unscaledTime * 2.2f);
+                _sunCoronaGlow.color = new Color(1.0f, 0.66f, 0.20f, pulse);
+                float coronaScale = 1.0f + 0.06f * Mathf.Sin(Time.unscaledTime * 1.7f);
+                _sunCoronaGlow.rectTransform.localScale = new Vector3(coronaScale, coronaScale, 1f);
             }
+        }
 
-            _earthRect = FindChild<RectTransform>(worldRoot, "EarthPlanet");
-            _earthImage = FindChild<Image>(worldRoot, "EarthPlanet");
-            _earthPlaceholderLabel = FindChild<Text>(worldRoot, "EarthPlanet/EarthPlaceholderTag");
-
-            _launchPadRect = FindChild<RectTransform>(worldRoot, "LaunchPad");
-            _launchPadImage = FindChild<Image>(worldRoot, "LaunchPad");
-            _launchPadPlaceholderLabel = FindChild<Text>(worldRoot, "LaunchPad/PadPlaceholderTag");
-
-            _targetPlanetRect = FindChild<RectTransform>(worldRoot, "TargetPlanet");
-            _targetPlanetImage = FindChild<Image>(worldRoot, "TargetPlanet");
-            _targetPlanetPlaceholderLabel = FindChild<Text>(worldRoot, "TargetPlanet/TargetPlaceholderTag");
-
-            for (int i = 0; i < 3; i++)
+        private void AdvanceAsteroidBelt(float dt, float unscaledDt)
+        {
+            float now = Time.unscaledTime;
+            for (int i = 0; i < _asteroids.Count; i++)
             {
-                _smokeRects[i] = FindChild<RectTransform>(worldRoot, "LaunchSmoke_" + i);
-                _smokeImages[i] = FindChild<Image>(worldRoot, "LaunchSmoke_" + i);
-            }
+                AsteroidRuntimeNode ast = _asteroids[i];
+                ast.OrbitAngleDeg = (ast.OrbitAngleDeg + ast.OrbitSpeedDegPerSec * dt) % 360f;
+                ast.SpinAngleDeg = (ast.SpinAngleDeg + ast.SpinSpeedDegPerSec * unscaledDt) % 360f;
 
-            _rocketRootRect = FindChild<RectTransform>(worldRoot, "RocketVehicle");
-            _rocketBodyImage = FindChild<Image>(worldRoot, "RocketVehicle");
-            _rocketPlaceholderLabel = FindChild<Text>(worldRoot, "RocketVehicle/RocketPlaceholderTag");
-            _rocketFlameRect = FindChild<RectTransform>(worldRoot, "RocketVehicle/RocketFlame");
-            _rocketFlameImage = FindChild<Image>(worldRoot, "RocketVehicle/RocketFlame");
-            _aerobrakeGlowImage = FindChild<Image>(worldRoot, "RocketVehicle/MarsAerobrakeGlow");
+                float r = ast.OrbitRadiusPx + Mathf.Sin(now * 0.7f + ast.WobblePhase) * ast.RadialWobbleAmp;
+                float rad = ast.OrbitAngleDeg * Mathf.Deg2Rad;
+                Vector2 pos = new Vector2(Mathf.Cos(rad) * r, Mathf.Sin(rad) * r);
 
-            _deployFlashImage = FindChild<Image>(worldRoot, "SeparationFlash");
-            _satelliteRootRect = FindChild<RectTransform>(worldRoot, "PlayerSatellite");
-            _satelliteBodyImage = FindChild<Image>(worldRoot, "PlayerSatellite");
-            _satellitePlaceholderLabel = FindChild<Text>(worldRoot, "PlayerSatellite/SatellitePlaceholderTag");
-
-            Transform lc = root.Find("LaunchControlsBar");
-            if (lc != null)
-            {
-                _launchControlsPanel = lc.gameObject;
-                _statusBannerText = FindChild<Text>(lc, "StatusBannerText");
-
-                Button spdBtn = FindChild<Button>(lc, "Btn_Speed2x");
-                if (spdBtn != null)
+                if (ast.Rect != null)
                 {
-                    spdBtn.onClick.RemoveAllListeners();
-                    spdBtn.onClick.AddListener(ToggleLaunchSpeed2x);
-                    _speedButtonText = spdBtn.GetComponentInChildren<Text>();
+                    ast.Rect.anchoredPosition = pos;
+                    ast.Rect.localEulerAngles = new Vector3(0f, 0f, ast.SpinAngleDeg);
                 }
 
-                Button skpBtn = FindChild<Button>(lc, "Btn_SkipLaunch");
-                if (skpBtn != null)
+                if (ast.Frames != null && ast.Frames.Length > 0 && ast.Img != null)
                 {
-                    skpBtn.onClick.RemoveAllListeners();
-                    skpBtn.onClick.AddListener(SkipLaunchSequence);
+                    ast.AnimTime += unscaledDt * ast.FrameRate;
+                    int f = Mathf.FloorToInt(ast.AnimTime) % ast.Frames.Length;
+                    if (f < 0) f += ast.Frames.Length;
+                    Sprite sp = ast.Frames[f];
+                    if (sp != null && ast.Img.sprite != sp)
+                    {
+                        ast.Img.sprite = sp;
+                    }
+                }
+            }
+        }
+
+        private void UpdateMissionOverlayVisuals(float unscaledDt)
+        {
+            if (!_bodyMap.TryGetValue(_targetPlanetBodyId, out CelestialRuntimeNode targetNode))
+            {
+                return;
+            }
+
+            Vector2 targetPos = targetNode.CurrentStagePos;
+            float bodyRadius = Mathf.Max(targetNode.Spec.VisualWidthPx, targetNode.Spec.VisualHeightPx) * 0.5f;
+            float orbitRadius = bodyRadius + Mathf.Clamp(bodyRadius * 0.42f, 5f, 11f);
+
+            // Update Sunlight, Shadow (Eclipse), and Comms visual sectors around target planet
+            Vector2 sunPos = _bodyMap.TryGetValue("sun", out CelestialRuntimeNode sunNode) ? sunNode.CurrentStagePos : Vector2.zero;
+            Vector2 toSun = sunPos - targetPos;
+            float sunAngleDeg = toSun.sqrMagnitude > 0.01f ? Mathf.Atan2(toSun.y, toSun.x) * Mathf.Rad2Deg : 180f;
+            float sectorDiam = orbitRadius * 2.55f;
+
+            if (_sunlightSectorRect != null && _sunlightSectorImg != null)
+            {
+                _sunlightSectorRect.anchoredPosition = targetPos;
+                _sunlightSectorRect.sizeDelta = new Vector2(sectorDiam, sectorDiam);
+                _sunlightSectorImg.fillAmount = 0.50f;
+                _sunlightSectorRect.localEulerAngles = new Vector3(0f, 0f, sunAngleDeg);
+            }
+
+            if (_eclipseSectorRect != null && _eclipseSectorImg != null)
+            {
+                float eclipseFrac = Mathf.Clamp(_currentOrbit != null ? _currentOrbit.EclipseFraction : 0.35f, 0.20f, 0.48f);
+                _eclipseSectorRect.anchoredPosition = targetPos;
+                _eclipseSectorRect.sizeDelta = new Vector2(sectorDiam, sectorDiam);
+                _eclipseSectorImg.fillAmount = eclipseFrac;
+                _eclipseSectorRect.localEulerAngles = new Vector3(0f, 0f, sunAngleDeg + 90f + eclipseFrac * 180f);
+            }
+
+            if (_commsSectorRect != null && _commsSectorImg != null)
+            {
+                float commFrac = Mathf.Clamp(_currentOrbit != null ? _currentOrbit.CommWindowFraction : 0.25f, 0.16f, 0.40f);
+                float commDiam = orbitRadius * 2.25f;
+                _commsSectorRect.anchoredPosition = targetPos;
+                _commsSectorRect.sizeDelta = new Vector2(commDiam, commDiam);
+                _commsSectorImg.fillAmount = commFrac;
+                _commsSectorImg.color = _spacecraftCommsOn
+                    ? new Color(0.22f, 0.96f, 0.72f, _spacecraftInComm ? 0.32f : 0.18f)
+                    : new Color(0.45f, 0.55f, 0.65f, 0.10f);
+                _commsSectorRect.localEulerAngles = new Vector3(0f, 0f, sunAngleDeg + commFrac * 180f);
+            }
+
+            if (_missionOrbitHaloRect != null)
+            {
+                _missionOrbitHaloRect.anchoredPosition = targetPos;
+                _missionOrbitHaloRect.sizeDelta = new Vector2(orbitRadius * 2f, orbitRadius * 2f);
+                if (_missionOrbitHaloImg != null)
+                {
+                    _missionOrbitHaloImg.color = _spacecraftStormActive
+                        ? new Color(1.0f, 0.36f, 0.32f, 0.80f)
+                        : (_spacecraftInComm && _spacecraftCommsOn
+                            ? new Color(0.35f, 0.96f, 0.72f, 0.76f)
+                            : new Color(0.40f, 0.78f, 1.0f, 0.56f));
                 }
             }
 
-            Transform stb = root.Find("SandboxTestBar");
-            if (stb != null)
+            // Transfer arc from Earth -> Target when interplanetary / lunar
+            CelestialRuntimeNode earthNode = null;
+            bool showTransfer = !string.Equals(_targetPlanetBodyId, "earth", StringComparison.Ordinal)
+                                && _bodyMap.TryGetValue("earth", out earthNode)
+                                && earthNode != null;
+            if (showTransfer)
             {
-                _sandboxToolbarObj = stb.gameObject;
-                _sandboxToolbarObj.SetActive(showSandboxTestBar);
+                Vector2 p0 = earthNode.CurrentStagePos;
+                Vector2 p2 = targetPos;
+                Vector2 mid = (p0 + p2) * 0.5f;
+                Vector2 perp = Vector2.Perpendicular((p2 - p0).normalized);
+                Vector2 p1 = mid + perp * (Vector2.Distance(p0, p2) * 0.24f);
 
-                WireButton(stb, "Btn_PresetLEO", () => SetupDemoPreset(0));
-                WireButton(stb, "Btn_PresetMoon", () => SetupDemoPreset(1));
-                WireButton(stb, "Btn_PresetMars", () => SetupDemoPreset(2));
-                WireButton(stb, "Btn_PresetVenus", () => SetupDemoPreset(3));
-                WireButton(stb, "Btn_PlayLaunch", StartDemoLaunchAndOrbit);
+                float phase = Time.unscaledTime * 2.2f;
+                for (int i = 0; i < _transferDots.Count; i++)
+                {
+                    float t = (i + 1) / (float)(TransferDotCount + 1);
+                    Vector2 bp = (1f - t) * (1f - t) * p0 + 2f * (1f - t) * t * p1 + t * t * p2;
+                    _transferDots[i].anchoredPosition = bp;
+                    _transferDots[i].gameObject.SetActive(true);
+                    float pulse = 0.25f + 0.65f * Mathf.Clamp01(0.5f + 0.5f * Mathf.Sin(phase - i * 0.45f));
+                    _transferDotImages[i].color = new Color(0.45f, 0.92f, 1.0f, pulse);
+                }
+            }
+            else
+            {
+                for (int i = 0; i < _transferDots.Count; i++)
+                {
+                    if (_transferDots[i] != null && _transferDots[i].gameObject.activeSelf)
+                    {
+                        _transferDots[i].gameObject.SetActive(false);
+                    }
+                }
+            }
+
+            // Spacecraft orbiting target body (visible when not waiting for initial ascent)
+            if (_satelliteRootRect != null)
+            {
+                _satelliteRootRect.gameObject.SetActive(!_isLaunchPlaying);
+                float rad = _spacecraftOrbitDeg * Mathf.Deg2Rad;
+                _satelliteRootRect.anchoredPosition = targetPos + new Vector2(Mathf.Cos(rad), Mathf.Sin(rad)) * orbitRadius;
+                _satelliteRootRect.localEulerAngles = new Vector3(0f, 0f, _spacecraftOrbitDeg + 90f);
+
+                if (_safeModeShieldImg != null)
+                {
+                    _safeModeShieldImg.color = _spacecraftSafeMode
+                        ? new Color(1f, 0.86f, 0.28f, 0.78f + 0.2f * Mathf.Sin(Time.unscaledTime * 6f))
+                        : new Color(1f, 0.86f, 0.28f, 0f);
+                }
+
+                if (_commsPulseRingImg != null)
+                {
+                    float commAlpha = (_spacecraftInComm && _spacecraftCommsOn)
+                        ? 0.45f + 0.40f * Mathf.Sin(Time.unscaledTime * 5f)
+                        : 0f;
+                    _commsPulseRingImg.color = new Color(0.32f, 0.96f, 1f, commAlpha);
+                }
+
+                if (_eclipseShadowBadgeImg != null)
+                {
+                    _eclipseShadowBadgeImg.color = _spacecraftInEclipse
+                        ? new Color(0.14f, 0.26f, 0.60f, 0.45f)
+                        : new Color(0.14f, 0.26f, 0.60f, 0f);
+                }
+
+                if (_satelliteBodyImage != null)
+                {
+                    _satelliteBodyImage.color = _spacecraftInEclipse
+                        ? new Color(0.64f, 0.72f, 0.90f, 1f)
+                        : Color.white;
+                }
             }
         }
 
-        private static void WireButton(Transform parent, string path, UnityEngine.Events.UnityAction action)
+        private IEnumerator RunTransferLaunchRoutine()
         {
-            Button b = FindChild<Button>(parent, path);
-            if (b != null)
+            Vector2 startPos = _bodyMap.TryGetValue("earth", out CelestialRuntimeNode earth) ? earth.CurrentStagePos : Vector2.zero;
+            Vector2 endPos = _bodyMap.TryGetValue(_targetPlanetBodyId, out CelestialRuntimeNode tgt) ? tgt.CurrentStagePos : startPos;
+
+            if (_rocketRootRect != null) _rocketRootRect.gameObject.SetActive(true);
+            if (_satelliteRootRect != null) _satelliteRootRect.gameObject.SetActive(false);
+
+            float ascentElapsed = 0f;
+            float ascentDur = Mathf.Max(0.2f, phase1AscentDurationSeconds);
+
+            while (ascentElapsed < ascentDur && !_skipRequested)
             {
-                b.onClick.RemoveAllListeners();
-                b.onClick.AddListener(action);
+                ascentElapsed += Time.unscaledDeltaTime * _launchSpeedMultiplier;
+                float u = Mathf.Clamp01(ascentElapsed / ascentDur);
+                float eased = 1f - Mathf.Pow(1f - u, 2.2f);
+
+                if (_bodyMap.TryGetValue("earth", out CelestialRuntimeNode eNow)) startPos = eNow.CurrentStagePos;
+                if (_bodyMap.TryGetValue(_targetPlanetBodyId, out CelestialRuntimeNode tNow)) endPos = tNow.CurrentStagePos;
+
+                Vector2 pos;
+                float tangentDeg;
+                if (string.Equals(_targetPlanetBodyId, "earth", StringComparison.Ordinal))
+                {
+                    Vector2 apex = startPos + new Vector2(0f, 44f);
+                    pos = Vector2.Lerp(startPos, apex, eased);
+                    tangentDeg = 0f;
+                }
+                else
+                {
+                    Vector2 mid = (startPos + endPos) * 0.5f + Vector2.Perpendicular((endPos - startPos).normalized) * (Vector2.Distance(startPos, endPos) * 0.24f);
+                    pos = (1f - eased) * (1f - eased) * startPos + 2f * (1f - eased) * eased * mid + eased * eased * endPos;
+                    Vector2 deriv = 2f * (1f - eased) * (mid - startPos) + 2f * eased * (endPos - mid);
+                    tangentDeg = deriv.sqrMagnitude > 0.001f ? Mathf.Atan2(deriv.y, deriv.x) * Mathf.Rad2Deg - 90f : 0f;
+                }
+
+                if (_rocketRootRect != null)
+                {
+                    _rocketRootRect.anchoredPosition = pos;
+                    _rocketRootRect.localEulerAngles = new Vector3(0f, 0f, tangentDeg);
+                }
+
+                if (_rocketFlameImage != null)
+                {
+                    float flicker = 0.85f + 0.25f * Mathf.Sin(Time.unscaledTime * 35f);
+                    _rocketFlameImage.rectTransform.localScale = new Vector3(flicker, flicker, 1f);
+                }
+
+                yield return null;
+            }
+
+            if (_rocketRootRect != null) _rocketRootRect.gameObject.SetActive(false);
+
+            // Brief stage separation flash
+            float flashDur = Mathf.Max(0.15f, phase2SeparationDurationSeconds);
+            float flashElapsed = 0f;
+            while (flashElapsed < flashDur && !_skipRequested)
+            {
+                flashElapsed += Time.unscaledDeltaTime * _launchSpeedMultiplier;
+                float p = Mathf.Clamp01(flashElapsed / flashDur);
+                if (_deployFlashImg != null && _bodyMap.TryGetValue(_targetPlanetBodyId, out CelestialRuntimeNode tgtNode))
+                {
+                    _deployFlashImg.rectTransform.anchoredPosition = tgtNode.CurrentStagePos;
+                    _deployFlashImg.color = new Color(0.75f, 0.98f, 1f, Mathf.Sin(p * Mathf.PI) * 0.85f);
+                }
+                yield return null;
+            }
+
+            CompleteLaunchImmediate();
+        }
+
+        private void CompleteLaunchImmediate()
+        {
+            if (_launchCoroutine != null)
+            {
+                StopCoroutine(_launchCoroutine);
+                _launchCoroutine = null;
+            }
+            _isLaunchPlaying = false;
+            _skipRequested = false;
+
+            if (_rocketRootRect != null) _rocketRootRect.gameObject.SetActive(false);
+            if (_deployFlashImg != null) _deployFlashImg.color = new Color(0.75f, 0.98f, 1f, 0f);
+            if (_satelliteRootRect != null) _satelliteRootRect.gameObject.SetActive(true);
+
+            OnLaunchSequenceCompleted?.Invoke();
+        }
+
+        private void UpdateCameraPanAndZoom(float unscaledDt)
+        {
+            if (_isFollowingSelected && _bodyMap.TryGetValue(_selectedBodyId, out CelestialRuntimeNode follow))
+            {
+                _targetPanPx = -follow.CurrentStagePos * _targetZoom - new Vector2(110f, 0f);
+            }
+
+            float smooth = 1f - Mathf.Exp(-unscaledDt * 8.5f);
+            _currentZoom = Mathf.Lerp(_currentZoom, _targetZoom, smooth);
+            _currentPanPx = Vector2.Lerp(_currentPanPx, _targetPanPx, smooth);
+
+            _stageRect.localScale = new Vector3(_currentZoom, _currentZoom, 1f);
+            _stageRect.anchoredPosition = _currentPanPx;
+
+            // Keep celestial body labels razor-sharp at high zoom by counter-scaling to ~1:1 screen pixels
+            float invZoom = Mathf.Clamp(1f / Mathf.Max(0.22f, _currentZoom), 0.06f, 1.55f);
+            for (int i = 0; i < _bodies.Count; i++)
+            {
+                Text lbl = _bodies[i].LabelText;
+                if (lbl == null) continue;
+                RectTransform lrt = lbl.rectTransform;
+                lrt.localScale = new Vector3(invZoom, invZoom, 1f);
+                lrt.anchoredPosition = new Vector2(0f, -6f * invZoom);
             }
         }
 
-        private static OrbitDefinition CreateFallbackOrbit(OrbitType type, string id, string name, float eclipse, float comm)
+        private void ClampTargetPan()
         {
-            return new OrbitDefinition
-            {
-                Id = id,
-                Name = name,
-                Type = type,
-                OrbitPeriodHours = 1.5f,
-                EclipseFraction = eclipse,
-                CommWindowFraction = comm,
-                SolarFluxFactor = 1.0f,
-                SignalDelaySeconds = 1.0f,
-                BaseRadiation = 10.0f
-            };
+            float maxExtent = 1550f * Mathf.Max(0.5f, _targetZoom);
+            _targetPanPx.x = Mathf.Clamp(_targetPanPx.x, -maxExtent, maxExtent);
+            _targetPanPx.y = Mathf.Clamp(_targetPanPx.y, -maxExtent, maxExtent);
         }
 
-        private static T FindChild<T>(Transform root, string path) where T : Component
+        private void FitOverviewOnFirstValidLayout()
         {
-            Transform t = root.Find(path);
-            return t != null ? t.GetComponent<T>() : null;
+            if (_hasInitialOverviewFit || _mapViewportRect == null) return;
+            if (_mapViewportRect.rect.width < 120f || _mapViewportRect.rect.height < 120f) return;
+
+            _hasInitialOverviewFit = true;
+            ResetCameraToSystemOverview();
+            _currentZoom = _targetZoom;
+            _currentPanPx = _targetPanPx;
+            if (_stageRect != null)
+            {
+                _stageRect.localScale = new Vector3(_currentZoom, _currentZoom, 1f);
+                _stageRect.anchoredPosition = _currentPanPx;
+            }
+        }
+
+        private void RefreshMissionVehicleSprites()
+        {
+            _artBank = _artBank ?? SolarSystemArtBank.Load();
+
+            Sprite rocketSp = smallRocketSprite;
+            string rocketId = _currentRocket != null ? (_currentRocket.Id ?? string.Empty).ToLowerInvariant() : string.Empty;
+            if (rocketId.Contains("heavy")) rocketSp = heavyLiftRocketSprite ?? (_artBank != null ? _artBank.heavyLiftRocketSprite : null);
+            else if (rocketId.Contains("medium") || rocketId.Contains("reusable")) rocketSp = reusableRocketSprite ?? (_artBank != null ? _artBank.reusableRocketSprite : null);
+            if (rocketSp == null && _artBank != null) rocketSp = _artBank.smallRocketSprite;
+
+            if (_rocketBodyImage != null)
+            {
+                _rocketBodyImage.sprite = rocketSp ?? _procDotSprite;
+            }
+            if (_rocketFlameImage != null)
+            {
+                _rocketFlameImage.sprite = rocketFlameSprite ?? (_artBank != null ? _artBank.rocketFlameSprite : _procSolidGlowSprite);
+            }
+
+            Sprite craftSp = cubesatSprite;
+            for (int i = 0; i < _currentComponents.Count; i++)
+            {
+                string cid = (_currentComponents[i].Id ?? string.Empty).ToLowerInvariant();
+                if (cid.Contains("deep") || cid.Contains("probe"))
+                {
+                    craftSp = deepSpaceProbeSprite ?? (_artBank != null ? _artBank.deepSpaceProbeSprite : null);
+                    break;
+                }
+                if (cid.Contains("smallsat") || cid.Contains("bus_small"))
+                {
+                    craftSp = satelliteSprite ?? (_artBank != null ? _artBank.satelliteSprite : null);
+                }
+            }
+            if (craftSp == null && _artBank != null)
+            {
+                craftSp = _artBank.cubesatSprite ?? _artBank.satelliteSprite;
+            }
+
+            if (_satelliteBodyImage != null)
+            {
+                _satelliteBodyImage.sprite = craftSp ?? _procDotSprite;
+            }
+        }
+
+        private void SetHoveredBody(string bodyId)
+        {
+            _hoveredBodyId = bodyId;
+            UpdateReticleVisibility();
+        }
+
+        private void ClearHoveredBody(string bodyId)
+        {
+            if (string.Equals(_hoveredBodyId, bodyId, StringComparison.Ordinal))
+            {
+                _hoveredBodyId = null;
+                UpdateReticleVisibility();
+            }
+        }
+
+        private void UpdateReticleVisibility()
+        {
+            for (int i = 0; i < _bodies.Count; i++)
+            {
+                CelestialRuntimeNode b = _bodies[i];
+                bool isSel = string.Equals(b.Spec.Id, _selectedBodyId, StringComparison.Ordinal);
+                bool isHov = string.Equals(b.Spec.Id, _hoveredBodyId, StringComparison.Ordinal);
+                if (b.SelectionReticle != null)
+                {
+                    b.SelectionReticle.gameObject.SetActive(isSel || isHov);
+                }
+            }
+        }
+
+        private static void EnsureProceduralSprites()
+        {
+            if (_procRingSprite == null)
+            {
+                const int size = 512;
+                Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+                tex.filterMode = FilterMode.Point;
+                Color[] px = new Color[size * size];
+                float half = size * 0.5f;
+                float rMid = half - 3f;
+                for (int y = 0; y < size; y++)
+                {
+                    for (int x = 0; x < size; x++)
+                    {
+                        float dx = x + 0.5f - half;
+                        float dy = y + 0.5f - half;
+                        float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                        float diff = Mathf.Abs(dist - rMid);
+                        if (diff < 1.35f)
+                        {
+                            float angle = Mathf.Atan2(dy, dx);
+                            bool dashOn = Mathf.Sin(angle * 48f) > -0.35f;
+                            float alpha = dashOn ? Mathf.Clamp01(1.35f - diff) : 0.20f;
+                            px[y * size + x] = new Color(1f, 1f, 1f, alpha);
+                        }
+                        else
+                        {
+                            px[y * size + x] = Color.clear;
+                        }
+                    }
+                }
+                tex.SetPixels(px);
+                tex.Apply();
+                _procRingSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+                _procRingSprite.name = "Proc_OrbitRing";
+            }
+
+            if (_procSolidGlowSprite == null)
+            {
+                const int size = 64;
+                Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+                tex.filterMode = FilterMode.Point;
+                Color[] px = new Color[size * size];
+                float half = size * 0.5f;
+                for (int y = 0; y < size; y++)
+                {
+                    for (int x = 0; x < size; x++)
+                    {
+                        float dx = (x + 0.5f - half) / half;
+                        float dy = (y + 0.5f - half) / half;
+                        float d = Mathf.Sqrt(dx * dx + dy * dy);
+                        float a = Mathf.Clamp01(1f - d);
+                        float stepped = Mathf.Round(a * a * 6f) / 6f;
+                        px[y * size + x] = new Color(1f, 1f, 1f, stepped);
+                    }
+                }
+                tex.SetPixels(px);
+                tex.Apply();
+                _procSolidGlowSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+            }
+
+            if (_procDotSprite == null)
+            {
+                Texture2D tex = new Texture2D(8, 8, TextureFormat.RGBA32, false);
+                tex.filterMode = FilterMode.Point;
+                Color[] px = new Color[64];
+                for (int i = 0; i < 64; i++) px[i] = Color.white;
+                tex.SetPixels(px);
+                tex.Apply();
+                _procDotSprite = Sprite.Create(tex, new Rect(0, 0, 8, 8), new Vector2(0.5f, 0.5f), 100f);
+            }
+
+            if (_procReticleSprite == null)
+            {
+                const int size = 32;
+                Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+                tex.filterMode = FilterMode.Point;
+                Color[] px = new Color[size * size];
+                for (int y = 0; y < size; y++)
+                {
+                    for (int x = 0; x < size; x++)
+                    {
+                        bool edgeX = x < 2 || x >= size - 2;
+                        bool edgeY = y < 2 || y >= size - 2;
+                        bool cornerSeg = (x < 9 || x >= size - 9) && (y < 9 || y >= size - 9);
+                        px[y * size + x] = (cornerSeg && (edgeX || edgeY)) ? Color.white : Color.clear;
+                    }
+                }
+                tex.SetPixels(px);
+                tex.Apply();
+                _procReticleSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+            }
+
+            if (_procDiscSprite == null)
+            {
+                const int size = 64;
+                Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+                tex.filterMode = FilterMode.Point;
+                Color[] px = new Color[size * size];
+                float half = size * 0.5f;
+                for (int y = 0; y < size; y++)
+                {
+                    for (int x = 0; x < size; x++)
+                    {
+                        float dx = (x + 0.5f - half) / half;
+                        float dy = (y + 0.5f - half) / half;
+                        px[y * size + x] = (dx * dx + dy * dy <= 1.0f) ? Color.white : Color.clear;
+                    }
+                }
+                tex.SetPixels(px);
+                tex.Apply();
+                _procDiscSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+            }
+        }
+
+        private static Image CreateRadialSector(string name, Transform parent, Color tint, float fillAmount, out RectTransform rt)
+        {
+            GameObject obj = CreateUIObject(name, parent);
+            rt = obj.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(64f, 64f);
+            Image img = obj.AddComponent<Image>();
+            img.sprite = _procDiscSprite;
+            img.type = Image.Type.Filled;
+            img.fillMethod = Image.FillMethod.Radial360;
+            img.fillOrigin = (int)Image.Origin360.Top;
+            img.fillClockwise = true;
+            img.fillAmount = fillAmount;
+            img.color = tint;
+            img.raycastTarget = false;
+            return img;
         }
 
         private static GameObject CreateUIObject(string name, Transform parent)
         {
-            var go = new GameObject(name, typeof(RectTransform));
+            GameObject go = new GameObject(name, typeof(RectTransform));
             go.transform.SetParent(parent, false);
             return go;
         }
 
         private static void StretchFull(RectTransform rt)
         {
+            if (rt == null) return;
             rt.anchorMin = Vector2.zero;
             rt.anchorMax = Vector2.one;
             rt.offsetMin = Vector2.zero;
             rt.offsetMax = Vector2.zero;
-        }
-
-        private static Text CreateText(string name, Transform parent, Font font, string content, int size, FontStyle style, Color color, TextAnchor align)
-        {
-            GameObject go = CreateUIObject(name, parent);
-            Text txt = go.AddComponent<Text>();
-            txt.font = font;
-            txt.text = content;
-            txt.fontSize = size;
-            txt.fontStyle = style;
-            txt.color = color;
-            txt.alignment = align;
-            txt.horizontalOverflow = HorizontalWrapMode.Wrap;
-            txt.verticalOverflow = VerticalWrapMode.Overflow;
-            return txt;
-        }
-
-        private static Button CreateButton(Transform parent, string name, string label, Color bgColor, float width, float height, Font font, UnityEngine.Events.UnityAction onClick)
-        {
-            GameObject btnObj = CreateUIObject(name, parent);
-            Image img = btnObj.AddComponent<Image>();
-            img.color = bgColor;
-
-            Button btn = btnObj.AddComponent<Button>();
-            btn.targetGraphic = img;
-            btn.onClick.AddListener(onClick);
-
-            LayoutElement le = btnObj.AddComponent<LayoutElement>();
-            if (width > 0f)
-            {
-                le.minWidth = width;
-                le.preferredWidth = width;
-            }
-            if (height > 0f)
-            {
-                le.minHeight = height;
-                le.preferredHeight = height;
-            }
-
-            Text txt = CreateText("Text", btnObj.transform, font, label, 12, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
-            StretchFull(txt.GetComponent<RectTransform>());
-            return btn;
         }
     }
 }

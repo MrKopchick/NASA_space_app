@@ -1,0 +1,55 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a4b8e110c3244f558b92001122334401, type: 3}
+  m_Name: SolarSystemArtBank
+  m_EditorClassIdentifier: 
+  buttonNormal: {fileID: 21300000, guid: d92654c16c60754409284e9c999e403e, type: 3}
+  buttonHover: {fileID: 21300000, guid: 186e2e2e024f948468e8cd4f25274bb7, type: 3}
+  buttonPressed: {fileID: 21300000, guid: 8e4ef5c3f7123f34e94f8400120078a2, type: 3}
+  buttonDisabled: {fileID: 21300000, guid: e2cd35023cf77ee40a0d4ae45ff1e7d1, type: 3}
+  inventoryPanel: {fileID: 21300000, guid: 56edb1c46adb8db40aed00f85c6bc82e, type: 3}
+  dialogueBox: {fileID: 21300000, guid: 21509aced5cccaf459dc1b1c0e3c2b85, type: 3}
+  itemSlot: {fileID: 21300000, guid: 48475346aa2dc514eb6153ade59fc7ef, type: 3}
+  itemSlotSelected: {fileID: 21300000, guid: faeec89423ce89d4a9c4e8d2882a684b, type: 3}
+  nameTab: {fileID: 21300000, guid: 37869d5ae3f9ffa4f8fb479fc63c3001, type: 3}
+  controlPanel: {fileID: 21300000, guid: 5510b706fa6b4da4b96447de336b5310, type: 3}
+  radarScreen: {fileID: 21300000, guid: d7359431371417e4aba5521aa5083daa, type: 3}
+  missionBadge: {fileID: 21300000, guid: 1aadf27969077f34fae4dc3687123c8c, type: 3}
+  starMapTablet: {fileID: 21300000, guid: 44b7d9df4e1c188438eea575bb50b172, type: 3}
+  starChart: {fileID: 21300000, guid: ae4a9e0ea857a2542a74ed9ca31099ce, type: 3}
+  countdownClock: {fileID: 21300000, guid: 04103d686431f3a46bbce27af8b0c45f, type: 3}
+  holoProjector: {fileID: 21300000, guid: a279d3fef91888d4695cf2dc9a560af6, type: 3}
+  oxygenGauge: {fileID: 21300000, guid: 94145a7ed0dde34488ca85f6652abc44, type: 3}
+  iconEnergyCell: {fileID: 21300000, guid: 1f91e2c74dc36dc4f95d264896968a50, type: 3}
+  iconDataChip: {fileID: 21300000, guid: 44c5cbb15b40bd94aa762448a517b52c, type: 3}
+  iconDishAntenna: {fileID: 21300000, guid: c48cc81b95a659947810d58e09a074d5, type: 3}
+  iconShieldGenerator: {fileID: 21300000, guid: 39a1a6349aec2344c871d6b2a5131123, type: 3}
+  iconSpaceTelescope: {fileID: 21300000, guid: 325f225907bed414bbade4f891edeb7a, type: 3}
+  iconSolarPanel: {fileID: 21300000, guid: 04b43b0e6662af349824002feed7f3aa, type: 3}
+  astraPortrait: {fileID: 21300000, guid: 2c04bcfa1bb094f41b1a8a6a3af531c0, type: 3}
+  controllerPortrait: {fileID: 21300000, guid: 07b5865cdf708b146ac73bcbee8fe4d3, type: 3}
+  cubesatSprite: {fileID: 21300000, guid: 31d32b1dc3d958847acdbb2710a439a0, type: 3}
+  satelliteSprite: {fileID: 21300000, guid: 4aab47f95b80b054195c6f83f1d6e9a2, type: 3}
+  deepSpaceProbeSprite: {fileID: 21300000, guid: 503202c8c56bccc49b624c6bf59d1a75, type: 3}
+  smallRocketSprite: {fileID: 21300000, guid: a94219ba7c69a3f44947ae7ad83ac22d, type: 3}
+  reusableRocketSprite: {fileID: 21300000, guid: ac7dd2fc22680f148a5208a7af604e9b, type: 3}
+  heavyLiftRocketSprite: {fileID: 21300000, guid: f7bcc6c68a7e8ab4f841fecf9d246baa, type: 3}
+  rocketFlameSprite: {fileID: 21300000, guid: 658542c0660710d4a9478c970d68857b, type: 3}
+  launchSmokeSprite: {fileID: 21300000, guid: 8c2766a8cd2d77a488455b894b4e3f45, type: 3}
+  flightMusic: {fileID: 8300000, guid: 252e8e9ddb004a7448618183b2df0931, type: 3}
+  missionAmbience: {fileID: 8300000, guid: 91cb9944acd40cd40aac15857a55be5b, type: 3}
+  uiClick: {fileID: 8300000, guid: b9fdaa35eb2bdbb4489ccdc525afa33c, type: 3}
+  uiToggle: {fileID: 8300000, guid: f37466692fe47b1459f05bc353fe1554, type: 3}
+  astraNotification: {fileID: 8300000, guid: dccc0fe4f627fa742822e41e0a8f6783, type: 3}
+  solarStormAlarm: {fileID: 8300000, guid: bb2fee24bca0f394f8cdc20131b5057d, type: 3}
+  missionStart: {fileID: 8300000, guid: ba820ad3981423b4fbf82b058081a956, type: 3}
+  missionSuccess: {fileID: 8300000, guid: 2c5794ec4fc6ad644bad781732703cf5, type: 3}

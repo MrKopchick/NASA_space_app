@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using AstraLink.Core;
 using AstraLink.UI.Flight;
+using AstraLink.UI.Flight.SpaceMap;
 using AstraLink.UI.Hub;
 using AstraLink.UI.Workshop;
 using UnityEngine;
@@ -177,9 +178,13 @@ namespace AstraLink.UI.Debrief
         private bool _hasExplicitEvents;
         private bool _allowPayoutForCurrentReport = true;
         private bool _pendingLaunchSequence;
+        private bool _devSafeMode;
         private GameObject _sampleOrbitLeoBtn;
         private GameObject _sampleOrbitLunarBtn;
         private GameObject _sampleOrbitMarsBtn;
+        private GameObject _topHeaderBarRoot;
+        private VerticalLayoutGroup _rootContentLayout;
+        private SolarSystemHUDPanel _solarHudPanel;
 
         /// <summary>
         /// Gets the currently displayed <see cref="MissionReport"/>.
@@ -436,6 +441,13 @@ namespace AstraLink.UI.Debrief
             _isLiveFlightViewActive = liveFlightMode;
             if (liveFlightModeRoot != null) liveFlightModeRoot.SetActive(liveFlightMode);
             if (debriefSummaryModeRoot != null) debriefSummaryModeRoot.SetActive(!liveFlightMode);
+            if (_topHeaderBarRoot != null) _topHeaderBarRoot.SetActive(!liveFlightMode);
+            if (_rootContentLayout != null)
+            {
+                _rootContentLayout.padding = liveFlightMode ? new RectOffset(0, 0, 0, 0) : new RectOffset(18, 18, 8, 8);
+                _rootContentLayout.spacing = liveFlightMode ? 0f : 6f;
+            }
+            ApplyVerificationVisibility();
 
             HighlightModeButton(switchToLiveFlightButton, liveFlightMode, new Color(0.14f, 0.58f, 0.86f, 1f));
             HighlightModeButton(switchToDebriefButton, !liveFlightMode, new Color(0.16f, 0.56f, 0.36f, 1f));
@@ -499,6 +511,7 @@ namespace AstraLink.UI.Debrief
                 {
                     playbackPlayPauseLabel.text = orbitRadarUI.IsPlaying ? "PAUSE" : "PLAY";
                 }
+                SyncSolarHudPlaybackState();
             }
         }
 
@@ -520,6 +533,53 @@ namespace AstraLink.UI.Debrief
                 {
                     playbackPlayPauseLabel.text = "PLAY";
                 }
+                SyncSolarHudPlaybackState();
+            }
+        }
+
+        private void SyncSolarHudPlaybackState()
+        {
+            if (_solarHudPanel == null || orbitRadarUI == null) return;
+            int totalTicks = (_currentReport != null && _currentReport.Ticks != null) ? _currentReport.Ticks.Count : 20;
+            _solarHudPanel.UpdatePlaybackState(orbitRadarUI.IsPlaying, orbitRadarUI.SpeedMultiplier, orbitRadarUI.CurrentTickIndex, totalTicks, _activeGoal, _activeOrbit);
+        }
+
+        public void SetDevSafeMode(bool enabled)
+        {
+            _devSafeMode = enabled;
+            if (_solarHudPanel != null)
+            {
+                _solarHudPanel.SetDevSafeModeVisual(enabled);
+            }
+        }
+
+        public void RestartFlightPlayback()
+        {
+            if (spaceMapController != null && (_pendingLaunchSequence || spaceMapController.IsLaunchPlaying))
+            {
+                _pendingLaunchSequence = false;
+                spaceMapController.SkipLaunchSequence();
+            }
+
+            if (orbitRadarUI != null)
+            {
+                orbitRadarUI.JumpToTick(0, pausePlayback: false);
+                SyncSolarHudPlaybackState();
+            }
+        }
+
+        public void ScrubFlightToTick(int tickIndex)
+        {
+            if (spaceMapController != null && (_pendingLaunchSequence || spaceMapController.IsLaunchPlaying))
+            {
+                _pendingLaunchSequence = false;
+                spaceMapController.SkipLaunchSequence();
+            }
+
+            if (orbitRadarUI != null)
+            {
+                orbitRadarUI.JumpToTick(tickIndex, pausePlayback: !orbitRadarUI.IsPlaying);
+                SyncSolarHudPlaybackState();
             }
         }
 
@@ -583,6 +643,22 @@ namespace AstraLink.UI.Debrief
             {
                 playbackPlayPauseLabel.text = orbitRadarUI.IsPlaying ? "PAUSE" : "PLAY";
             }
+
+            if (_solarHudPanel != null)
+            {
+                float spd = orbitRadarUI != null ? orbitRadarUI.SpeedMultiplier : 1f;
+                bool isPlaying = orbitRadarUI != null && orbitRadarUI.IsPlaying;
+                _solarHudPanel.UpdatePlaybackState(isPlaying, spd, tickIndex, totalTicks, _activeGoal, _activeOrbit);
+                _solarHudPanel.UpdateTelemetrySnapshot(snapshot, _activeGoal);
+                if (manualOverrideUI != null)
+                {
+                    _solarHudPanel.UpdateSignalDelay(
+                        manualOverrideUI.IsSignalInTransit,
+                        manualOverrideUI.DelayRemainingSeconds,
+                        manualOverrideUI.DelayTotalSeconds,
+                        manualOverrideUI.LatestCommandSummary);
+                }
+            }
         }
 
         private void HandleRadarSpeedChanged(float newSpeed)
@@ -625,6 +701,21 @@ namespace AstraLink.UI.Debrief
 
         private void HandleRadarTestFlightCompleted(MissionReport completedReport)
         {
+            if (_devSafeMode)
+            {
+                if (orbitRadarUI != null)
+                {
+                    orbitRadarUI.JumpToTick(0, pausePlayback: false);
+                }
+                return;
+            }
+
+            if (_solarHudPanel != null)
+            {
+                MissionStatus finalStatus = (_currentReport ?? completedReport) != null ? (_currentReport ?? completedReport).Status : MissionStatus.Success;
+                _solarHudPanel.NotifyMissionOutcomeSfx(finalStatus);
+            }
+
             if (OnFlightPlaybackCompleted != null)
             {
                 OnFlightPlaybackCompleted.Invoke(_currentReport ?? completedReport);
@@ -716,6 +807,13 @@ namespace AstraLink.UI.Debrief
                 manualOverrideUI.OnMissionRecalculated += HandleManualMissionRecalculated;
             }
 
+            if (_solarHudPanel != null)
+            {
+                _solarHudPanel.SetTelemetryHistory(report != null ? report.Ticks : null, _activeGoal);
+                _solarHudPanel.SetAutopilotRules(_activeRules);
+                _solarHudPanel.SetDevSafeModeVisual(_devSafeMode);
+            }
+
             if (report != null && report.Ticks != null && report.Ticks.Count > 0)
             {
                 int idx = orbitRadarUI != null ? Mathf.Clamp(orbitRadarUI.CurrentTickIndex, 0, report.Ticks.Count - 1) : 0;
@@ -797,6 +895,12 @@ namespace AstraLink.UI.Debrief
             HighlightModeButton(playbackSpeed1xButton, Mathf.Approximately(speed, 1.0f), new Color(0.14f, 0.62f, 0.88f, 1f));
             HighlightModeButton(playbackSpeed5xButton, Mathf.Approximately(speed, 5.0f), new Color(0.14f, 0.62f, 0.88f, 1f));
             HighlightModeButton(playbackSpeed10xButton, Mathf.Approximately(speed, 10.0f), new Color(0.14f, 0.62f, 0.88f, 1f));
+
+            if (_solarHudPanel != null && orbitRadarUI != null)
+            {
+                int totalTicks = (_currentReport != null && _currentReport.Ticks != null) ? _currentReport.Ticks.Count : 20;
+                _solarHudPanel.UpdatePlaybackState(orbitRadarUI.IsPlaying, speed, orbitRadarUI.CurrentTickIndex, totalTicks, _activeGoal, _activeOrbit);
+            }
         }
 
         /// <summary>
@@ -2044,7 +2148,7 @@ namespace AstraLink.UI.Debrief
 
         private void ApplyVerificationVisibility()
         {
-            if (verificationBarRoot != null) verificationBarRoot.SetActive(showVerificationBar);
+            if (verificationBarRoot != null) verificationBarRoot.SetActive(showVerificationBar && !_isLiveFlightViewActive);
             if (_sampleOrbitLeoBtn != null) _sampleOrbitLeoBtn.SetActive(showVerificationBar);
             if (_sampleOrbitLunarBtn != null) _sampleOrbitLunarBtn.SetActive(showVerificationBar);
             if (_sampleOrbitMarsBtn != null) _sampleOrbitMarsBtn.SetActive(showVerificationBar);
@@ -2052,6 +2156,15 @@ namespace AstraLink.UI.Debrief
 
         private void Update()
         {
+            if (_isLiveFlightViewActive && _solarHudPanel != null && manualOverrideUI != null)
+            {
+                _solarHudPanel.UpdateSignalDelay(
+                    manualOverrideUI.IsSignalInTransit,
+                    manualOverrideUI.DelayRemainingSeconds,
+                    manualOverrideUI.DelayTotalSeconds,
+                    manualOverrideUI.LatestCommandSummary);
+            }
+
             if (!showVerificationBar) return;
 
             if (Input.GetKeyDown(KeyCode.F5)) TriggerSampleSuccessScenario(true);
@@ -2064,7 +2177,7 @@ namespace AstraLink.UI.Debrief
 
         private void CleanupOldRoots()
         {
-            string[] oldNames = { "DebriefContentRoot", "DebriefContentRoot_v2", "DebriefContentRoot_v3" };
+            string[] oldNames = { "DebriefContentRoot", "DebriefContentRoot_v2", "DebriefContentRoot_v3", "DebriefContentRoot_v4" };
             for (int i = 0; i < oldNames.Length; i++)
             {
                 Transform old = transform.Find(oldNames[i]);
@@ -2079,10 +2192,11 @@ namespace AstraLink.UI.Debrief
         {
             CleanupOldRoots();
 
-            Transform root = transform.Find("DebriefContentRoot_v4");
+            Transform root = transform.Find("DebriefContentRoot_v5");
             if (root != null &&
                 orbitRadarUI != null &&
                 spaceMapController != null &&
+                _solarHudPanel != null &&
                 telemetryHUD != null &&
                 manualOverrideUI != null &&
                 eventPopupUI != null &&
@@ -2118,12 +2232,13 @@ namespace AstraLink.UI.Debrief
             }
             baseBg.color = new Color(0.04f, 0.07f, 0.13f, 1f);
 
-            GameObject contentRoot = CreateUIObject("DebriefContentRoot_v4", transform);
+            GameObject contentRoot = CreateUIObject("DebriefContentRoot_v5", transform);
             StretchFull(contentRoot.GetComponent<RectTransform>());
 
             VerticalLayoutGroup rootLayout = contentRoot.AddComponent<VerticalLayoutGroup>();
-            rootLayout.padding = new RectOffset(18, 18, 8, 8);
-            rootLayout.spacing = 6f;
+            _rootContentLayout = rootLayout;
+            rootLayout.padding = _isLiveFlightViewActive ? new RectOffset(0, 0, 0, 0) : new RectOffset(18, 18, 8, 8);
+            rootLayout.spacing = _isLiveFlightViewActive ? 0f : 6f;
             rootLayout.childControlWidth = true;
             rootLayout.childControlHeight = true;
             rootLayout.childForceExpandWidth = true;
@@ -2151,6 +2266,8 @@ namespace AstraLink.UI.Debrief
         private void BuildTopHeaderBar(Transform parent, Font font)
         {
             GameObject headerBar = CreatePanel("HeaderBar", parent, new Color(0.07f, 0.12f, 0.21f, 0.98f), 50f);
+            _topHeaderBarRoot = headerBar;
+            headerBar.SetActive(!_isLiveFlightViewActive);
             HorizontalLayoutGroup headerLayout = headerBar.AddComponent<HorizontalLayoutGroup>();
             headerLayout.padding = new RectOffset(14, 14, 5, 5);
             headerLayout.spacing = 10f;
@@ -2233,172 +2350,70 @@ namespace AstraLink.UI.Debrief
             liveFlightModeRoot = CreateUIObject("LiveFlightModeView_S204", parent);
             StretchFull(liveFlightModeRoot.GetComponent<RectTransform>());
 
-            VerticalLayoutGroup vLayout = liveFlightModeRoot.AddComponent<VerticalLayoutGroup>();
-            vLayout.spacing = 6f;
-            vLayout.childControlWidth = true;
-            vLayout.childControlHeight = true;
-            vLayout.childForceExpandWidth = true;
-            vLayout.childForceExpandHeight = false;
-
-            // Top S2-04 Controls & Event Popup Row
-            GameObject topControlsRow = CreateUIObject("FlightTopControlsAndEventRow", liveFlightModeRoot.transform);
-            topControlsRow.AddComponent<LayoutElement>().preferredHeight = 52f;
-            HorizontalLayoutGroup topRowLayout = topControlsRow.AddComponent<HorizontalLayoutGroup>();
-            topRowLayout.spacing = 10f;
-            topRowLayout.childControlWidth = true;
-            topRowLayout.childControlHeight = true;
-            topRowLayout.childForceExpandWidth = false;
-            topRowLayout.childForceExpandHeight = true;
-
-            // EventPopupUI (ActiveEventTitle notification banner)
-            GameObject eventPopupObj = CreateUIObject("EventPopupUI", topControlsRow.transform);
-            LayoutElement popupLe = eventPopupObj.AddComponent<LayoutElement>();
-            popupLe.flexibleWidth = 1f;
-            eventPopupUI = eventPopupObj.AddComponent<EventPopupUI>();
-            eventPopupUI.EnsurePopupHierarchy();
-
-            // Speed & Playback Bar (1x, 5x, 10x, Play/Pause, Step +1, Scenario Presets)
-            GameObject speedBar = CreatePanel("PlaybackSpeedAndOrbitBar", topControlsRow.transform, new Color(0.07f, 0.12f, 0.21f, 0.98f), 52f);
-            LayoutElement speedBarLe = speedBar.GetComponent<LayoutElement>();
-            speedBarLe.preferredWidth = 820f;
-
-            HorizontalLayoutGroup speedLayout = speedBar.AddComponent<HorizontalLayoutGroup>();
-            speedLayout.padding = new RectOffset(10, 10, 6, 6);
-            speedLayout.spacing = 6f;
-            speedLayout.childAlignment = TextAnchor.MiddleCenter;
-            speedLayout.childControlWidth = true;
-            speedLayout.childControlHeight = true;
-            speedLayout.childForceExpandWidth = false;
-            speedLayout.childForceExpandHeight = true;
-
-            _sampleOrbitLeoBtn = CreateActionButton(
-                speedBar.transform,
-                "Btn_Orbit_LEO",
-                "LEO (1s Delay)",
-                new Color(0.14f, 0.38f, 0.58f, 1f),
-                122f,
-                38f,
-                font,
-                () => StartSampleLiveFlightScenario(0)).gameObject;
-
-            _sampleOrbitLunarBtn = CreateActionButton(
-                speedBar.transform,
-                "Btn_Orbit_Lunar",
-                "MOON + OVERHEAT (3s)",
-                new Color(0.42f, 0.30f, 0.14f, 1f),
-                168f,
-                38f,
-                font,
-                () => StartSampleLiveFlightScenario(1)).gameObject;
-
-            _sampleOrbitMarsBtn = CreateActionButton(
-                speedBar.transform,
-                "Btn_Orbit_Mars",
-                "MARS + CME STORM (10s)",
-                new Color(0.56f, 0.20f, 0.18f, 1f),
-                178f,
-                38f,
-                font,
-                () => StartSampleLiveFlightScenario(2)).gameObject;
-
-            ApplyVerificationVisibility();
-
-            playbackPlayPauseButton = CreateActionButton(
-                speedBar.transform,
-                "Btn_PlayPause",
-                "PAUSE",
-                new Color(0.14f, 0.54f, 0.34f, 1f),
-                74f,
-                38f,
-                font,
-                TogglePlaybackPlayPause);
-            playbackPlayPauseLabel = playbackPlayPauseButton.GetComponentInChildren<Text>();
-
-            playbackStepTickButton = CreateActionButton(
-                speedBar.transform,
-                "Btn_StepTick",
-                "STEP +1",
-                new Color(0.22f, 0.32f, 0.48f, 1f),
-                76f,
-                38f,
-                font,
-                StepPlaybackNextTick);
-
-            playbackSpeed1xButton = CreateActionButton(
-                speedBar.transform,
-                "Btn_Speed_1x",
-                "1x",
-                new Color(0.14f, 0.62f, 0.88f, 1f),
-                48f,
-                38f,
-                font,
-                SetPlaybackSpeed1x);
-
-            playbackSpeed5xButton = CreateActionButton(
-                speedBar.transform,
-                "Btn_Speed_5x",
-                "5x",
-                new Color(0.12f, 0.18f, 0.28f, 0.96f),
-                48f,
-                38f,
-                font,
-                SetPlaybackSpeed5x);
-
-            playbackSpeed10xButton = CreateActionButton(
-                speedBar.transform,
-                "Btn_Speed_10x",
-                "10x",
-                new Color(0.12f, 0.18f, 0.28f, 0.96f),
-                54f,
-                38f,
-                font,
-                SetPlaybackSpeed10x);
-
-            // Main 3-Column Flight Mission Control Row
-            GameObject flightColumns = CreateUIObject("FlightColumnsRow", liveFlightModeRoot.transform);
-            LayoutElement colsLe = flightColumns.AddComponent<LayoutElement>();
-            colsLe.flexibleHeight = 1f;
-            colsLe.preferredHeight = 740f;
-
-            HorizontalLayoutGroup colsLayout = flightColumns.AddComponent<HorizontalLayoutGroup>();
-            colsLayout.spacing = 12f;
-            colsLayout.childControlWidth = true;
-            colsLayout.childControlHeight = true;
-            colsLayout.childForceExpandWidth = false;
-            colsLayout.childForceExpandHeight = true;
-
-            // Column 1: Pixel-Art Interactive Space Map (SpaceMapController) + Headless Tick Playback Driver
-            GameObject spaceMapCol = CreateUIObject("SpaceMapColumn", flightColumns.transform);
-            LayoutElement spaceMapLe = spaceMapCol.AddComponent<LayoutElement>();
-            spaceMapLe.flexibleWidth = 1.25f;
-            spaceMapLe.preferredWidth = 740f;
-
-            spaceMapController = spaceMapCol.AddComponent<SpaceMapController>();
+            // 1. Full-Tab Interactive Solar System Space Map (SpaceMapController)
+            GameObject spaceMapViewport = CreateUIObject("SpaceMapFullViewport", liveFlightModeRoot.transform);
+            StretchFull(spaceMapViewport.GetComponent<RectTransform>());
+            spaceMapController = spaceMapViewport.AddComponent<SpaceMapController>();
             spaceMapController.SetAutoSetupDemoOnStart(false);
             spaceMapController.SetSandboxTestBarVisible(false);
             ConfigureSpaceMapSprites();
 
-            GameObject playbackDriverObj = CreateUIObject("FlightPlaybackEngine", spaceMapCol.transform);
+            // 2. Active Headless Tick Playback Driver (OrbitRadarUI)
+            GameObject playbackDriverObj = CreateUIObject("FlightPlaybackEngine", liveFlightModeRoot.transform);
             playbackDriverObj.SetActive(false);
             orbitRadarUI = playbackDriverObj.AddComponent<OrbitRadarUI>();
             orbitRadarUI.SetHeadlessPlaybackOnly(true);
             playbackDriverObj.SetActive(true);
 
-            // Column 2: Live Telemetry & Green Autopilot Rule Highlighting (TelemetryHUD)
-            GameObject telemetryCol = CreateUIObject("TelemetryHUDColumn", flightColumns.transform);
-            LayoutElement telemetryLe = telemetryCol.AddComponent<LayoutElement>();
-            telemetryLe.flexibleWidth = 1.00f;
-            telemetryLe.preferredWidth = 600f;
+            // 3. Synchronized Behind-the-Scenes Telemetry / Override / Event Handlers (Active for Coroutines, Invisible Zero-Clutter)
+            GameObject hiddenLogicRoot = CreateUIObject("FlightHiddenLogicRoot", liveFlightModeRoot.transform);
+            RectTransform hiddenRt = hiddenLogicRoot.GetComponent<RectTransform>();
+            hiddenRt.anchorMin = Vector2.zero;
+            hiddenRt.anchorMax = Vector2.zero;
+            hiddenRt.sizeDelta = new Vector2(10f, 10f);
+            CanvasGroup hiddenCg = hiddenLogicRoot.AddComponent<CanvasGroup>();
+            hiddenCg.alpha = 0f;
+            hiddenCg.interactable = false;
+            hiddenCg.blocksRaycasts = false;
+
+            GameObject eventPopupObj = CreateUIObject("EventPopupUI", hiddenLogicRoot.transform);
+            eventPopupUI = eventPopupObj.AddComponent<EventPopupUI>();
+            eventPopupUI.EnsurePopupHierarchy();
+
+            GameObject telemetryCol = CreateUIObject("TelemetryHUDHidden", hiddenLogicRoot.transform);
             telemetryHUD = telemetryCol.AddComponent<TelemetryHUD>();
             telemetryHUD.EnsureTelemetryHierarchy();
 
-            // Column 3: Manual Override Commands with Signal Delay Timer (ManualOverrideUI)
-            GameObject manualCol = CreateUIObject("ManualOverrideColumn", flightColumns.transform);
-            LayoutElement manualLe = manualCol.AddComponent<LayoutElement>();
-            manualLe.flexibleWidth = 0.85f;
-            manualLe.preferredWidth = 500f;
+            GameObject manualCol = CreateUIObject("ManualOverrideHidden", hiddenLogicRoot.transform);
             manualOverrideUI = manualCol.AddComponent<ManualOverrideUI>();
             manualOverrideUI.EnsureManualOverrideHierarchy();
+
+            // 4. Single Collapsible (- / +) Pixel-Art Control, Telemetry & Audio HUD Panel
+            GameObject hudObj = CreateUIObject("SingleSolarHUDPanel", liveFlightModeRoot.transform);
+            StretchFull(hudObj.GetComponent<RectTransform>());
+            _solarHudPanel = hudObj.AddComponent<SolarSystemHUDPanel>();
+            _solarHudPanel.EnsureBuilt();
+            _solarHudPanel.BindSpaceMap(spaceMapController);
+            _solarHudPanel.OnPlayPauseClicked -= TogglePlaybackPlayPause;
+            _solarHudPanel.OnPlayPauseClicked += TogglePlaybackPlayPause;
+            _solarHudPanel.OnStepTickClicked -= StepPlaybackNextTick;
+            _solarHudPanel.OnStepTickClicked += StepPlaybackNextTick;
+            _solarHudPanel.OnRestartFlightClicked -= RestartFlightPlayback;
+            _solarHudPanel.OnRestartFlightClicked += RestartFlightPlayback;
+            _solarHudPanel.OnScrubTickRequested -= ScrubFlightToTick;
+            _solarHudPanel.OnScrubTickRequested += ScrubFlightToTick;
+            _solarHudPanel.OnSpeedSelected -= SetPlaybackSpeed;
+            _solarHudPanel.OnSpeedSelected += SetPlaybackSpeed;
+            _solarHudPanel.OnToggleInstrumentsClicked -= TriggerManualToggleInstruments;
+            _solarHudPanel.OnToggleInstrumentsClicked += TriggerManualToggleInstruments;
+            _solarHudPanel.OnToggleCommsClicked -= TriggerManualToggleComms;
+            _solarHudPanel.OnToggleCommsClicked += TriggerManualToggleComms;
+            _solarHudPanel.OnToggleSafeModeClicked -= TriggerManualEnableSafeMode;
+            _solarHudPanel.OnToggleSafeModeClicked += TriggerManualEnableSafeMode;
+            _solarHudPanel.OnDevSafeModeToggled -= SetDevSafeMode;
+            _solarHudPanel.OnDevSafeModeToggled += SetDevSafeMode;
+            _solarHudPanel.OnOpenDebriefClicked -= ShowDebriefSummaryView;
+            _solarHudPanel.OnOpenDebriefClicked += ShowDebriefSummaryView;
         }
 
         private void BuildDebriefSummaryModeView(Transform parent, Font font)

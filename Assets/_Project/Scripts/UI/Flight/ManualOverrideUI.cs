@@ -67,6 +67,11 @@ namespace AstraLink.UI.Flight
         /// Gets a value indicating whether a manual command signal is currently in transit to the spacecraft.
         /// </summary>
         public bool IsSignalInTransit => _isDelayTimerRunning;
+        public float DelayRemainingSeconds => _delayRemainingSeconds;
+        public float DelayTotalSeconds => _delayTotalSeconds;
+        public string LatestCommandSummary => _latestPendingCommand != null
+            ? $"{_latestPendingCommand.Action} @ T{_latestPendingCommand.ExecuteAtTick}"
+            : "NO MANUAL COMMANDS";
 
         /// <summary>
         /// Fired whenever a manual command is queued and <see cref="IMissionSimulator.SimulateFullMission"/> produces a recalculated <see cref="MissionReport"/>.

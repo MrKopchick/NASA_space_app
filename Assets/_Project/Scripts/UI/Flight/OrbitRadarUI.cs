@@ -679,10 +679,7 @@ namespace AstraLink.UI.Flight
                 return;
             }
 
-            if (pausePlayback)
-            {
-                _isPlaying = false;
-            }
+            _isPlaying = !pausePlayback;
 
             _tickElapsedSeconds = 0f;
             _currentTickIndex = Mathf.Clamp(tickIndex, 0, _activeReport.Ticks.Count - 1);
