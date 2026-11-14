@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using AstraLink.Core;
+using AstraLink.UI.Common;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -182,22 +183,36 @@ namespace AstraLink.UI.Hub
 
                 if (_cardBackgrounds[i] != null)
                 {
-                    _cardBackgrounds[i].color = isSelected
-                        ? new Color(0.12f, 0.24f, 0.38f, 0.98f)
-                        : new Color(0.08f, 0.13f, 0.21f, 0.94f);
+                    UITheme.ApplySlotFrame(_cardBackgrounds[i], isSelected,
+                        isSelected ? Color.white : new Color(0.86f, 0.90f, 0.98f, 0.96f));
                 }
 
                 if (i < _cardButtonLabels.Count && _cardButtonLabels[i] != null)
                 {
+                    Button btn = _cardButtonLabels[i].GetComponentInParent<Button>();
                     if (isSelected)
                     {
-                        _cardButtonLabels[i].text = isCompleted ? "ACTIVE CONTRACT (COMPLETED)" : "ACTIVE CONTRACT";
+                        _cardButtonLabels[i].text = isCompleted ? "REBUILD IN HANGAR →" : "BUILD IN HANGAR →";
+                        if (btn != null) UITheme.ApplyButtonStyle(btn, null, UITheme.ButtonTintSuccess);
                     }
                     else
                     {
-                        _cardButtonLabels[i].text = isCompleted ? "COMPLETED • SELECT CONTRACT" : "SELECT CONTRACT";
+                        _cardButtonLabels[i].text = isCompleted ? "COMPLETED • SELECT" : "SELECT CONTRACT";
+                        if (btn != null) UITheme.ApplyButtonStyle(btn, null, UITheme.ButtonTintMuted);
                     }
                 }
+            }
+        }
+
+        private void OnCardActionClicked(int index)
+        {
+            if (_missions == null || index < 0 || index >= _missions.Count) return;
+
+            bool alreadySelected = SelectedMission != null && SelectedMission.Id == _missions[index].Id;
+            SelectContract(index);
+            if (alreadySelected && GameManager.Instance != null)
+            {
+                GameManager.Instance.ShowWorkshop();
             }
         }
 
@@ -214,29 +229,30 @@ namespace AstraLink.UI.Hub
                 else if (SelectedMission.Id == "m3_mars_probe") stageIndex = Mathf.Max(stageIndex, 2);
             }
 
+            UIThemeAssets assets = UITheme.Assets;
             Color fallbackTint;
-            Sprite targetSprite = null;
+            Sprite targetSprite;
 
             if (stageIndex <= 0)
             {
                 fallbackTint = new Color(0.08f, 0.12f, 0.18f, 1f);
-                targetSprite = garageBackgroundSprite;
+                targetSprite = garageBackgroundSprite != null ? garageBackgroundSprite : (assets != null ? assets.bgStarfield : null);
             }
             else if (stageIndex == 1)
             {
                 fallbackTint = new Color(0.07f, 0.13f, 0.23f, 1f);
-                targetSprite = officeBackgroundSprite;
+                targetSprite = officeBackgroundSprite != null ? officeBackgroundSprite : (assets != null ? assets.bgPlanetApproach : null);
             }
             else
             {
                 fallbackTint = new Color(0.05f, 0.09f, 0.20f, 1f);
-                targetSprite = missionControlBackgroundSprite;
+                targetSprite = missionControlBackgroundSprite != null ? missionControlBackgroundSprite : (assets != null ? assets.bgRingedWorld : null);
             }
 
             if (backgroundImage != null)
             {
                 backgroundImage.sprite = targetSprite;
-                backgroundImage.color = targetSprite != null ? Color.white : fallbackTint;
+                backgroundImage.color = targetSprite != null ? new Color(0.32f, 0.38f, 0.48f, 1f) : fallbackTint;
             }
         }
 
@@ -266,25 +282,52 @@ namespace AstraLink.UI.Hub
             }
 
             Font defaultFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            UIThemeAssets assets = UITheme.Assets;
 
             GameObject rootObj = CreateUIObject("HubContentRoot", hubRoot);
             RectTransform rootRt = rootObj.GetComponent<RectTransform>();
             StretchFull(rootRt);
 
             VerticalLayoutGroup rootLayout = rootObj.AddComponent<VerticalLayoutGroup>();
-            rootLayout.padding = new RectOffset(36, 36, 28, 28);
-            rootLayout.spacing = 20f;
+            rootLayout.padding = new RectOffset(32, 32, 22, 24);
+            rootLayout.spacing = 18f;
             rootLayout.childControlWidth = true;
             rootLayout.childControlHeight = true;
             rootLayout.childForceExpandWidth = true;
             rootLayout.childForceExpandHeight = false;
 
-            // Clean Section Header
-            Text sectionTitle = CreateText("SectionTitle", rootObj.transform, defaultFont,
-                "NASA MISSION CONTRACTS — Select a contract to open the Spacecraft Hangar",
-                26, FontStyle.Bold, new Color(0.92f, 0.96f, 1f, 1f), TextAnchor.MiddleLeft);
+            // Dispatcher Briefing Bar
+            GameObject briefingBar = CreatePanel("BriefingBar", rootObj.transform, Color.white, 86f);
+            UITheme.ApplyPanelFrame(briefingBar.GetComponent<Image>(), useDialogueBox: true);
+            HorizontalLayoutGroup briefHlg = briefingBar.AddComponent<HorizontalLayoutGroup>();
+            briefHlg.padding = new RectOffset(18, 18, 10, 10);
+            briefHlg.spacing = 16f;
+            briefHlg.childAlignment = TextAnchor.MiddleLeft;
+            briefHlg.childControlWidth = true;
+            briefHlg.childControlHeight = true;
+            briefHlg.childForceExpandWidth = false;
+            briefHlg.childForceExpandHeight = false;
+
+            GameObject portraitObj = CreateUIObject("DispatcherPortrait", briefingBar.transform);
+            LayoutElement portraitLe = portraitObj.AddComponent<LayoutElement>();
+            portraitLe.preferredWidth = 64f;
+            portraitLe.preferredHeight = 64f;
+            Image portraitImg = portraitObj.AddComponent<Image>();
+            portraitImg.sprite = assets != null ? assets.dispatcher : null;
+            portraitImg.preserveAspect = true;
+            portraitImg.color = portraitImg.sprite != null ? Color.white : new Color(0f, 0f, 0f, 0f);
+
+            Text sectionTitle = CreateText("SectionTitle", briefingBar.transform, defaultFont,
+                "MISSION CONTROL  —  Pick a NASA contract below, then build your satellite in the Hangar.",
+                21, FontStyle.Bold, UITheme.TextPrimary, TextAnchor.MiddleLeft);
             LayoutElement titleLe = sectionTitle.gameObject.AddComponent<LayoutElement>();
-            titleLe.preferredHeight = 42f;
+            titleLe.flexibleWidth = 1f;
+            titleLe.preferredHeight = 60f;
+
+            Button goHangarBtn = CreateActionButton(briefingBar.transform, "Btn_OpenHangar",
+                "OPEN HANGAR →", UITheme.ButtonTintSuccess, 230f, 52f, defaultFont,
+                () => GameManager.Instance?.ShowWorkshop());
+            UITheme.ApplyButtonStyle(goHangarBtn, null, UITheme.ButtonTintSuccess);
 
             // 3 Mission Cards Row
             GameObject cardsRow = CreateUIObject("MissionCardsContainer", rootObj.transform);
@@ -292,7 +335,7 @@ namespace AstraLink.UI.Hub
             cardsRowLe.flexibleHeight = 1f;
 
             HorizontalLayoutGroup cardsLayout = cardsRow.AddComponent<HorizontalLayoutGroup>();
-            cardsLayout.spacing = 26f;
+            cardsLayout.spacing = 24f;
             cardsLayout.childControlWidth = true;
             cardsLayout.childControlHeight = true;
             cardsLayout.childForceExpandWidth = true;
@@ -331,7 +374,7 @@ namespace AstraLink.UI.Hub
                     if (acceptBtn != null)
                     {
                         acceptBtn.onClick.RemoveAllListeners();
-                        acceptBtn.onClick.AddListener(() => SelectContract(capturedIndex));
+                        acceptBtn.onClick.AddListener(() => OnCardActionClicked(capturedIndex));
                         _cardButtonLabels.Add(acceptBtn.GetComponentInChildren<Text>());
                     }
                     else
@@ -346,45 +389,70 @@ namespace AstraLink.UI.Hub
         {
             GameObject cardObj = CreateUIObject("MissionCard_" + mission.Id, parent);
             Image cardBg = cardObj.AddComponent<Image>();
-            cardBg.color = new Color(0.08f, 0.13f, 0.21f, 0.94f);
+            UITheme.ApplySlotFrame(cardBg, selected: false);
             _cardBackgrounds.Add(cardBg);
 
             VerticalLayoutGroup cardLayout = cardObj.AddComponent<VerticalLayoutGroup>();
-            cardLayout.padding = new RectOffset(24, 24, 24, 24);
-            cardLayout.spacing = 14f;
+            cardLayout.padding = new RectOffset(22, 22, 22, 22);
+            cardLayout.spacing = 12f;
             cardLayout.childControlWidth = true;
             cardLayout.childControlHeight = true;
             cardLayout.childForceExpandWidth = true;
             cardLayout.childForceExpandHeight = false;
 
-            // 1. Title
-            Text titleTxt = CreateText("Title", cardObj.transform, font, mission.Title, 26, FontStyle.Bold,
-                new Color(1f, 0.88f, 0.42f, 1f), TextAnchor.MiddleLeft);
-            LayoutElement titleLe = titleTxt.gameObject.AddComponent<LayoutElement>();
-            titleLe.preferredHeight = 40f;
+            // 1. Header Row: Planet Sprite + Title
+            GameObject headerRow = CreateUIObject("HeaderRow", cardObj.transform);
+            LayoutElement headerLe = headerRow.AddComponent<LayoutElement>();
+            headerLe.preferredHeight = 64f;
+            HorizontalLayoutGroup headerHlg = headerRow.AddComponent<HorizontalLayoutGroup>();
+            headerHlg.spacing = 12f;
+            headerHlg.childAlignment = TextAnchor.MiddleLeft;
+            headerHlg.childControlWidth = true;
+            headerHlg.childControlHeight = true;
+            headerHlg.childForceExpandWidth = false;
+            headerHlg.childForceExpandHeight = false;
 
-            // 2. Orbit Summary
+            GameObject planetObj = CreateUIObject("PlanetIcon", headerRow.transform);
+            LayoutElement planetLe = planetObj.AddComponent<LayoutElement>();
+            planetLe.preferredWidth = 60f;
+            planetLe.preferredHeight = 60f;
+            Image planetImg = planetObj.AddComponent<Image>();
+            planetImg.sprite = UITheme.GetPlanetSprite(mission.OrbitId);
+            planetImg.preserveAspect = true;
+            planetImg.color = planetImg.sprite != null ? Color.white : new Color(0f, 0f, 0f, 0f);
+
+            Text titleTxt = CreateText("Title", headerRow.transform, font, mission.Title, 24, FontStyle.Bold,
+                UITheme.TextGold, TextAnchor.MiddleLeft);
+            LayoutElement titleLe = titleTxt.gameObject.AddComponent<LayoutElement>();
+            titleLe.flexibleWidth = 1f;
+            titleLe.preferredHeight = 60f;
+
+            // 2. Orbit Summary Tag
+            GameObject orbitTag = CreatePanel("OrbitTag", cardObj.transform, Color.white, 40f);
+            UITheme.ApplyNameTab(orbitTag.GetComponent<Image>(), new Color(0.85f, 0.95f, 1f, 0.95f));
+            HorizontalLayoutGroup orbitHlg = orbitTag.AddComponent<HorizontalLayoutGroup>();
+            orbitHlg.padding = new RectOffset(12, 12, 4, 4);
+            orbitHlg.childControlWidth = true;
+            orbitHlg.childControlHeight = true;
+            orbitHlg.childForceExpandWidth = true;
+            orbitHlg.childForceExpandHeight = true;
             string orbitInfo = GetOrbitHumanSummary(mission.OrbitId);
-            Text orbitTxt = CreateText("OrbitSummary", cardObj.transform, font, orbitInfo, 17, FontStyle.Italic,
-                new Color(0.58f, 0.84f, 1f, 1f), TextAnchor.UpperLeft);
-            LayoutElement orbitLe = orbitTxt.gameObject.AddComponent<LayoutElement>();
-            orbitLe.preferredHeight = 48f;
+            CreateText("OrbitSummary", orbitTag.transform, font, orbitInfo, 15, FontStyle.Bold,
+                UITheme.TextPrimary, TextAnchor.MiddleLeft);
 
             // 3. Mission Brief
-            Text briefTxt = CreateText("Brief", cardObj.transform, font, mission.Brief, 19, FontStyle.Normal,
-                new Color(0.88f, 0.92f, 0.96f, 1f), TextAnchor.UpperLeft);
+            Text briefTxt = CreateText("Brief", cardObj.transform, font, mission.Brief, 18, FontStyle.Normal,
+                UITheme.TextPrimary, TextAnchor.UpperLeft);
             LayoutElement briefLe = briefTxt.gameObject.AddComponent<LayoutElement>();
-            briefLe.preferredHeight = 120f;
+            briefLe.preferredHeight = 100f;
 
             // 4. Contract Requirements Box
             string hazardText = GetEventHumanSummary(mission.EventId);
             string specsContent = string.Format(
-                "• Build Budget Limit: <b>${0:0}k</b>\n" +
-                "• Science Target: <b>{1:0} pts</b> in <b>{2} orbits</b>\n" +
-                "• Required Payload: <b>{3}</b>\n" +
-                "• Recommended Chip: <b>{4} rule slots</b>\n" +
-                "• Orbital Hazard: <b>{5}</b>\n" +
-                "• Reward: <b>+${6}k</b> (Passive: <b>+${7}k</b>)",
+                "• Budget: <b>${0:0}k</b>   |   Reward: <b>+${6}k</b> (+${7}k/orbit)\n" +
+                "• Target: <b>{1:0} science</b> in <b>{2} orbits</b>\n" +
+                "• Sensor: <b>{3}</b>   |   Chip: <b>{4}+ rule slots</b>\n" +
+                "• Hazard: <b>{5}</b>",
                 mission.BudgetLimitThousands,
                 mission.TargetSciencePoints,
                 mission.RequiredOrbits,
@@ -394,29 +462,31 @@ namespace AstraLink.UI.Hub
                 mission.RewardThousands,
                 mission.PassiveIncomeThousands);
 
-            GameObject specsBox = CreatePanel("SpecsBox", cardObj.transform, new Color(0.05f, 0.08f, 0.14f, 0.92f), 250f);
+            GameObject specsBox = CreatePanel("SpecsBox", cardObj.transform, Color.white, 175f);
+            UITheme.ApplyPanelFrame(specsBox.GetComponent<Image>(), useDialogueBox: true);
             VerticalLayoutGroup specsLayout = specsBox.AddComponent<VerticalLayoutGroup>();
-            specsLayout.padding = new RectOffset(18, 18, 16, 16);
+            specsLayout.padding = new RectOffset(16, 16, 14, 14);
             specsLayout.childControlWidth = true;
             specsLayout.childControlHeight = true;
             specsLayout.childForceExpandWidth = true;
             specsLayout.childForceExpandHeight = true;
 
-            Text specsTxt = CreateText("SpecsText", specsBox.transform, font, specsContent, 18, FontStyle.Normal,
-                new Color(0.84f, 0.95f, 0.88f, 1f), TextAnchor.MiddleLeft);
+            Text specsTxt = CreateText("SpecsText", specsBox.transform, font, specsContent, 17, FontStyle.Normal,
+                new Color(0.86f, 0.96f, 0.90f, 1f), TextAnchor.MiddleLeft);
             specsTxt.supportRichText = true;
-            specsTxt.lineSpacing = 1.25f;
+            specsTxt.lineSpacing = 1.3f;
 
             // Spacer pushes the button to the bottom of the card
             GameObject spacer = CreateUIObject("Spacer", cardObj.transform);
             LayoutElement spacerLe = spacer.AddComponent<LayoutElement>();
             spacerLe.flexibleHeight = 1f;
 
-            // 5. Single Select Contract Button
+            // 5. Action Button
             int capturedIndex = index;
             Button acceptBtn = CreateActionButton(cardObj.transform, "Btn_AcceptContract_" + index,
-                "SELECT CONTRACT", new Color(0.15f, 0.52f, 0.32f, 1f), 0f, 60f, font,
-                () => SelectContract(capturedIndex));
+                "SELECT CONTRACT", UITheme.ButtonTintMuted, 0f, 56f, font,
+                () => OnCardActionClicked(capturedIndex));
+            UITheme.ApplyButtonStyle(acceptBtn, null, UITheme.ButtonTintMuted);
 
             Text btnLabel = acceptBtn.GetComponentInChildren<Text>();
             _cardButtonLabels.Add(btnLabel);

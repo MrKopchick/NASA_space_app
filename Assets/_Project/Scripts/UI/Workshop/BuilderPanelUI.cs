@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using AstraLink.Core;
+using AstraLink.UI.Common;
 using AstraLink.UI.Hub;
 using UnityEngine;
 using UnityEngine.UI;
@@ -58,11 +59,11 @@ namespace AstraLink.UI.Workshop
 
         private static readonly string[] SlotTitles = new string[]
         {
-            "SLOT 1: CORE PLATFORM (BUS)",
-            "SLOT 2: POWER GENERATION",
-            "SLOT 3: ENERGY STORAGE (BATTERY)",
-            "SLOT 4: COMMS & SSD STORAGE",
-            "SLOT 5: SCIENCE PAYLOAD (SENSOR)"
+            "1. SPACECRAFT BUS",
+            "2. POWER GENERATION",
+            "3. BATTERY STORAGE",
+            "4. COMMS & SSD",
+            "5. SCIENCE SENSOR"
         };
 
         private static readonly string[] SlotIconPlaceholders = new string[]
@@ -612,15 +613,19 @@ namespace AstraLink.UI.Workshop
 
         private Sprite FindMappedSprite(string itemId)
         {
-            if (string.IsNullOrEmpty(itemId) || itemIcons == null) return null;
-            for (int i = 0; i < itemIcons.Count; i++)
+            if (string.IsNullOrEmpty(itemId)) return null;
+            if (itemIcons != null)
             {
-                if (itemIcons[i] != null && itemIcons[i].ItemId == itemId && itemIcons[i].IconSprite != null)
+                for (int i = 0; i < itemIcons.Count; i++)
                 {
-                    return itemIcons[i].IconSprite;
+                    if (itemIcons[i] != null && itemIcons[i].ItemId == itemId && itemIcons[i].IconSprite != null)
+                    {
+                        return itemIcons[i].IconSprite;
+                    }
                 }
             }
-            return null;
+
+            return UITheme.GetItemSprite(itemId);
         }
 
         private ResourceSummary ComputeLiveResourceSummary(
@@ -678,6 +683,13 @@ namespace AstraLink.UI.Workshop
             Transform workshopRoot = GetWorkshopRootTransform();
             EnsurePanelRectUnderNavBar(workshopRoot);
 
+            Image workshopBg = workshopRoot.GetComponent<Image>();
+            if (workshopBg != null && UITheme.Assets != null && UITheme.Assets.bgQuietNebula != null)
+            {
+                workshopBg.sprite = UITheme.Assets.bgQuietNebula;
+                workshopBg.color = new Color(0.24f, 0.30f, 0.40f, 1f);
+            }
+
             Transform placeholder = workshopRoot.Find("PlaceholderTitle");
             if (placeholder != null)
             {
@@ -708,7 +720,7 @@ namespace AstraLink.UI.Workshop
             // 1. TOP KSP-STYLE ACTIVE CONTRACT BAR + 3 MODAL BUTTONS (Autopilot, A.S.T.R.A./DryRun, R&D)
             GameObject contractBar = CreateUIObject("ActiveContractBar", rootObj.transform);
             Image barBg = contractBar.AddComponent<Image>();
-            barBg.color = new Color(0.06f, 0.11f, 0.20f, 0.96f);
+            UITheme.ApplyPanelFrame(barBg, useDialogueBox: true);
             LayoutElement barLe = contractBar.AddComponent<LayoutElement>();
             barLe.minHeight = 60f;
             barLe.preferredHeight = 60f;
@@ -773,7 +785,7 @@ namespace AstraLink.UI.Workshop
             // LEFT COLUMN: 5 Spacecraft Slots + Rocket Selector (with Icon Frames)
             GameObject leftCol = CreateUIObject("SlotsColumn", columnsRow.transform);
             Image leftBg = leftCol.AddComponent<Image>();
-            leftBg.color = new Color(0.06f, 0.10f, 0.17f, 0.94f);
+            UITheme.ApplyPanelFrame(leftBg, useDialogueBox: false);
             LayoutElement leftLe = leftCol.AddComponent<LayoutElement>();
             leftLe.flexibleWidth = 1.25f;
             leftLe.preferredWidth = 1020f;
@@ -807,7 +819,7 @@ namespace AstraLink.UI.Workshop
             // RIGHT COLUMN: 6 NASA Resource Gauges
             GameObject rightCol = CreateUIObject("ResourceGaugesColumn", columnsRow.transform);
             Image rightBg = rightCol.AddComponent<Image>();
-            rightBg.color = new Color(0.06f, 0.10f, 0.17f, 0.94f);
+            UITheme.ApplyPanelFrame(rightBg, useDialogueBox: false);
             LayoutElement rightLe = rightCol.AddComponent<LayoutElement>();
             rightLe.flexibleWidth = 1f;
             rightLe.preferredWidth = 820f;
@@ -997,7 +1009,7 @@ namespace AstraLink.UI.Workshop
         {
             GameObject rowObj = CreateUIObject("SlotRow_" + slotIndex, parent);
             Image bg = rowObj.AddComponent<Image>();
-            bg.color = new Color(0.09f, 0.15f, 0.25f, 0.96f);
+            UITheme.ApplyPanelFrame(bg, useDialogueBox: true);
 
             LayoutElement rowLe = rowObj.AddComponent<LayoutElement>();
             rowLe.preferredHeight = 104f;
@@ -1011,14 +1023,14 @@ namespace AstraLink.UI.Workshop
             hLayout.childForceExpandWidth = false;
 
             int captured = slotIndex;
-            CreateButton(rowObj.transform, "Btn_Prev", "< PREV",
-                new Color(0.18f, 0.34f, 0.56f, 1f), 90f, 78f, font,
+            CreateButton(rowObj.transform, "Btn_Prev", "◀",
+                UITheme.ButtonTintMuted, 64f, 78f, font,
                 () => CycleSlotComponent(captured, -1));
 
             // Dedicated Module Icon Box (78x78) for easy Sprite drag-and-drop
             GameObject iconFrame = CreateUIObject("IconFrame", rowObj.transform);
             Image frameBg = iconFrame.AddComponent<Image>();
-            frameBg.color = new Color(0.05f, 0.09f, 0.16f, 1f);
+            UITheme.ApplySlotFrame(frameBg, selected: false);
             LayoutElement iconLe = iconFrame.AddComponent<LayoutElement>();
             iconLe.preferredWidth = 78f;
             iconLe.preferredHeight = 78f;
@@ -1057,8 +1069,8 @@ namespace AstraLink.UI.Workshop
             _slotPartStatsTexts[slotIndex] = CreateText("PartStats", infoBox.transform, font, "Component Stats", 15, FontStyle.Normal,
                 new Color(0.80f, 0.94f, 0.84f, 1f), TextAnchor.MiddleLeft);
 
-            CreateButton(rowObj.transform, "Btn_Next", "NEXT >",
-                new Color(0.18f, 0.34f, 0.56f, 1f), 90f, 78f, font,
+            CreateButton(rowObj.transform, "Btn_Next", "▶",
+                UITheme.ButtonTintMuted, 64f, 78f, font,
                 () => CycleSlotComponent(captured, 1));
         }
 
@@ -1066,7 +1078,7 @@ namespace AstraLink.UI.Workshop
         {
             GameObject rowObj = CreateUIObject("RocketSelectorRow", parent);
             Image bg = rowObj.AddComponent<Image>();
-            bg.color = new Color(0.14f, 0.18f, 0.30f, 0.98f);
+            UITheme.ApplySlotFrame(bg, selected: true);
 
             LayoutElement rowLe = rowObj.AddComponent<LayoutElement>();
             rowLe.preferredHeight = 110f;
@@ -1080,14 +1092,14 @@ namespace AstraLink.UI.Workshop
             hLayout.childControlHeight = true;
             hLayout.childForceExpandWidth = false;
 
-            CreateButton(rowObj.transform, "Btn_PrevRocket", "< ROCKET",
-                new Color(0.48f, 0.28f, 0.14f, 1f), 95f, 82f, font,
+            CreateButton(rowObj.transform, "Btn_PrevRocket", "◀",
+                UITheme.ButtonTintPrimary, 64f, 82f, font,
                 () => CycleRocket(-1));
 
             // Dedicated Rocket Icon Box (82x82)
             GameObject iconFrame = CreateUIObject("IconFrame", rowObj.transform);
             Image frameBg = iconFrame.AddComponent<Image>();
-            frameBg.color = new Color(0.08f, 0.09f, 0.16f, 1f);
+            UITheme.ApplySlotFrame(frameBg, selected: true);
             LayoutElement iconLe = iconFrame.AddComponent<LayoutElement>();
             iconLe.preferredWidth = 82f;
             iconLe.preferredHeight = 82f;
@@ -1125,8 +1137,8 @@ namespace AstraLink.UI.Workshop
             _rocketStatsText = CreateText("RocketStats", infoBox.transform, font, "Rocket Stats", 15, FontStyle.Normal,
                 new Color(0.95f, 0.88f, 0.72f, 1f), TextAnchor.MiddleLeft);
 
-            CreateButton(rowObj.transform, "Btn_NextRocket", "ROCKET >",
-                new Color(0.48f, 0.28f, 0.14f, 1f), 95f, 82f, font,
+            CreateButton(rowObj.transform, "Btn_NextRocket", "▶",
+                UITheme.ButtonTintPrimary, 64f, 82f, font,
                 () => CycleRocket(1));
         }
 
@@ -1253,10 +1265,14 @@ namespace AstraLink.UI.Workshop
         {
             GameObject btnObj = CreateUIObject(name, parent);
             Image img = btnObj.AddComponent<Image>();
-            img.color = bgColor;
-
             Button btn = btnObj.AddComponent<Button>();
-            btn.targetGraphic = img;
+
+            Color tint = Color.white;
+            if (name.Contains("Launch") || name.Contains("DryRun")) tint = UITheme.ButtonTintSuccess;
+            else if (name.Contains("RnD")) tint = new Color(1.0f, 0.86f, 0.56f, 1f);
+            else if (name.Contains("Prev") || name.Contains("Next") || name.Contains("Reset")) tint = UITheme.ButtonTintMuted;
+            UITheme.ApplyButtonStyle(btn, img, tint);
+
             btn.onClick.AddListener(onClick);
 
             LayoutElement le = btnObj.AddComponent<LayoutElement>();

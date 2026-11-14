@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using AstraLink.Core;
+using AstraLink.UI.Common;
 using AstraLink.UI.Flight;
 using AstraLink.UI.Hub;
 using AstraLink.UI.Workshop;
@@ -2932,7 +2933,28 @@ namespace AstraLink.UI.Debrief
         {
             GameObject panel = CreateUIObject(name, parent);
             Image img = panel.AddComponent<Image>();
-            img.color = bgColor;
+
+            if (name.Contains("BarTrack") || name.Contains("BarBg"))
+            {
+                UITheme.ApplyNameTab(img, new Color(0.18f, 0.24f, 0.36f, 0.95f));
+            }
+            else if (name.Contains("Badge") || name.Contains("Reward") || name.Contains("Passive"))
+            {
+                UITheme.ApplyNameTab(img, Color.white);
+            }
+            else if (name.Contains("Failure"))
+            {
+                UITheme.ApplyPanelFrame(img, useDialogueBox: true, new Color(1.0f, 0.72f, 0.74f, 0.96f));
+            }
+            else if (name.Contains("Column") || name.Contains("StatePanel"))
+            {
+                UITheme.ApplyPanelFrame(img, useDialogueBox: false);
+            }
+            else
+            {
+                UITheme.ApplyPanelFrame(img, useDialogueBox: true);
+            }
+
             if (preferredHeight > 0f)
             {
                 LayoutElement le = panel.AddComponent<LayoutElement>();
@@ -2976,10 +2998,14 @@ namespace AstraLink.UI.Debrief
         {
             GameObject btnObj = CreateUIObject(name, parent);
             Image img = btnObj.AddComponent<Image>();
-            img.color = bgColor;
-
             Button btn = btnObj.AddComponent<Button>();
-            btn.targetGraphic = img;
+
+            Color tint = Color.white;
+            if (name.Contains("Retry") || name.Contains("Hangar")) tint = new Color(1.0f, 0.86f, 0.56f, 1f);
+            else if (name.Contains("Return") || name.Contains("Hub") || name.Contains("Play")) tint = UITheme.ButtonTintSuccess;
+            else if (name.Contains("Speed")) tint = UITheme.ButtonTintMuted;
+            UITheme.ApplyButtonStyle(btn, img, tint);
+
             btn.onClick.AddListener(onClick);
 
             LayoutElement le = btnObj.AddComponent<LayoutElement>();

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using AstraLink.Core;
+using AstraLink.UI.Common;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -646,7 +647,7 @@ namespace AstraLink.UI.Flight
             // Visual Signal Delay Timer Box
             GameObject delayBox = CreateUIObject("SignalDelayTimerBox", contentRoot.transform);
             signalDelayBannerBg = delayBox.AddComponent<Image>();
-            signalDelayBannerBg.color = new Color(0.08f, 0.13f, 0.22f, 0.96f);
+            UITheme.ApplyPanelFrame(signalDelayBannerBg, useDialogueBox: true);
             delayBox.AddComponent<LayoutElement>().preferredHeight = 58f;
 
             VerticalLayoutGroup delayLayout = delayBox.AddComponent<VerticalLayoutGroup>();
@@ -670,7 +671,7 @@ namespace AstraLink.UI.Flight
 
             GameObject trackObj = CreateUIObject("DelaySliderTrack", delayBox.transform);
             Image trackBg = trackObj.AddComponent<Image>();
-            trackBg.color = new Color(0.03f, 0.05f, 0.10f, 1.0f);
+            UITheme.ApplyNameTab(trackBg, new Color(0.16f, 0.22f, 0.34f, 1.0f));
             trackObj.AddComponent<LayoutElement>().preferredHeight = 10f;
 
             GameObject fillObj = CreateUIObject("Fill", trackObj.transform);
@@ -748,10 +749,8 @@ namespace AstraLink.UI.Flight
         {
             GameObject btnObj = CreateUIObject(name, parent);
             Image img = btnObj.AddComponent<Image>();
-            img.color = bgColor;
-
             Button btn = btnObj.AddComponent<Button>();
-            btn.targetGraphic = img;
+            UITheme.ApplyButtonStyle(btn, img, Color.white);
 
             LayoutElement le = btnObj.AddComponent<LayoutElement>();
             le.preferredHeight = 36f;

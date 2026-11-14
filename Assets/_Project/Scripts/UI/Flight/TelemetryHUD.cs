@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using AstraLink.Core;
+using AstraLink.UI.Common;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -781,7 +782,7 @@ namespace AstraLink.UI.Flight
                 AutopilotRule rule = _activeRules[i];
                 GameObject rowObj = CreateUIObject("RuleRow_" + i, autopilotRulesContainer);
                 Image rowBg = rowObj.AddComponent<Image>();
-                rowBg.color = new Color(0.08f, 0.13f, 0.22f, 0.94f);
+                UITheme.ApplyPanelFrame(rowBg, useDialogueBox: true);
                 LayoutElement rowLe = rowObj.AddComponent<LayoutElement>();
                 rowLe.preferredHeight = 32f;
 
@@ -796,7 +797,7 @@ namespace AstraLink.UI.Flight
 
                 GameObject badgeObj = CreateUIObject("TriggerBadge", rowObj.transform);
                 Image badgeBg = badgeObj.AddComponent<Image>();
-                badgeBg.color = new Color(0.16f, 0.24f, 0.36f, 1.0f);
+                UITheme.ApplyNameTab(badgeBg, new Color(0.42f, 0.54f, 0.72f, 1.0f));
                 LayoutElement badgeLe = badgeObj.AddComponent<LayoutElement>();
                 badgeLe.preferredWidth = 112f;
                 badgeLe.minWidth = 104f;
@@ -835,7 +836,7 @@ namespace AstraLink.UI.Flight
         {
             GameObject badgeObj = CreateUIObject(name, parent);
             badgeBg = badgeObj.AddComponent<Image>();
-            badgeBg.color = bgColor;
+            UITheme.ApplyNameTab(badgeBg, bgColor);
 
             badgeText = CreateText("Label", badgeObj.transform, font, label, 12, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
             StretchFull(badgeText.GetComponent<RectTransform>());
@@ -856,7 +857,7 @@ namespace AstraLink.UI.Flight
         {
             GameObject cardObj = CreateUIObject(name, parent);
             Image cardBg = cardObj.AddComponent<Image>();
-            cardBg.color = new Color(0.08f, 0.13f, 0.22f, 0.94f);
+            UITheme.ApplyPanelFrame(cardBg, useDialogueBox: true);
             LayoutElement cardLe = cardObj.AddComponent<LayoutElement>();
             cardLe.preferredHeight = 62f;
 
@@ -886,7 +887,7 @@ namespace AstraLink.UI.Flight
             // Progress Bar Track with both Slider and Image.fillAmount
             GameObject trackObj = CreateUIObject("SliderTrack", cardObj.transform);
             Image trackBg = trackObj.AddComponent<Image>();
-            trackBg.color = new Color(0.03f, 0.06f, 0.11f, 1.0f);
+            UITheme.ApplyNameTab(trackBg, new Color(0.16f, 0.22f, 0.34f, 1.0f));
             trackObj.AddComponent<LayoutElement>().preferredHeight = 12f;
 
             GameObject fillObj = CreateUIObject("Fill", trackObj.transform);

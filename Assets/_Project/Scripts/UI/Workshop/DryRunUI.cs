@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using AstraLink.Core;
+using AstraLink.UI.Common;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -688,18 +689,44 @@ namespace AstraLink.UI.Workshop
 
             GameObject cardObj = CreateUIObject("AuditCard_" + index, parent);
             Image cardBg = cardObj.AddComponent<Image>();
-            cardBg.color = bgCol;
+            Color frameTint = msg.Severity == AuditSeverity.Critical
+                ? new Color(1.0f, 0.72f, 0.74f, 0.96f)
+                : (msg.Severity == AuditSeverity.Warning ? new Color(1.0f, 0.90f, 0.68f, 0.96f) : new Color(0.76f, 1.0f, 0.84f, 0.96f));
+            UITheme.ApplyPanelFrame(cardBg, useDialogueBox: true, frameTint);
 
-            VerticalLayoutGroup vLayout = cardObj.AddComponent<VerticalLayoutGroup>();
-            vLayout.padding = new RectOffset(14, 14, 10, 10);
+            HorizontalLayoutGroup cardH = cardObj.AddComponent<HorizontalLayoutGroup>();
+            cardH.padding = new RectOffset(14, 14, 10, 10);
+            cardH.spacing = 12f;
+            cardH.childAlignment = TextAnchor.MiddleLeft;
+            cardH.childControlWidth = true;
+            cardH.childControlHeight = true;
+            cardH.childForceExpandWidth = false;
+            cardH.childForceExpandHeight = false;
+
+            Sprite astraSprite = UITheme.GetAstraPortrait(msg.Severity);
+            if (astraSprite != null)
+            {
+                GameObject pObj = CreateUIObject("Portrait", cardObj.transform);
+                LayoutElement pLe = pObj.AddComponent<LayoutElement>();
+                pLe.preferredWidth = 44f;
+                pLe.preferredHeight = 44f;
+                Image pImg = pObj.AddComponent<Image>();
+                pImg.sprite = astraSprite;
+                pImg.preserveAspect = true;
+            }
+
+            GameObject textCol = CreateUIObject("TextCol", cardObj.transform);
+            LayoutElement tcLe = textCol.AddComponent<LayoutElement>();
+            tcLe.flexibleWidth = 1f;
+            VerticalLayoutGroup vLayout = textCol.AddComponent<VerticalLayoutGroup>();
             vLayout.spacing = 4f;
             vLayout.childControlWidth = true;
             vLayout.childControlHeight = true;
             vLayout.childForceExpandWidth = true;
             vLayout.childForceExpandHeight = false;
 
-            CreateText("Title", cardObj.transform, font, prefix + msg.Title, 16, FontStyle.Bold, badgeCol, TextAnchor.MiddleLeft);
-            CreateText("Advice", cardObj.transform, font, msg.Advice, 14, FontStyle.Normal, new Color(0.90f, 0.94f, 0.98f, 1f), TextAnchor.MiddleLeft);
+            CreateText("Title", textCol.transform, font, prefix + msg.Title, 16, FontStyle.Bold, badgeCol, TextAnchor.MiddleLeft);
+            CreateText("Advice", textCol.transform, font, msg.Advice, 14, FontStyle.Normal, new Color(0.90f, 0.94f, 0.98f, 1f), TextAnchor.MiddleLeft);
         }
 
         public void EnsureDryRunUIHierarchy()
@@ -717,7 +744,15 @@ namespace AstraLink.UI.Workshop
             GameObject rootObj = CreateUIObject("DryRunContentRoot", transform);
             StretchFull(rootObj.GetComponent<RectTransform>());
             Image modalBg = rootObj.AddComponent<Image>();
-            modalBg.color = new Color(0.02f, 0.04f, 0.08f, 0.96f);
+            if (UITheme.Assets != null && UITheme.Assets.bgStarfield != null)
+            {
+                modalBg.sprite = UITheme.Assets.bgStarfield;
+                modalBg.color = new Color(0.16f, 0.20f, 0.28f, 0.98f);
+            }
+            else
+            {
+                modalBg.color = new Color(0.02f, 0.04f, 0.08f, 0.96f);
+            }
 
             VerticalLayoutGroup rootLayout = rootObj.AddComponent<VerticalLayoutGroup>();
             rootLayout.padding = new RectOffset(36, 36, 24, 24);
@@ -730,9 +765,9 @@ namespace AstraLink.UI.Workshop
             // --- SECTION 1: TOP MODAL HEADER BAR ---
             GameObject astraHeader = CreateUIObject("AstraHeaderRow", rootObj.transform);
             Image headerBg = astraHeader.AddComponent<Image>();
-            headerBg.color = new Color(0.07f, 0.13f, 0.24f, 0.98f);
+            UITheme.ApplyPanelFrame(headerBg, useDialogueBox: true);
             LayoutElement ahLe = astraHeader.AddComponent<LayoutElement>();
-            ahLe.preferredHeight = 62f;
+            ahLe.preferredHeight = 68f;
 
             HorizontalLayoutGroup ahLayout = astraHeader.AddComponent<HorizontalLayoutGroup>();
             ahLayout.padding = new RectOffset(18, 18, 8, 8);
@@ -741,6 +776,17 @@ namespace AstraLink.UI.Workshop
             ahLayout.childControlWidth = true;
             ahLayout.childControlHeight = true;
             ahLayout.childForceExpandWidth = false;
+
+            if (UITheme.Assets != null && UITheme.Assets.astraNormal != null)
+            {
+                GameObject portraitObj = CreateUIObject("AstraPortrait", astraHeader.transform);
+                LayoutElement pLe = portraitObj.AddComponent<LayoutElement>();
+                pLe.preferredWidth = 48f;
+                pLe.preferredHeight = 48f;
+                Image pImg = portraitObj.AddComponent<Image>();
+                pImg.sprite = UITheme.Assets.astraNormal;
+                pImg.preserveAspect = true;
+            }
 
             Text titleTxt = CreateText("AstraTitle", astraHeader.transform, font,
                 "A.S.T.R.A. PRE-FLIGHT AUDITOR & 3s ORBIT BENCH TEST", 18, FontStyle.Bold,
@@ -776,7 +822,7 @@ namespace AstraLink.UI.Workshop
             // --- SECTION 3: 3-SECOND (20-TICK) DRY RUN BENCH VISUALIZER ---
             GameObject dryRunBox = CreateUIObject("DryRunBenchBox", rootObj.transform);
             Image drBg = dryRunBox.AddComponent<Image>();
-            drBg.color = new Color(0.05f, 0.08f, 0.14f, 0.96f);
+            UITheme.ApplyPanelFrame(drBg, useDialogueBox: false);
             LayoutElement drLe = dryRunBox.AddComponent<LayoutElement>();
             drLe.preferredHeight = 460f;
             drLe.flexibleHeight = 1f;
@@ -815,7 +861,7 @@ namespace AstraLink.UI.Workshop
             // 20-Tick Dual-Bar Curve Area
             GameObject chartRow = CreateUIObject("CurveChartRow", dryRunBox.transform);
             Image chartBg = chartRow.AddComponent<Image>();
-            chartBg.color = new Color(0.03f, 0.05f, 0.09f, 0.95f);
+            UITheme.ApplySlotFrame(chartBg, selected: false);
             LayoutElement chartLe = chartRow.AddComponent<LayoutElement>();
             chartLe.preferredHeight = 320f;
             chartLe.flexibleHeight = 1f;
@@ -961,10 +1007,14 @@ namespace AstraLink.UI.Workshop
         {
             GameObject btnObj = CreateUIObject(name, parent);
             Image img = btnObj.AddComponent<Image>();
-            img.color = bgColor;
-
             Button btn = btnObj.AddComponent<Button>();
-            btn.targetGraphic = img;
+
+            Color tint = Color.white;
+            if (name.Contains("Close")) tint = UITheme.ButtonTintDanger;
+            else if (name.Contains("RunDryRun")) tint = UITheme.ButtonTintSuccess;
+            else if (name.Contains("Refresh")) tint = UITheme.ButtonTintMuted;
+            UITheme.ApplyButtonStyle(btn, img, tint);
+
             btn.onClick.AddListener(onClick);
 
             LayoutElement le = btnObj.AddComponent<LayoutElement>();

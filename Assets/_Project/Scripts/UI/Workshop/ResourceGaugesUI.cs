@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using AstraLink.Core;
+using AstraLink.UI.Common;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -77,7 +78,7 @@ namespace AstraLink.UI.Workshop
             // Validation Status Banner at bottom
             GameObject bannerObj = CreateUIObject("ValidationBanner", rootObj.transform);
             _validationBannerBg = bannerObj.AddComponent<Image>();
-            _validationBannerBg.color = new Color(0.10f, 0.36f, 0.22f, 0.96f);
+            UITheme.ApplySlotFrame(_validationBannerBg, selected: true, new Color(0.65f, 1f, 0.78f, 0.96f));
             LayoutElement bannerLe = bannerObj.AddComponent<LayoutElement>();
             bannerLe.preferredHeight = 54f;
             bannerLe.flexibleHeight = 1f;
@@ -277,7 +278,7 @@ namespace AstraLink.UI.Workshop
         {
             GameObject rowObj = CreateUIObject("GaugeRow_" + index, parent);
             Image cardBg = rowObj.AddComponent<Image>();
-            cardBg.color = new Color(0.07f, 0.11f, 0.18f, 0.94f);
+            UITheme.ApplyPanelFrame(cardBg, useDialogueBox: true);
 
             LayoutElement rowLe = rowObj.AddComponent<LayoutElement>();
             rowLe.preferredHeight = 92f;
@@ -296,9 +297,22 @@ namespace AstraLink.UI.Workshop
 
             HorizontalLayoutGroup hLayout = topRow.AddComponent<HorizontalLayoutGroup>();
             hLayout.spacing = 8f;
+            hLayout.childAlignment = TextAnchor.MiddleLeft;
             hLayout.childControlWidth = true;
             hLayout.childControlHeight = true;
             hLayout.childForceExpandWidth = false;
+
+            Sprite gaugeIcon = ResolveGaugeIcon(index);
+            if (gaugeIcon != null)
+            {
+                GameObject iconObj = CreateUIObject("GaugeIcon", topRow.transform);
+                LayoutElement iconLe = iconObj.AddComponent<LayoutElement>();
+                iconLe.preferredWidth = 22f;
+                iconLe.preferredHeight = 22f;
+                Image iconImg = iconObj.AddComponent<Image>();
+                iconImg.sprite = gaugeIcon;
+                iconImg.preserveAspect = true;
+            }
 
             Text titleTxt = CreateText("Title", topRow.transform, font, title, 15, FontStyle.Bold,
                 new Color(0.75f, 0.86f, 0.98f, 1f), TextAnchor.MiddleLeft);
@@ -312,13 +326,13 @@ namespace AstraLink.UI.Workshop
 
             GameObject barBg = CreateUIObject("BarBg", rowObj.transform);
             Image bgImg = barBg.AddComponent<Image>();
-            bgImg.color = new Color(0.03f, 0.05f, 0.09f, 1f);
+            UITheme.ApplyNameTab(bgImg, new Color(0.16f, 0.20f, 0.30f, 0.95f));
             LayoutElement barLe = barBg.AddComponent<LayoutElement>();
             barLe.preferredHeight = 20f;
 
             GameObject barFill = CreateUIObject("BarFill", barBg.transform);
             Image fillImg = barFill.AddComponent<Image>();
-            fillImg.color = new Color(0.20f, 0.72f, 0.42f, 1f);
+            UITheme.ApplyNameTab(fillImg, new Color(0.20f, 0.72f, 0.42f, 1f));
             RectTransform fillRt = barFill.GetComponent<RectTransform>();
             fillRt.anchorMin = Vector2.zero;
             fillRt.anchorMax = new Vector2(0.5f, 1f);
@@ -338,6 +352,23 @@ namespace AstraLink.UI.Workshop
         {
             Transform t = root.Find(path);
             return t != null ? t.GetComponent<T>() : null;
+        }
+
+        private static Sprite ResolveGaugeIcon(int index)
+        {
+            UIThemeAssets assets = UITheme.Assets;
+            if (assets == null) return null;
+
+            switch (index)
+            {
+                case 0: return UITheme.GetItemSprite("rocket_medium");
+                case 1: return UITheme.GetItemSprite("pwr_solar_mini");
+                case 2: return UITheme.GetItemSprite("bat_li_small");
+                case 3: return assets.spaceCreditsCoin;
+                case 4: return assets.iconDataChip;
+                case 5: return assets.missionBadge;
+                default: return null;
+            }
         }
 
         private static GameObject CreateUIObject(string name, Transform parent)

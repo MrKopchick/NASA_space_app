@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using AstraLink.Core;
+using AstraLink.UI.Common;
 using AstraLink.UI.Workshop;
 using UnityEngine;
 using UnityEngine.UI;
@@ -193,7 +194,7 @@ namespace AstraLink.UI.Hub
             // 1. Top Header Bar
             GameObject topBar = CreateUIObject("TopBar", rootObj.transform);
             Image topBg = topBar.AddComponent<Image>();
-            topBg.color = new Color(0.08f, 0.14f, 0.24f, 1f);
+            UITheme.ApplyPanelFrame(topBg, useDialogueBox: true);
             LayoutElement topLe = topBar.AddComponent<LayoutElement>();
             topLe.preferredHeight = 58f;
 
@@ -296,7 +297,7 @@ namespace AstraLink.UI.Hub
         {
             GameObject rowObj = CreateUIObject(objName, parent);
             Image rowBg = rowObj.AddComponent<Image>();
-            rowBg.color = new Color(0.06f, 0.10f, 0.18f, 0.94f);
+            UITheme.ApplyPanelFrame(rowBg, useDialogueBox: true);
 
             LayoutElement rowLe = rowObj.AddComponent<LayoutElement>();
             rowLe.preferredHeight = 136f;
@@ -313,7 +314,7 @@ namespace AstraLink.UI.Hub
             // Left Branch Header Label
             GameObject labelBox = CreateUIObject("BranchHeader", rowObj.transform);
             Image labelBg = labelBox.AddComponent<Image>();
-            labelBg.color = new Color(0.09f, 0.16f, 0.28f, 1f);
+            UITheme.ApplyNameTab(labelBg, new Color(0.82f, 0.92f, 1f, 0.95f));
             LayoutElement labelLe = labelBox.AddComponent<LayoutElement>();
             labelLe.preferredWidth = 225f;
 
@@ -378,13 +379,10 @@ namespace AstraLink.UI.Hub
 
             GameObject nodeObj = CreateUIObject("TechNode_" + comp.Id, parent);
             Image nodeBg = nodeObj.AddComponent<Image>();
-
-            if (isUnlocked)
-                nodeBg.color = new Color(0.09f, 0.24f, 0.17f, 0.96f);
-            else if (prevUnlocked)
-                nodeBg.color = new Color(0.11f, 0.18f, 0.30f, 0.96f);
-            else
-                nodeBg.color = new Color(0.06f, 0.08f, 0.13f, 0.88f);
+            Color nodeTint = isUnlocked
+                ? new Color(0.75f, 1.0f, 0.82f, 0.98f)
+                : (prevUnlocked ? Color.white : new Color(0.55f, 0.62f, 0.74f, 0.90f));
+            UITheme.ApplySlotFrame(nodeBg, isUnlocked, nodeTint);
 
             LayoutElement nodeLe = nodeObj.AddComponent<LayoutElement>();
             nodeLe.flexibleWidth = 1f;
@@ -507,9 +505,10 @@ namespace AstraLink.UI.Hub
 
             GameObject nodeObj = CreateUIObject("ChipNode_" + targetSlots, parent);
             Image nodeBg = nodeObj.AddComponent<Image>();
-            nodeBg.color = isUnlocked
-                ? new Color(0.09f, 0.24f, 0.17f, 0.96f)
-                : (prevUnlocked ? new Color(0.11f, 0.18f, 0.30f, 0.96f) : new Color(0.06f, 0.08f, 0.13f, 0.88f));
+            Color chipTint = isUnlocked
+                ? new Color(0.75f, 1.0f, 0.82f, 0.98f)
+                : (prevUnlocked ? Color.white : new Color(0.55f, 0.62f, 0.74f, 0.90f));
+            UITheme.ApplySlotFrame(nodeBg, isUnlocked, chipTint);
 
             LayoutElement nodeLe = nodeObj.AddComponent<LayoutElement>();
             nodeLe.flexibleWidth = 1f;
@@ -575,7 +574,7 @@ namespace AstraLink.UI.Hub
         {
             GameObject iconFrame = CreateUIObject(name, parent);
             Image frameImg = iconFrame.AddComponent<Image>();
-            frameImg.color = frameColor;
+            UITheme.ApplySlotFrame(frameImg, selected: false);
 
             LayoutElement le = iconFrame.AddComponent<LayoutElement>();
             le.preferredWidth = size;
@@ -583,16 +582,27 @@ namespace AstraLink.UI.Hub
             le.minWidth = size;
             le.minHeight = size;
 
-            // Child Image where artist/developer can drag-and-drop the actual Sprite in Inspector
+            Sprite resolved = null;
+            if (name.StartsWith("PartIconSlot_"))
+            {
+                resolved = UITheme.GetItemSprite(name.Substring("PartIconSlot_".Length));
+            }
+            else if (name.StartsWith("ChipIconSlot_") && UITheme.Assets != null)
+            {
+                resolved = UITheme.Assets.iconDataChip;
+            }
+
             GameObject spriteObj = CreateUIObject("IconSprite", iconFrame.transform);
             StretchFull(spriteObj.GetComponent<RectTransform>());
             Image spriteImg = spriteObj.AddComponent<Image>();
             spriteImg.preserveAspect = true;
-            spriteImg.color = new Color(1f, 1f, 1f, 0.15f);
+            spriteImg.sprite = resolved;
+            spriteImg.color = resolved != null ? Color.white : new Color(1f, 1f, 1f, 0.10f);
 
             Text tagTxt = CreateText("PlaceholderTag", iconFrame.transform, font, placeholderTag, 11, FontStyle.Bold,
                 new Color(0.75f, 0.88f, 1f, 0.65f), TextAnchor.MiddleCenter);
             StretchFull(tagTxt.GetComponent<RectTransform>());
+            tagTxt.gameObject.SetActive(resolved == null);
             return iconFrame;
         }
 
@@ -636,10 +646,13 @@ namespace AstraLink.UI.Hub
         {
             GameObject btnObj = CreateUIObject(name, parent);
             Image img = btnObj.AddComponent<Image>();
-            img.color = bgColor;
-
             Button btn = btnObj.AddComponent<Button>();
-            btn.targetGraphic = img;
+
+            Color tint = Color.white;
+            if (name.Contains("Close")) tint = UITheme.ButtonTintDanger;
+            else if (name.Contains("Upgrade")) tint = new Color(1.0f, 0.86f, 0.56f, 1f);
+            UITheme.ApplyButtonStyle(btn, img, tint);
+
             btn.onClick.AddListener(onClick);
 
             LayoutElement le = btnObj.AddComponent<LayoutElement>();

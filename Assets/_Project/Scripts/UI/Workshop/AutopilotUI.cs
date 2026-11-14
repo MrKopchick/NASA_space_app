@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using AstraLink.Core;
+using AstraLink.UI.Common;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -512,7 +513,7 @@ namespace AstraLink.UI.Workshop
             // 1. TOP MODAL HEADER BAR
             GameObject topBar = CreateUIObject("HeaderBar", rootObj.transform);
             Image topBarBg = topBar.AddComponent<Image>();
-            topBarBg.color = new Color(0.07f, 0.13f, 0.24f, 0.98f);
+            UITheme.ApplyPanelFrame(topBarBg, useDialogueBox: true);
             LayoutElement topLe = topBar.AddComponent<LayoutElement>();
             topLe.preferredHeight = 62f;
 
@@ -548,7 +549,7 @@ namespace AstraLink.UI.Workshop
             // 2. CONSTRUCT COLUMN HEADERS ROW
             GameObject colHeaderRow = CreateUIObject("ConstructColumnHeaders", rootObj.transform);
             Image colHeaderBg = colHeaderRow.AddComponent<Image>();
-            colHeaderBg.color = new Color(0.05f, 0.09f, 0.16f, 0.95f);
+            UITheme.ApplyNameTab(colHeaderBg, new Color(0.75f, 0.85f, 1f, 0.95f));
             LayoutElement chLe = colHeaderRow.AddComponent<LayoutElement>();
             chLe.preferredHeight = 36f;
 
@@ -653,7 +654,7 @@ namespace AstraLink.UI.Workshop
         {
             GameObject rowObj = CreateUIObject("RuleRow_" + index, parent);
             Image rowBg = rowObj.AddComponent<Image>();
-            rowBg.color = new Color(0.09f, 0.16f, 0.27f, 0.96f);
+            UITheme.ApplyPanelFrame(rowBg, useDialogueBox: true);
 
             LayoutElement rowLe = rowObj.AddComponent<LayoutElement>();
             rowLe.preferredHeight = 122f;
@@ -784,7 +785,7 @@ namespace AstraLink.UI.Workshop
         {
             GameObject block = CreateUIObject(name, parent);
             Image bg = block.AddComponent<Image>();
-            bg.color = bgColor;
+            UITheme.ApplySlotFrame(bg, selected: false);
 
             LayoutElement le = block.AddComponent<LayoutElement>();
             le.preferredWidth = width;
@@ -996,7 +997,7 @@ namespace AstraLink.UI.Workshop
         {
             GameObject inputObj = CreateUIObject(name, parent);
             Image bg = inputObj.AddComponent<Image>();
-            bg.color = new Color(0.04f, 0.08f, 0.14f, 1f);
+            UITheme.ApplySlotFrame(bg, selected: false);
 
             LayoutElement le = inputObj.AddComponent<LayoutElement>();
             le.preferredWidth = width;
@@ -1030,7 +1031,7 @@ namespace AstraLink.UI.Workshop
         {
             GameObject ddObj = CreateUIObject(name, parent);
             Image ddBg = ddObj.AddComponent<Image>();
-            ddBg.color = new Color(0.12f, 0.22f, 0.36f, 1f);
+            UITheme.ApplyNameTab(ddBg, new Color(0.85f, 0.94f, 1f, 1f));
 
             LayoutElement le = ddObj.AddComponent<LayoutElement>();
             le.preferredWidth = width;
@@ -1180,10 +1181,14 @@ namespace AstraLink.UI.Workshop
         {
             GameObject btnObj = CreateUIObject(name, parent);
             Image img = btnObj.AddComponent<Image>();
-            img.color = bgColor;
-
             Button btn = btnObj.AddComponent<Button>();
-            btn.targetGraphic = img;
+
+            Color tint = Color.white;
+            if (name.Contains("Close") || name.Contains("Clear")) tint = UITheme.ButtonTintDanger;
+            else if (name.Contains("DryRun")) tint = UITheme.ButtonTintSuccess;
+            else if (name.Contains("Preset")) tint = UITheme.ButtonTintMuted;
+            UITheme.ApplyButtonStyle(btn, img, tint);
+
             btn.onClick.AddListener(onClick);
 
             LayoutElement le = btnObj.AddComponent<LayoutElement>();

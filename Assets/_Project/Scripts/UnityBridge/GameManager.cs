@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using AstraLink.UI.Common;
 using AstraLink.UI.Debrief;
 using AstraLink.UI.Hub;
 using AstraLink.UI.Workshop;
@@ -56,6 +57,8 @@ namespace AstraLink.Core
         private bool _controllersInitialized;
         private bool _isLaunchingOrPreparingFlight;
         private GameObject _topNavBar;
+        private Text _topNavCapitalText;
+        private Text _topNavMissionText;
 
         public GameScreen CurrentScreen { get; private set; }
         public AgencyState CurrentAgencyState { get; private set; }
@@ -702,7 +705,19 @@ namespace AstraLink.Core
             CleanupOrPopulatePanel(flightPanel, missionReportUI != null, "3. ОРБІТАЛЬНИЙ ПОЛІТ (FlightPanel)", new Color(0.05f, 0.08f, 0.16f, 1f));
             CleanupOrPopulatePanel(debriefPanel, missionReportUI != null, "4. ДЕБРИФІНГ МІСІЇ (DebriefPanel)", new Color(0.14f, 0.11f, 0.20f, 1f));
 
+            ApplyPanelBackgroundSprite(flightPanel, UITheme.Assets != null ? UITheme.Assets.bgDistantWorlds : null, new Color(0.24f, 0.30f, 0.42f, 1f));
+            ApplyPanelBackgroundSprite(debriefPanel, UITheme.Assets != null ? UITheme.Assets.bgPlanetApproach : null, new Color(0.24f, 0.30f, 0.42f, 1f));
+
             EnsureTopNavBar(root);
+        }
+
+        private static void ApplyPanelBackgroundSprite(GameObject panel, Sprite sprite, Color tint)
+        {
+            if (panel == null || sprite == null) return;
+            Image img = panel.GetComponent<Image>();
+            if (img == null) img = panel.AddComponent<Image>();
+            img.sprite = sprite;
+            img.color = tint;
         }
 
         private static GameObject FindOrCreatePanel(Transform parent, string panelName)
@@ -781,12 +796,12 @@ namespace AstraLink.Core
 
             var navImg = navBar.GetComponent<Image>();
             if (navImg == null) navImg = navBar.AddComponent<Image>();
-            navImg.color = new Color(0.04f, 0.06f, 0.11f, 0.96f);
+            UITheme.ApplyPanelFrame(navImg, useDialogueBox: true, new Color(0.82f, 0.88f, 1f, 0.98f));
 
             var layout = navBar.GetComponent<HorizontalLayoutGroup>();
             if (layout == null) layout = navBar.AddComponent<HorizontalLayoutGroup>();
-            layout.padding = new RectOffset(20, 20, 10, 10);
-            layout.spacing = 16f;
+            layout.padding = new RectOffset(18, 18, 10, 10);
+            layout.spacing = 12f;
             layout.childAlignment = TextAnchor.MiddleCenter;
             layout.childControlWidth = true;
             layout.childControlHeight = true;
@@ -795,10 +810,114 @@ namespace AstraLink.Core
 
             if (navBar.transform.childCount == 0)
             {
-                CreateNavButton(navBar.transform, "Btn_Hub", "1. Хаб (Hub)", ShowHub);
-                CreateNavButton(navBar.transform, "Btn_Workshop", "2. Ангар (Workshop)", ShowWorkshop);
-                CreateNavButton(navBar.transform, "Btn_Flight", "3. Політ (Flight)", ShowFlight);
-                CreateNavButton(navBar.transform, "Btn_Debrief", "4. Дебрифінг (Debrief)", ShowDebrief);
+                CreateNavButton(navBar.transform, "Btn_Hub", "1. CONTRACTS", ShowHub);
+                CreateNavButton(navBar.transform, "Btn_Workshop", "2. HANGAR", ShowWorkshop);
+                CreateNavButton(navBar.transform, "Btn_Flight", "3. FLIGHT", ShowFlight);
+                CreateNavButton(navBar.transform, "Btn_Debrief", "4. DEBRIEF", ShowDebrief);
+                CreateTopNavStatusPill(navBar.transform);
+            }
+            else
+            {
+                StyleExistingTopNavChildren(navBar.transform);
+            }
+
+            RefreshTopNavStatus();
+        }
+
+        private void StyleExistingTopNavChildren(Transform navRoot)
+        {
+            string[] btnNames = { "Btn_Hub", "Btn_Workshop", "Btn_Flight", "Btn_Debrief" };
+            string[] btnLabels = { "1. CONTRACTS", "2. HANGAR", "3. FLIGHT", "4. DEBRIEF" };
+            for (int i = 0; i < btnNames.Length; i++)
+            {
+                Transform child = navRoot.Find(btnNames[i]);
+                if (child == null) continue;
+                Button btn = child.GetComponent<Button>();
+                Image img = child.GetComponent<Image>();
+                UITheme.ApplyButtonStyle(btn, img, UITheme.ButtonTintMuted);
+                Text lbl = child.GetComponentInChildren<Text>();
+                if (lbl != null)
+                {
+                    lbl.text = btnLabels[i];
+                    lbl.fontSize = 18;
+                    lbl.fontStyle = FontStyle.Bold;
+                    lbl.color = UITheme.TextPrimary;
+                }
+            }
+
+            if (navRoot.Find("AgencyStatusPill") == null)
+            {
+                CreateTopNavStatusPill(navRoot);
+            }
+        }
+
+        private void CreateTopNavStatusPill(Transform parent)
+        {
+            var pillObj = new GameObject("AgencyStatusPill", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(HorizontalLayoutGroup));
+            pillObj.transform.SetParent(parent, false);
+            var pillLe = pillObj.AddComponent<LayoutElement>();
+            pillLe.flexibleWidth = 1.15f;
+
+            var pillImg = pillObj.GetComponent<Image>();
+            UITheme.ApplySlotFrame(pillImg, selected: false, new Color(0.90f, 0.95f, 1f, 0.95f));
+
+            var hlg = pillObj.GetComponent<HorizontalLayoutGroup>();
+            hlg.padding = new RectOffset(14, 14, 6, 6);
+            hlg.spacing = 10f;
+            hlg.childAlignment = TextAnchor.MiddleCenter;
+            hlg.childControlWidth = true;
+            hlg.childControlHeight = true;
+            hlg.childForceExpandWidth = false;
+            hlg.childForceExpandHeight = false;
+
+            UIThemeAssets assets = UITheme.Assets;
+            CreateStatusIcon(pillObj.transform, "CoinIcon", assets != null ? assets.spaceCreditsCoin : null, 24f);
+            _topNavCapitalText = CreateStatusText(pillObj.transform, "CapitalText", "$50k", 18, UITheme.TextGold);
+
+            CreateStatusIcon(pillObj.transform, "MissionIcon", assets != null ? assets.missionBadge : null, 24f);
+            _topNavMissionText = CreateStatusText(pillObj.transform, "MissionText", "No Contract", 15, UITheme.TextPrimary);
+            var missionLe = _topNavMissionText.gameObject.AddComponent<LayoutElement>();
+            missionLe.flexibleWidth = 1f;
+        }
+
+        private static void CreateStatusIcon(Transform parent, string name, Sprite sprite, float size)
+        {
+            var obj = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            obj.transform.SetParent(parent, false);
+            var le = obj.AddComponent<LayoutElement>();
+            le.preferredWidth = size;
+            le.preferredHeight = size;
+            var img = obj.GetComponent<Image>();
+            img.sprite = sprite;
+            img.preserveAspect = true;
+            img.color = sprite != null ? Color.white : new Color(0f, 0f, 0f, 0f);
+        }
+
+        private static Text CreateStatusText(Transform parent, string name, string initial, int fontSize, Color color)
+        {
+            var obj = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+            obj.transform.SetParent(parent, false);
+            var txt = obj.GetComponent<Text>();
+            txt.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            txt.text = initial;
+            txt.fontSize = fontSize;
+            txt.fontStyle = FontStyle.Bold;
+            txt.color = color;
+            txt.alignment = TextAnchor.MiddleLeft;
+            txt.horizontalOverflow = HorizontalWrapMode.Wrap;
+            return txt;
+        }
+
+        public void RefreshTopNavStatus()
+        {
+            if (_topNavCapitalText != null && CurrentAgencyState != null)
+            {
+                _topNavCapitalText.text = "$" + CurrentAgencyState.CapitalThousands.ToString("0.#") + "k";
+            }
+
+            if (_topNavMissionText != null)
+            {
+                _topNavMissionText.text = ActiveMission != null ? ActiveMission.Title : "Select Contract";
             }
         }
 
@@ -815,22 +934,24 @@ namespace AstraLink.Core
                 if (img != null)
                 {
                     img.color = ((int)activeScreen == i)
-                        ? new Color(0.20f, 0.52f, 0.78f, 1f)
-                        : new Color(0.16f, 0.27f, 0.44f, 1f);
+                        ? UITheme.ButtonTintPrimary
+                        : UITheme.ButtonTintMuted;
                 }
             }
+
+            RefreshTopNavStatus();
         }
 
         private static void CreateNavButton(Transform parent, string name, string label, UnityEngine.Events.UnityAction onClickAction)
         {
             var btnObj = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
             btnObj.transform.SetParent(parent, false);
+            var le = btnObj.AddComponent<LayoutElement>();
+            le.flexibleWidth = 1f;
 
             var img = btnObj.GetComponent<Image>();
-            img.color = new Color(0.16f, 0.27f, 0.44f, 1f);
-
             var btn = btnObj.GetComponent<Button>();
-            btn.targetGraphic = img;
+            UITheme.ApplyButtonStyle(btn, img, UITheme.ButtonTintMuted);
             btn.onClick.AddListener(onClickAction);
 
             var txtObj = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
@@ -838,15 +959,16 @@ namespace AstraLink.Core
             var txtRt = txtObj.GetComponent<RectTransform>();
             txtRt.anchorMin = Vector2.zero;
             txtRt.anchorMax = Vector2.one;
-            txtRt.offsetMin = Vector2.zero;
-            txtRt.offsetMax = Vector2.zero;
+            txtRt.offsetMin = new Vector2(8f, 4f);
+            txtRt.offsetMax = new Vector2(-8f, -4f);
 
             var txt = txtObj.GetComponent<Text>();
             txt.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             txt.text = label;
-            txt.fontSize = 22;
+            txt.fontSize = 18;
+            txt.fontStyle = FontStyle.Bold;
             txt.alignment = TextAnchor.MiddleCenter;
-            txt.color = Color.white;
+            txt.color = UITheme.TextPrimary;
         }
     }
 }
