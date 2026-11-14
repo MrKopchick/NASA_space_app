@@ -253,7 +253,7 @@ namespace AstraLink.Core
 
         private static void ApplyEventModifiers(SpaceEventDefinition ev, ref float radiationBoost, ref float solarMultiplier, ref float downlinkMultiplier)
         {
-            bool isPresetWithDefaults = ev.Type != SpaceEventType.Custom
+            bool isPresetWithDefaults = ev.EventType != SpaceEventType.Custom
                                         && Math.Abs(ev.RadiationBoost) < 0.0001f
                                         && Math.Abs(ev.SolarMultiplier - 1f) < 0.0001f
                                         && Math.Abs(ev.DownlinkMultiplier - 1f) < 0.0001f;
@@ -266,7 +266,7 @@ namespace AstraLink.Core
                 return;
             }
 
-            switch (ev.Type)
+            switch (ev.EventType)
             {
                 case SpaceEventType.CoronalMassEjection: radiationBoost += 85f; break;
                 case SpaceEventType.TransmitterOverheat: downlinkMultiplier *= 0.45f; break;
