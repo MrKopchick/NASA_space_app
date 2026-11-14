@@ -168,6 +168,7 @@ namespace AstraLink.UI.Flight
         private bool _skipRequested;
         private float _launchSpeedMultiplier = 1.0f;
         private string _targetPlanetBodyId = "earth";
+        private float _spacecraftOrbitProgress;
         private float _spacecraftOrbitDeg;
         private bool _spacecraftInEclipse;
         private bool _spacecraftInComm;
@@ -205,6 +206,24 @@ namespace AstraLink.UI.Flight
             if (autoSetupDemoOnStart && _currentOrbit == null)
             {
                 SetupDemoPreset(0);
+            }
+        }
+
+        private void OnDisable()
+        {
+            if (_launchCoroutine != null)
+            {
+                StopCoroutine(_launchCoroutine);
+                _launchCoroutine = null;
+            }
+
+            if (_isLaunchPlaying)
+            {
+                _isLaunchPlaying = false;
+                _skipRequested = false;
+                if (_rocketRootRect != null) _rocketRootRect.gameObject.SetActive(false);
+                if (_deployFlashImg != null) _deployFlashImg.color = new Color(0.75f, 0.98f, 1f, 0f);
+                if (_satelliteRootRect != null) _satelliteRootRect.gameObject.SetActive(true);
             }
         }
 
@@ -377,6 +396,7 @@ namespace AstraLink.UI.Flight
             }
 
             float smoothProg = Mathf.Repeat(Mathf.Lerp(prevProg, nextProg, clampedT), 1.0f);
+            _spacecraftOrbitProgress = smoothProg;
             _spacecraftOrbitDeg = 90f - smoothProg * 360f;
 
             _spacecraftInEclipse = currentTick.IsInEclipse;
@@ -580,7 +600,7 @@ namespace AstraLink.UI.Flight
                 RectTransformUtility.ScreenPointToLocalPointInRectangle(_stageRect, eventData.position, eventData.pressEventCamera, out Vector2 stagePt))
             {
                 float dist = stagePt.magnitude;
-                if (dist >= 325f && dist <= 445f)
+                if (dist >= 490f && dist <= 630f)
                 {
                     SelectBodyById("belt", focusCamera: true);
                 }
@@ -1023,6 +1043,13 @@ namespace AstraLink.UI.Flight
             float sunAngleDeg = toSun.sqrMagnitude > 0.01f ? Mathf.Atan2(toSun.y, toSun.x) * Mathf.Rad2Deg : 180f;
             float sectorDiam = orbitRadius * 2.55f;
 
+            float eclipseFrac = Mathf.Clamp(_currentOrbit != null ? _currentOrbit.EclipseFraction : 0.35f, 0.05f, 0.48f);
+            float commFrac = Mathf.Clamp(_currentOrbit != null ? _currentOrbit.CommWindowFraction : 0.25f, 0.05f, 0.45f);
+
+            // Align spacecraft orbital angle with the anti-solar Eclipse sector [1 - eclipseFrac, 1.0)
+            // and immediate post-eclipse Comms sector [0, commFrac)
+            _spacecraftOrbitDeg = (sunAngleDeg + 180f) + (1f - eclipseFrac * 0.5f - _spacecraftOrbitProgress) * 360f;
+
             if (_sunlightSectorRect != null && _sunlightSectorImg != null)
             {
                 _sunlightSectorRect.anchoredPosition = targetPos;
@@ -1033,7 +1060,6 @@ namespace AstraLink.UI.Flight
 
             if (_eclipseSectorRect != null && _eclipseSectorImg != null)
             {
-                float eclipseFrac = Mathf.Clamp(_currentOrbit != null ? _currentOrbit.EclipseFraction : 0.35f, 0.20f, 0.48f);
                 _eclipseSectorRect.anchoredPosition = targetPos;
                 _eclipseSectorRect.sizeDelta = new Vector2(sectorDiam, sectorDiam);
                 _eclipseSectorImg.fillAmount = eclipseFrac;
@@ -1042,7 +1068,6 @@ namespace AstraLink.UI.Flight
 
             if (_commsSectorRect != null && _commsSectorImg != null)
             {
-                float commFrac = Mathf.Clamp(_currentOrbit != null ? _currentOrbit.CommWindowFraction : 0.25f, 0.16f, 0.40f);
                 float commDiam = orbitRadius * 2.25f;
                 _commsSectorRect.anchoredPosition = targetPos;
                 _commsSectorRect.sizeDelta = new Vector2(commDiam, commDiam);
@@ -1050,7 +1075,7 @@ namespace AstraLink.UI.Flight
                 _commsSectorImg.color = _spacecraftCommsOn
                     ? new Color(0.22f, 0.96f, 0.72f, _spacecraftInComm ? 0.32f : 0.18f)
                     : new Color(0.45f, 0.55f, 0.65f, 0.10f);
-                _commsSectorRect.localEulerAngles = new Vector3(0f, 0f, sunAngleDeg + commFrac * 180f);
+                _commsSectorRect.localEulerAngles = new Vector3(0f, 0f, sunAngleDeg + 90f - eclipseFrac * 180f);
             }
 
             if (_missionOrbitHaloRect != null)

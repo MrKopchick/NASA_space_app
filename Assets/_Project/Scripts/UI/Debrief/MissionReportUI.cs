@@ -177,8 +177,10 @@ namespace AstraLink.UI.Debrief
         private bool _hasExplicitRules;
         private bool _hasExplicitEvents;
         private bool _allowPayoutForCurrentReport = true;
+        private bool _payoutAppliedForCurrentLaunch;
         private bool _pendingLaunchSequence;
         private bool _devSafeMode;
+        private AudioSource _outcomeSfxSource;
         private GameObject _sampleOrbitLeoBtn;
         private GameObject _sampleOrbitLunarBtn;
         private GameObject _sampleOrbitMarsBtn;
@@ -314,6 +316,9 @@ namespace AstraLink.UI.Debrief
 
             _repository = repository ?? _repository;
             _simulator = simulator ?? _simulator;
+            activeManualCommands.Clear();
+            _payoutAppliedForCurrentLaunch = false;
+            _devSafeMode = false;
             if (components != null) _activeComponents = new List<SatelliteComponent>(components);
             if (rocket != null) _activeRocket = rocket;
             if (rules != null)
@@ -358,6 +363,11 @@ namespace AstraLink.UI.Debrief
 
             _currentReport = report ?? BuildFullFlightSampleReport(_activeOrbit, _activeGoal, _activeRules, activeManualCommands, _activeEvents);
             _allowPayoutForCurrentReport = applyContractPayoutOnSuccess;
+            if (applyContractPayoutOnSuccess)
+            {
+                _payoutAppliedForCurrentLaunch = false;
+            }
+            _devSafeMode = false;
 
             if (_currentReport.Status == MissionStatus.Failed)
             {
@@ -652,11 +662,13 @@ namespace AstraLink.UI.Debrief
                 _solarHudPanel.UpdateTelemetrySnapshot(snapshot, _activeGoal);
                 if (manualOverrideUI != null)
                 {
+                    float orbitDelay = _activeOrbit != null ? _activeOrbit.SignalDelaySeconds : 0f;
                     _solarHudPanel.UpdateSignalDelay(
                         manualOverrideUI.IsSignalInTransit,
                         manualOverrideUI.DelayRemainingSeconds,
                         manualOverrideUI.DelayTotalSeconds,
-                        manualOverrideUI.LatestCommandSummary);
+                        manualOverrideUI.LatestCommandSummary,
+                        orbitDelay);
                 }
             }
         }
@@ -684,13 +696,33 @@ namespace AstraLink.UI.Debrief
                     activeManualCommands,
                     _activeEvents);
 
+                _currentReport = recalculatedReport;
                 if (orbitRadarUI != null)
                 {
                     orbitRadarUI.LoadMissionReport(recalculatedReport, _activeOrbit, autoPlay: orbitRadarUI.IsPlaying, resetTickIndex: false);
                 }
             }
+            else
+            {
+                _currentReport = recalculatedReport;
+            }
 
-            _currentReport = recalculatedReport;
+            if (GameManager.Instance != null)
+            {
+                GameManager.Instance.UpdateLastMissionReport(_currentReport);
+            }
+
+            if (_solarHudPanel != null)
+            {
+                _solarHudPanel.SetTelemetryHistory(_currentReport.Ticks, _activeGoal);
+                SyncSolarHudPlaybackState();
+                if (_currentReport.Ticks != null && _currentReport.Ticks.Count > 0 && orbitRadarUI != null)
+                {
+                    int idx = Mathf.Clamp(orbitRadarUI.CurrentTickIndex, 0, _currentReport.Ticks.Count - 1);
+                    _solarHudPanel.UpdateTelemetrySnapshot(_currentReport.Ticks[idx], _activeGoal);
+                }
+            }
+
             if (_currentReport.Status == MissionStatus.Failed)
             {
                 EnsureFailureDebriefPopulated(_currentReport);
@@ -713,7 +745,7 @@ namespace AstraLink.UI.Debrief
             if (_solarHudPanel != null)
             {
                 MissionStatus finalStatus = (_currentReport ?? completedReport) != null ? (_currentReport ?? completedReport).Status : MissionStatus.Success;
-                _solarHudPanel.NotifyMissionOutcomeSfx(finalStatus);
+                PlayOutcomeSfxPersistent(finalStatus);
             }
 
             if (OnFlightPlaybackCompleted != null)
@@ -811,6 +843,7 @@ namespace AstraLink.UI.Debrief
             {
                 _solarHudPanel.SetTelemetryHistory(report != null ? report.Ticks : null, _activeGoal);
                 _solarHudPanel.SetAutopilotRules(_activeRules);
+                _solarHudPanel.SetDevControlsVisible(showVerificationBar);
                 _solarHudPanel.SetDevSafeModeVisual(_devSafeMode);
             }
 
@@ -965,7 +998,7 @@ namespace AstraLink.UI.Debrief
         public void BuildUIInEditor()
         {
             CleanupOldRoots();
-            Transform existing = transform.Find("DebriefContentRoot_v4");
+            Transform existing = transform.Find("DebriefContentRoot_v5");
             if (existing != null)
             {
                 DestroyImmediate(existing.gameObject);
@@ -1102,11 +1135,12 @@ namespace AstraLink.UI.Debrief
 
         private void ApplySuccessPayoutIfNeeded(MissionReport report)
         {
-            if (report == null || report.Status != MissionStatus.Success || _lastRewardedReport == report)
+            if (report == null || report.Status != MissionStatus.Success || _payoutAppliedForCurrentLaunch || _lastRewardedReport == report)
             {
                 return;
             }
 
+            _payoutAppliedForCurrentLaunch = true;
             _lastRewardedReport = report;
 
             if (_agencyState == null)
@@ -2146,23 +2180,50 @@ namespace AstraLink.UI.Debrief
             }
         }
 
+        private void PlayOutcomeSfxPersistent(MissionStatus status)
+        {
+            if (_solarHudPanel == null || !_solarHudPanel.IsSfxEnabled)
+            {
+                return;
+            }
+
+            AudioClip clip = _solarHudPanel.GetOutcomeClip(status);
+            if (clip == null)
+            {
+                return;
+            }
+
+            if (_outcomeSfxSource == null)
+            {
+                _outcomeSfxSource = gameObject.AddComponent<AudioSource>();
+                _outcomeSfxSource.playOnAwake = false;
+                _outcomeSfxSource.loop = false;
+                _outcomeSfxSource.spatialBlend = 0f;
+            }
+
+            _outcomeSfxSource.PlayOneShot(clip, Mathf.Clamp01(_solarHudPanel.MasterVolume * 0.75f));
+        }
+
         private void ApplyVerificationVisibility()
         {
             if (verificationBarRoot != null) verificationBarRoot.SetActive(showVerificationBar && !_isLiveFlightViewActive);
             if (_sampleOrbitLeoBtn != null) _sampleOrbitLeoBtn.SetActive(showVerificationBar);
             if (_sampleOrbitLunarBtn != null) _sampleOrbitLunarBtn.SetActive(showVerificationBar);
             if (_sampleOrbitMarsBtn != null) _sampleOrbitMarsBtn.SetActive(showVerificationBar);
+            if (_solarHudPanel != null) _solarHudPanel.SetDevControlsVisible(showVerificationBar);
         }
 
         private void Update()
         {
             if (_isLiveFlightViewActive && _solarHudPanel != null && manualOverrideUI != null)
             {
+                float orbitDelay = _activeOrbit != null ? _activeOrbit.SignalDelaySeconds : 0f;
                 _solarHudPanel.UpdateSignalDelay(
                     manualOverrideUI.IsSignalInTransit,
                     manualOverrideUI.DelayRemainingSeconds,
                     manualOverrideUI.DelayTotalSeconds,
-                    manualOverrideUI.LatestCommandSummary);
+                    manualOverrideUI.LatestCommandSummary,
+                    orbitDelay);
             }
 
             if (!showVerificationBar) return;

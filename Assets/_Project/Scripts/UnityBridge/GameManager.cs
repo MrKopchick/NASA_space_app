@@ -175,6 +175,14 @@ namespace AstraLink.Core
             Simulator = simulator;
         }
 
+        public void UpdateLastMissionReport(MissionReport report)
+        {
+            if (report != null)
+            {
+                LastMissionReport = report;
+            }
+        }
+
         public void ShowScreen(GameScreen screen)
         {
             InitializeControllersAndEvents();

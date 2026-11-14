@@ -70,6 +70,7 @@ namespace AstraLink.UI.Flight.SpaceMap
         private Text _scienceValueText;
         private Image _radiationFillImg;
         private Text _radiationValueText;
+        private Text _powerNetText;
 
         // Live Pixel-Art Telemetry Chart
         private RawImage _telemetryChartRaw;
@@ -135,6 +136,27 @@ namespace AstraLink.UI.Flight.SpaceMap
         public bool IsCollapsed => _isCollapsed;
         public bool IsDevSafeMode => _devSafeMode;
         public string InspectedBodyId => _inspectedBodyId;
+        public bool IsSfxEnabled => _sfxEnabled;
+        public float MasterVolume => _masterVolume;
+
+        public AudioClip GetOutcomeClip(MissionStatus status)
+        {
+            if (_artBank == null) return null;
+            return status == MissionStatus.Success ? _artBank.missionSuccess : null;
+        }
+
+        public void SetDevControlsVisible(bool visible)
+        {
+            EnsureBuilt();
+            if (_devSafeBtn != null)
+            {
+                _devSafeBtn.gameObject.SetActive(visible);
+            }
+            if (!visible && _devSafeMode)
+            {
+                SetDevSafeModeVisual(false);
+            }
+        }
 
         private void Awake()
         {
@@ -284,7 +306,7 @@ namespace AstraLink.UI.Flight.SpaceMap
             }
         }
 
-        public void UpdateSignalDelay(bool inTransit, float remainingSec, float totalSec, string latestCommandSummary)
+        public void UpdateSignalDelay(bool inTransit, float remainingSec, float totalSec, string latestCommandSummary, float orbitDelaySec = 0f)
         {
             EnsureBuilt();
             if (_signalDelayFillImg != null)
@@ -300,17 +322,27 @@ namespace AstraLink.UI.Flight.SpaceMap
 
             if (_signalDelayText != null)
             {
-                _signalDelayText.text = inTransit
-                    ? string.Format("TX IN TRANSIT: {0:0.0}s", Mathf.Max(0f, remainingSec))
-                    : "SIGNAL READY (0.0s)";
-                _signalDelayText.color = inTransit
-                    ? new Color(1f, 0.88f, 0.45f, 1f)
-                    : new Color(0.65f, 0.96f, 0.80f, 1f);
+                if (inTransit)
+                {
+                    _signalDelayText.text = string.Format("TX IN TRANSIT: {0:0.0}s", Mathf.Max(0f, remainingSec));
+                    _signalDelayText.color = new Color(1f, 0.88f, 0.45f, 1f);
+                }
+                else
+                {
+                    float baseDelay = orbitDelaySec > 0f ? orbitDelaySec : totalSec;
+                    int delayTicks = AutopilotEvaluator.CalculateDelayTicks(baseDelay);
+                    _signalDelayText.text = baseDelay > 0.01f
+                        ? string.Format("UPLINK READY ({0:0.1}s / {1}t DELAY)", baseDelay, delayTicks)
+                        : "SIGNAL READY (0.0s)";
+                    _signalDelayText.color = new Color(0.65f, 0.96f, 0.80f, 1f);
+                }
             }
 
             if (_commandLogText != null && !string.IsNullOrEmpty(latestCommandSummary))
             {
-                _commandLogText.text = latestCommandSummary;
+                _commandLogText.text = string.Equals(latestCommandSummary, "NO MANUAL COMMANDS", StringComparison.Ordinal)
+                    ? latestCommandSummary
+                    : (inTransit ? "QUEUED: " + latestCommandSummary : "APPLIED: " + latestCommandSummary);
             }
         }
 
@@ -415,7 +447,23 @@ namespace AstraLink.UI.Flight.SpaceMap
             }
             if (_radiationValueText != null)
             {
-                _radiationValueText.text = string.Format("{0:0} mSv", snap.RadiationLevel);
+                _radiationValueText.text = snap.RadiationLevel > 50f
+                    ? string.Format("{0:0} rads (!)", snap.RadiationLevel)
+                    : string.Format("{0:0} rads", snap.RadiationLevel);
+                _radiationValueText.color = snap.RadiationLevel > 50f
+                    ? new Color(1f, 0.48f, 0.52f, 1f)
+                    : Color.white;
+            }
+            if (_powerNetText != null)
+            {
+                float netWatts = snap.SolarGenWatts - snap.PowerDrawWatts;
+                _powerNetText.text = string.Format("SOLAR +{0:0.0}W  |  LOAD -{1:0.0}W  |  NET {2:+0.0;-0.0;0.0}W",
+                    snap.SolarGenWatts,
+                    snap.PowerDrawWatts,
+                    netWatts);
+                _powerNetText.color = netWatts >= 0f
+                    ? new Color(0.58f, 0.95f, 0.72f, 1f)
+                    : new Color(1f, 0.76f, 0.44f, 1f);
             }
 
             UpdatePhasePill(_eclipseBadgeBg, _eclipseBadgeText, snap.IsInEclipse, "ECLIPSE", "SUNLIGHT",
@@ -484,7 +532,12 @@ namespace AstraLink.UI.Flight.SpaceMap
                 }
                 else if (!string.IsNullOrEmpty(snap.ActiveEventTitle))
                 {
-                    _statusAlertText.text = "EVENT: " + snap.ActiveEventTitle.ToUpperInvariant();
+                    string impactTag = snap.RadiationLevel > 50f
+                        ? (snap.SafeModeActive ? "RAD >50 (SHIELDED)" : "RAD >50 (DAMAGING!)")
+                        : (snap.ActiveEventTitle.IndexOf("Overheat", StringComparison.OrdinalIgnoreCase) >= 0
+                            ? "DOWNLINK REDUCED"
+                            : "ANOMALY ACTIVE");
+                    _statusAlertText.text = "EVENT: " + snap.ActiveEventTitle.ToUpperInvariant() + " • " + impactTag;
                     _statusBannerBg.color = new Color(0.55f, 0.18f, 0.18f, 0.92f);
                 }
                 else if (snap.IsInEclipse)
@@ -1010,6 +1063,9 @@ namespace AstraLink.UI.Flight.SpaceMap
             CreateGaugeBarRow(card.transform, font, "HLT", new Color(0.42f, 0.94f, 0.62f, 1f), out _healthFillImg, out _healthValueText);
             CreateGaugeBarRow(card.transform, font, "SCI", new Color(0.32f, 0.94f, 0.88f, 1f), out _scienceFillImg, out _scienceValueText);
             CreateGaugeBarRow(card.transform, font, "RAD", new Color(0.86f, 0.45f, 0.98f, 1f), out _radiationFillImg, out _radiationValueText);
+
+            _powerNetText = CreateText("PowerNetReadout", card.transform, font, "SOLAR +0.0W  |  LOAD -0.0W  |  NET 0.0W", 9, FontStyle.Bold, new Color(0.75f, 0.90f, 1f, 1f), TextAnchor.MiddleCenter);
+            _powerNetText.gameObject.AddComponent<LayoutElement>().preferredHeight = 14f;
 
             GameObject chartFrame = CreateUIObject("TelemetryChartFrame", card.transform);
             chartFrame.AddComponent<LayoutElement>().preferredHeight = 84f;
