@@ -180,6 +180,15 @@ namespace AstraLink.Core
             ref bool safeModeActive,
             List<string> triggeredRuleIds)
         {
+            if (triggeredRuleIds != null)
+            {
+                triggeredRuleIds.Clear();
+            }
+
+            bool safeModeActivatedThisTick = false;
+            bool scienceModifiedThisTick = false;
+            bool commsModifiedThisTick = false;
+
             if (rules != null)
             {
                 for (int i = 0; i < rules.Count; i++)
@@ -201,7 +210,14 @@ namespace AstraLink.Core
                     {
                         if (rule.ThenAction != AutopilotAction.None)
                         {
-                            ApplyAction(rule.ThenAction, ref scienceActive, ref commsActive, ref safeModeActive);
+                            ApplyRuleAction(
+                                rule.ThenAction,
+                                ref scienceActive,
+                                ref commsActive,
+                                ref safeModeActive,
+                                ref safeModeActivatedThisTick,
+                                ref scienceModifiedThisTick,
+                                ref commsModifiedThisTick);
                         }
 
                         if (triggeredRuleIds != null)
@@ -219,7 +235,14 @@ namespace AstraLink.Core
                     {
                         if (rule.ElseAction != AutopilotAction.None)
                         {
-                            ApplyAction(rule.ElseAction, ref scienceActive, ref commsActive, ref safeModeActive);
+                            ApplyRuleAction(
+                                rule.ElseAction,
+                                ref scienceActive,
+                                ref commsActive,
+                                ref safeModeActive,
+                                ref safeModeActivatedThisTick,
+                                ref scienceModifiedThisTick,
+                                ref commsModifiedThisTick);
                         }
                     }
                 }
@@ -229,6 +252,59 @@ namespace AstraLink.Core
             {
                 scienceActive = false;
                 commsActive = false;
+            }
+        }
+
+        private static void ApplyRuleAction(
+            AutopilotAction action,
+            ref bool scienceActive,
+            ref bool commsActive,
+            ref bool safeModeActive,
+            ref bool safeModeActivatedThisTick,
+            ref bool scienceModifiedThisTick,
+            ref bool commsModifiedThisTick)
+        {
+            switch (action)
+            {
+                case AutopilotAction.ScienceOn:
+                    scienceActive = true;
+                    scienceModifiedThisTick = true;
+                    break;
+                case AutopilotAction.ScienceOff:
+                    scienceActive = false;
+                    scienceModifiedThisTick = true;
+                    break;
+                case AutopilotAction.CommsOn:
+                    commsActive = true;
+                    commsModifiedThisTick = true;
+                    break;
+                case AutopilotAction.CommsOff:
+                    commsActive = false;
+                    commsModifiedThisTick = true;
+                    break;
+                case AutopilotAction.SafeModeOn:
+                    safeModeActive = true;
+                    safeModeActivatedThisTick = true;
+                    scienceActive = false;
+                    commsActive = false;
+                    break;
+                case AutopilotAction.SafeModeOff:
+                    if (!safeModeActivatedThisTick && safeModeActive)
+                    {
+                        safeModeActive = false;
+                        if (!scienceModifiedThisTick)
+                        {
+                            scienceActive = true;
+                        }
+                        if (!commsModifiedThisTick)
+                        {
+                            commsActive = true;
+                        }
+                    }
+                    break;
+                case AutopilotAction.None:
+                default:
+                    break;
             }
         }
 
