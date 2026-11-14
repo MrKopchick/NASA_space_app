@@ -5,7 +5,7 @@ namespace AstraLink.Core
 {
     public class ResourceCalculator(List<SatelliteComponent> components, RocketOption, OrbitDefinition, MissionGoal)
     {
-        var Summary = new ResourceSummary();
+        var summary = new ResourceSummary();
 
         float totalMass = 0f;
         float TotalCostThousands = RocketOption.CostThousands;
@@ -43,7 +43,8 @@ namespace AstraLink.Core
                 default: return 0f;
             }
         }
-
+        if (TotalCostThousands <= MissionGoal.BudgetLimitThousands) IsBudgetValid = true;
+        if (totalMass <= MaxOrbitKg(RocketOption, OrbitDefinition.OrbitType)) IsMassValid = true;
         summary.TotalMassKg = totalMass;
         summary.TotalCostThousands = componentsCost;
         summary.MaxSolarWatts = maxSolarWatts;
@@ -53,9 +54,8 @@ namespace AstraLink.Core
         summary.DownlinkGbPerTick = downlinkGbPerTick;
         summary.TotalShielding = totalShielding;
         summary.OverallReliability = reliabilityProduct;
-
-        if (TotalCostThousands <= MissionGoal.BudgetLimitThousands) IsBudgetValid = true;
-        if (totalMass <= MaxOrbitKg(RocketOption, OrbitDefinition.OrbitType)) IsMassValid = true;
+        summary.IsBudgetValid = isBudgetValid;
+        summary.IsMassValid = isMassValid;
         return ResourceSummary;
     }
 }
