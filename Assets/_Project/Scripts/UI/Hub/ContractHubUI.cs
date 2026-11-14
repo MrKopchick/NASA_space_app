@@ -21,6 +21,15 @@ namespace AstraLink.UI.Hub
         [SerializeField] private Sprite officeBackgroundSprite;
         [SerializeField] private Sprite missionControlBackgroundSprite;
 
+        [Header("Custom Font & Pixel UI Sprites (Optional — replaces placeholders)")]
+        [SerializeField] private Font customFont;
+        [SerializeField] private Sprite cardPanelSprite;
+        [SerializeField] private Sprite specsBoxSprite;
+        [SerializeField] private Sprite buttonNormalSprite;
+        [SerializeField] private Sprite buttonHoverSprite;
+        [SerializeField] private Sprite buttonPressedSprite;
+        [SerializeField] private Sprite buttonDisabledSprite;
+
         private IGameDataRepository _repository;
         private AgencyState _agencyState;
         private List<MissionGoal> _missions = new List<MissionGoal>();
@@ -182,9 +191,18 @@ namespace AstraLink.UI.Hub
 
                 if (_cardBackgrounds[i] != null)
                 {
-                    _cardBackgrounds[i].color = isSelected
-                        ? new Color(0.12f, 0.24f, 0.38f, 0.98f)
-                        : new Color(0.08f, 0.13f, 0.21f, 0.94f);
+                    if (_cardBackgrounds[i].sprite != null)
+                    {
+                        _cardBackgrounds[i].color = isSelected
+                            ? new Color(0.78f, 0.92f, 1.0f, 1.0f)
+                            : Color.white;
+                    }
+                    else
+                    {
+                        _cardBackgrounds[i].color = isSelected
+                            ? new Color(0.12f, 0.24f, 0.38f, 0.98f)
+                            : new Color(0.08f, 0.13f, 0.21f, 0.94f);
+                    }
                 }
 
                 if (i < _cardButtonLabels.Count && _cardButtonLabels[i] != null)
@@ -262,10 +280,11 @@ namespace AstraLink.UI.Hub
             {
                 StretchFull(existingRoot.GetComponent<RectTransform>());
                 BindExistingHierarchy(existingRoot);
+                ApplyCustomThemeToExistingUI(existingRoot);
                 return;
             }
 
-            Font defaultFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Font defaultFont = customFont != null ? customFont : Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
             GameObject rootObj = CreateUIObject("HubContentRoot", hubRoot);
             RectTransform rootRt = rootObj.GetComponent<RectTransform>();
@@ -304,6 +323,118 @@ namespace AstraLink.UI.Hub
             for (int i = 0; i < _missions.Count; i++)
             {
                 BuildMissionCard(i, _missions[i], cardsRow.transform, defaultFont);
+            }
+
+            ApplyCustomThemeToExistingUI(rootObj.transform);
+        }
+
+        [ContextMenu("Apply Custom Font & Sprites To Hub UI")]
+        public void ApplyCustomThemeInEditor()
+        {
+            Transform hubRoot = GetHubRootTransform();
+            Transform contentRoot = hubRoot != null ? hubRoot.Find("HubContentRoot") : null;
+            if (contentRoot == null) contentRoot = transform.Find("HubContentRoot");
+            if (contentRoot != null)
+            {
+                BindExistingHierarchy(contentRoot);
+                ApplyCustomThemeToExistingUI(contentRoot);
+                RefreshCards();
+            }
+        }
+
+#if UNITY_EDITOR
+        [ContextMenu("Auto-Assign Kenney Font & UI Sprites From Project")]
+        public void AutoAssignKenneyFontAndSpritesInEditor()
+        {
+            if (customFont == null)
+                customFont = UnityEditor.AssetDatabase.LoadAssetAtPath<Font>("Assets/_Project/Fonts/Kenney Future.ttf");
+            if (cardPanelSprite == null)
+                cardPanelSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/_Project/Art/UI/inventory_panel.png");
+            if (specsBoxSprite == null)
+                specsBoxSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/_Project/Art/UI/dialogue_box.png");
+            if (buttonNormalSprite == null)
+                buttonNormalSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/_Project/Art/UI/button_normal.png");
+            if (buttonHoverSprite == null)
+                buttonHoverSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/_Project/Art/UI/button_hover.png");
+            if (buttonPressedSprite == null)
+                buttonPressedSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/_Project/Art/UI/button_pressed.png");
+            if (buttonDisabledSprite == null)
+                buttonDisabledSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/_Project/Art/UI/button_disabled.png");
+
+            UnityEditor.EditorUtility.SetDirty(this);
+            ApplyCustomThemeInEditor();
+            Debug.Log("[ContractHubUI] Assigned Kenney font & pixel UI sprites to Hub!");
+        }
+#endif
+
+        private void ApplyCustomThemeToExistingUI(Transform contentRoot)
+        {
+            if (contentRoot == null) return;
+
+            if (customFont != null)
+            {
+                Text[] allTexts = contentRoot.GetComponentsInChildren<Text>(true);
+                for (int i = 0; i < allTexts.Length; i++)
+                {
+                    allTexts[i].font = customFont;
+                }
+            }
+
+            if (cardPanelSprite != null)
+            {
+                if (cardPanelSprite.texture != null) cardPanelSprite.texture.filterMode = FilterMode.Point;
+                for (int i = 0; i < _cardBackgrounds.Count; i++)
+                {
+                    if (_cardBackgrounds[i] != null)
+                    {
+                        _cardBackgrounds[i].sprite = cardPanelSprite;
+                        _cardBackgrounds[i].color = Color.white;
+                    }
+                }
+            }
+
+            if (specsBoxSprite != null)
+            {
+                if (specsBoxSprite.texture != null) specsBoxSprite.texture.filterMode = FilterMode.Point;
+                Transform cardsContainer = contentRoot.Find("MissionCardsContainer");
+                if (cardsContainer != null)
+                {
+                    for (int i = 0; i < cardsContainer.childCount; i++)
+                    {
+                        Transform specs = cardsContainer.GetChild(i).Find("SpecsBox");
+                        Image specsImg = specs != null ? specs.GetComponent<Image>() : null;
+                        if (specsImg != null)
+                        {
+                            specsImg.sprite = specsBoxSprite;
+                            specsImg.color = Color.white;
+                        }
+                    }
+                }
+            }
+
+            if (buttonNormalSprite != null)
+            {
+                if (buttonNormalSprite.texture != null) buttonNormalSprite.texture.filterMode = FilterMode.Point;
+                Button[] allButtons = contentRoot.GetComponentsInChildren<Button>(true);
+                for (int i = 0; i < allButtons.Length; i++)
+                {
+                    Image btnImg = allButtons[i].GetComponent<Image>();
+                    if (btnImg != null)
+                    {
+                        btnImg.sprite = buttonNormalSprite;
+                        btnImg.color = Color.white;
+                    }
+
+                    if (buttonHoverSprite != null || buttonPressedSprite != null || buttonDisabledSprite != null)
+                    {
+                        allButtons[i].transition = Selectable.Transition.SpriteSwap;
+                        SpriteState st = allButtons[i].spriteState;
+                        if (buttonHoverSprite != null) st.highlightedSprite = buttonHoverSprite;
+                        if (buttonPressedSprite != null) st.pressedSprite = buttonPressedSprite;
+                        if (buttonDisabledSprite != null) st.disabledSprite = buttonDisabledSprite;
+                        allButtons[i].spriteState = st;
+                    }
+                }
             }
         }
 
