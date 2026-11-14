@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using AstraLink.Core;
+using AstraLink.UI.Workshop;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace AstraLink.Core
+namespace AstraLink.UI.Hub
 {
     /// <summary>
     /// KSP-Style Branching Tech Tree R&D UI Controller (Tasks S1-07 / S3-01, Ivan V).
@@ -238,10 +240,16 @@ namespace AstraLink.Core
 
             for (int i = _branchesContainer.childCount - 1; i >= 0; i--)
             {
+                GameObject child = _branchesContainer.GetChild(i).gameObject;
                 if (Application.isPlaying)
-                    Destroy(_branchesContainer.GetChild(i).gameObject);
+                {
+                    child.SetActive(false);
+                    Destroy(child);
+                }
                 else
-                    DestroyImmediate(_branchesContainer.GetChild(i).gameObject);
+                {
+                    DestroyImmediate(child);
+                }
             }
 
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");

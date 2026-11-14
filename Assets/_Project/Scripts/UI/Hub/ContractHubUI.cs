@@ -1,9 +1,10 @@
 using System;
 using System.Collections.Generic;
+using AstraLink.Core;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace AstraLink.Core
+namespace AstraLink.UI.Hub
 {
     /// <summary>
     /// Screen 1 Controller: Contract Selection Hub (Task S1-07, Ivan V).

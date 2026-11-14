@@ -1,9 +1,10 @@
 using System;
 using System.Collections.Generic;
+using AstraLink.Core;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace AstraLink.Core
+namespace AstraLink.UI.Workshop
 {
     /// <summary>
     /// Displays the 6 interdependent NASA Resource Gauges in the Hangar (Task S1-07, Ivan V):

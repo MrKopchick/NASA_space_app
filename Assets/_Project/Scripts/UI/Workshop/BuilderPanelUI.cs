@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using AstraLink.Core;
+using AstraLink.UI.Hub;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace AstraLink.Core
+namespace AstraLink.UI.Workshop
 {
     /// <summary>
     /// Screen 2 Controller: Spacecraft Hangar & 5-Slot Builder (Task S1-07, Ivan V).
@@ -34,6 +36,7 @@ namespace AstraLink.Core
         private IGameDataRepository _repository;
         private IMissionSimulator _simulator;
         private AgencyState _agencyState;
+        private MissionGoal _activeMission;
 
         private List<SatelliteComponent> _allComponents = new List<SatelliteComponent>();
         private List<RocketOption> _allRockets = new List<RocketOption>();
@@ -107,11 +110,19 @@ namespace AstraLink.Core
         /// <summary>
         /// Single entry point for prefab initialization by GameManager.
         /// </summary>
-        public void Initialize(IGameDataRepository repository, IMissionSimulator simulator, AgencyState agencyState)
+        public void Initialize(
+            IGameDataRepository repository,
+            IMissionSimulator simulator,
+            AgencyState agencyState,
+            MissionGoal activeMission = null)
         {
             _repository = repository;
             _simulator = simulator ?? (GameManager.Instance != null ? GameManager.Instance.Simulator : new MockMissionSimulator());
             _agencyState = agencyState ?? (GameManager.Instance != null ? GameManager.Instance.CurrentAgencyState : new AgencyState());
+            if (activeMission != null)
+            {
+                _activeMission = activeMission;
+            }
 
             _allComponents = (_repository != null && _repository.GetComponents() != null && _repository.GetComponents().Count > 0)
                 ? _repository.GetComponents()
@@ -229,8 +240,18 @@ namespace AstraLink.Core
             return _allRockets[idx];
         }
 
+        public void SetActiveMission(MissionGoal goal)
+        {
+            _activeMission = goal;
+            RefreshWorkshopUI();
+        }
+
         public MissionGoal GetActiveMissionGoal()
         {
+            if (_activeMission != null)
+            {
+                return _activeMission;
+            }
             if (ContractHubUI.Instance != null && ContractHubUI.Instance.SelectedMission != null)
             {
                 return ContractHubUI.Instance.SelectedMission;
@@ -342,10 +363,7 @@ namespace AstraLink.Core
             if (targetImage == null) return;
 
             Sprite mappedSprite = FindMappedSprite(itemId);
-            if (mappedSprite != null)
-            {
-                targetImage.sprite = mappedSprite;
-            }
+            targetImage.sprite = mappedSprite;
 
             bool hasSprite = targetImage.sprite != null;
             targetImage.color = hasSprite ? Color.white : new Color(1f, 1f, 1f, 0.08f);
