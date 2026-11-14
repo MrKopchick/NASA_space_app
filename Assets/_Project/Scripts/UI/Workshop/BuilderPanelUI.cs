@@ -8,10 +8,12 @@ using UnityEngine.UI;
 namespace AstraLink.UI.Workshop
 {
     /// <summary>
-    /// Screen 2 Controller: Spacecraft Hangar & 5-Slot Builder (Task S1-07, Ivan V).
-    /// Displays the active contract (KSP-style header), 5 fixed component category slots
-    /// with dedicated Icon Frames for module sprites, launch vehicle selector with rocket icon slot,
-    /// R&D Lab toggle, and the live 6-resource NASA telemetry panel (ResourceGaugesUI).
+    /// Screen 2 Controller: Spacecraft Hangar & 5-Slot Builder (Tasks S1-07 & S2-03, Ivan V).
+    /// Main view displays the 5 fixed component slots + rocket selector (Left) and 6 NASA Resource Gauges (Right),
+    /// with top bar buttons that open full-screen modals for:
+    /// - Construct-Style Autopilot Rule Editor (AutopilotUI)
+    /// - A.S.T.R.A. Pre-Flight Auditor & 3s Dry Run Bench Test (DryRunUI)
+    /// - KSP-Style Branching R&D Tech Tree (RnDPanelUI)
     /// </summary>
     public class BuilderPanelUI : MonoBehaviour
     {
@@ -26,6 +28,8 @@ namespace AstraLink.UI.Workshop
 
         [Header("Connected Sub-Panels (Auto-created if empty)")]
         [SerializeField] private ResourceGaugesUI resourceGaugesUI;
+        [SerializeField] private AutopilotUI autopilotUI;
+        [SerializeField] private DryRunUI dryRunUI;
         [SerializeField] private RnDPanelUI rndPanelUI;
 
         [Header("Module & Rocket Icon Sprites (Night Sprint N-01)")]
@@ -35,6 +39,7 @@ namespace AstraLink.UI.Workshop
 
         private IGameDataRepository _repository;
         private IMissionSimulator _simulator;
+        private IAstraAuditor _auditor;
         private AgencyState _agencyState;
         private MissionGoal _activeMission;
 
@@ -74,6 +79,8 @@ namespace AstraLink.UI.Workshop
 
         // UI Widgets
         private Text _activeContractBannerText;
+        private Text _autopilotButtonText;
+        private Text _dryRunButtonText;
         private Text _agencyCapitalButtonText;
         private readonly Text[] _slotPartNameTexts = new Text[5];
         private readonly Text[] _slotPartStatsTexts = new Text[5];
@@ -83,6 +90,9 @@ namespace AstraLink.UI.Workshop
         private Text _rocketIconPlaceholderText;
 
         public event Action<List<SatelliteComponent>, RocketOption, ResourceSummary> OnConfigurationChanged;
+
+        public AutopilotUI AutopilotPanel => autopilotUI;
+        public DryRunUI DryRunPanel => dryRunUI;
 
         private void Awake()
         {
@@ -107,18 +117,18 @@ namespace AstraLink.UI.Workshop
             }
         }
 
-        /// <summary>
-        /// Single entry point for prefab initialization by GameManager.
-        /// </summary>
         public void Initialize(
             IGameDataRepository repository,
             IMissionSimulator simulator,
             AgencyState agencyState,
-            MissionGoal activeMission = null)
+            MissionGoal activeMission = null,
+            IAstraAuditor auditor = null)
         {
-            _repository = repository;
+            _repository = repository ?? TryLoadJsonRepositoryFromResources();
             _simulator = simulator ?? (GameManager.Instance != null ? GameManager.Instance.Simulator : new MockMissionSimulator());
             _agencyState = agencyState ?? (GameManager.Instance != null ? GameManager.Instance.CurrentAgencyState : new AgencyState());
+            _auditor = auditor ?? new AstraAuditor(new ResourceCalculator(), _repository);
+
             if (activeMission != null)
             {
                 _activeMission = activeMission;
@@ -148,29 +158,64 @@ namespace AstraLink.UI.Workshop
             }
         }
 
+        public static IGameDataRepository TryLoadJsonRepositoryFromResources()
+        {
+            try
+            {
+                TextAsset compAsset = Resources.Load<TextAsset>("Data/components");
+                TextAsset rktAsset = Resources.Load<TextAsset>("Data/rockets");
+                TextAsset orbAsset = Resources.Load<TextAsset>("Data/orbits");
+                TextAsset misAsset = Resources.Load<TextAsset>("Data/missions");
+                TextAsset evtAsset = Resources.Load<TextAsset>("Data/events");
+
+                if (compAsset != null && rktAsset != null && orbAsset != null && misAsset != null && evtAsset != null)
+                {
+                    return new JsonDataRepository(
+                        compAsset.text,
+                        rktAsset.text,
+                        orbAsset.text,
+                        misAsset.text,
+                        evtAsset.text);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[BuilderPanelUI] Fallback to spec catalog (Resources/Data load failed): " + ex.Message);
+            }
+            return null;
+        }
+
         [ContextMenu("Generate Workshop UI In Scene")]
         public void BuildUIInEditor()
         {
-            _allComponents = BuildDefaultComponentsFromSpec();
-            _allRockets = BuildDefaultRocketsFromSpec();
-            _allOrbits = BuildDefaultOrbitsFromSpec();
+            _repository = TryLoadJsonRepositoryFromResources();
+            _allComponents = (_repository != null && _repository.GetComponents().Count > 0)
+                ? _repository.GetComponents()
+                : BuildDefaultComponentsFromSpec();
+            _allRockets = (_repository != null && _repository.GetRockets().Count > 0)
+                ? _repository.GetRockets()
+                : BuildDefaultRocketsFromSpec();
+            _allOrbits = (_repository != null && _repository.GetOrbits().Count > 0)
+                ? _repository.GetOrbits()
+                : BuildDefaultOrbitsFromSpec();
+
             if (_agencyState == null) _agencyState = new AgencyState();
             if (_simulator == null) _simulator = new MockMissionSimulator();
+            if (_auditor == null) _auditor = new AstraAuditor(new ResourceCalculator(), _repository);
 
-            Transform existing = transform.Find("WorkshopContentRoot");
-            if (existing != null)
+            string[] childRoots = { "WorkshopContentRoot", "AutopilotModalOverlay", "DryRunModalOverlay", "RnDModalOverlay" };
+            for (int i = 0; i < childRoots.Length; i++)
             {
-                DestroyImmediate(existing.gameObject);
-            }
-            Transform existingModal = transform.Find("RnDModalOverlay");
-            if (existingModal != null)
-            {
-                DestroyImmediate(existingModal.gameObject);
+                Transform existing = transform.Find(childRoots[i]);
+                if (existing != null)
+                {
+                    DestroyImmediate(existing.gameObject);
+                }
             }
 
             EnsureWorkshopUIHierarchy();
             ApplyMission1StarterTemplate();
-            Debug.Log("[BuilderPanelUI] Hangar Builder (with Icon Slots + 6 NASA Gauges + KSP Branching R&D Tree) generated!");
+            Debug.Log("[BuilderPanelUI] Hangar UI generated with modal buttons for Construct Autopilot, A.S.T.R.A./DryRun, and R&D Tech Tree!");
         }
 
         public void ApplyMission1StarterTemplate()
@@ -214,8 +259,42 @@ namespace AstraLink.UI.Workshop
             RefreshWorkshopUI();
         }
 
+        public void OpenAutopilotOverlay()
+        {
+            if (dryRunUI != null) dryRunUI.gameObject.SetActive(false);
+            if (rndPanelUI != null) rndPanelUI.gameObject.SetActive(false);
+
+            if (autopilotUI != null)
+            {
+                autopilotUI.gameObject.SetActive(true);
+                autopilotUI.RefreshSlotLocks(_agencyState, GetSelectedComponentsList());
+            }
+        }
+
+        public void OpenDryRunOverlay()
+        {
+            if (autopilotUI != null) autopilotUI.gameObject.SetActive(false);
+            if (rndPanelUI != null) rndPanelUI.gameObject.SetActive(false);
+
+            if (dryRunUI != null)
+            {
+                dryRunUI.gameObject.SetActive(true);
+                MissionGoal activeGoal = GetActiveMissionGoal();
+                OrbitDefinition activeOrbit = GetActiveOrbit(activeGoal);
+                dryRunUI.UpdateConfigurationAndAudit(
+                    GetSelectedComponentsList(),
+                    GetSelectedRocket(),
+                    activeOrbit,
+                    activeGoal,
+                    GetActiveAutopilotRules());
+            }
+        }
+
         public void OpenRnDOverlay()
         {
+            if (autopilotUI != null) autopilotUI.gameObject.SetActive(false);
+            if (dryRunUI != null) dryRunUI.gameObject.SetActive(false);
+
             if (rndPanelUI != null)
             {
                 rndPanelUI.gameObject.SetActive(true);
@@ -240,6 +319,11 @@ namespace AstraLink.UI.Workshop
             return _allRockets[idx];
         }
 
+        public List<AutopilotRule> GetActiveAutopilotRules()
+        {
+            return autopilotUI != null ? autopilotUI.GetActiveRules() : new List<AutopilotRule>();
+        }
+
         public void SetActiveMission(MissionGoal goal)
         {
             _activeMission = goal;
@@ -255,6 +339,10 @@ namespace AstraLink.UI.Workshop
             if (ContractHubUI.Instance != null && ContractHubUI.Instance.SelectedMission != null)
             {
                 return ContractHubUI.Instance.SelectedMission;
+            }
+            if (_repository != null && _repository.GetMissions() != null && _repository.GetMissions().Count > 0)
+            {
+                return _repository.GetMissions()[0];
             }
             return ContractHubUI.BuildDefaultMissionsFromSpec()[0];
         }
@@ -291,13 +379,19 @@ namespace AstraLink.UI.Workshop
                 float delaySec = activeOrbit != null ? activeOrbit.SignalDelaySeconds : 1.0f;
 
                 _activeContractBannerText.text = string.Format(
-                    "ACTIVE CONTRACT: <b>{0}</b>   |   Orbit: <b>{1}</b> (Delay {2:0.0}s)   |   Budget Limit: <b>${3:0}k</b>   |   Target: <b>{4:0} Sci</b>   |   Required Sensor: <b>{5}</b>",
+                    "CONTRACT: <b>{0}</b>  |  Orbit: <b>{1}</b> ({2:0.0}s)  |  Budget: <b>${3:0}k</b>  |  Target: <b>{4:0} Sci</b> ({5})",
                     activeGoal.Title, orbitName, delaySec, activeGoal.BudgetLimitThousands, activeGoal.TargetSciencePoints, reqSensor);
+            }
+
+            if (_autopilotButtonText != null)
+            {
+                int unlocked = Mathf.Clamp(_agencyState.AutopilotSlotsUnlocked, 2, 6);
+                _autopilotButtonText.text = string.Format("⚙ Autopilot ({0}/6)", unlocked);
             }
 
             if (_agencyCapitalButtonText != null)
             {
-                _agencyCapitalButtonText.text = string.Format("R&D Tech Tree (${0:0}k)", _agencyState.CapitalThousands);
+                _agencyCapitalButtonText.text = string.Format("R&D Tree (${0:0}k)", _agencyState.CapitalThousands);
             }
 
             // Update 5 Component Slot Cards + Icon Slots
@@ -355,7 +449,66 @@ namespace AstraLink.UI.Workshop
                 resourceGaugesUI.UpdateGauges(summary, selectedList, rocket, activeOrbit, activeGoal);
             }
 
+            if (autopilotUI != null)
+            {
+                autopilotUI.RefreshSlotLocks(_agencyState, selectedList);
+            }
+
+            if (dryRunUI != null)
+            {
+                List<AutopilotRule> rules = GetActiveAutopilotRules();
+                dryRunUI.UpdateConfigurationAndAudit(selectedList, rocket, activeOrbit, activeGoal, rules);
+            }
+
+            UpdateDryRunButtonBadge(selectedList, rocket, activeOrbit, activeGoal);
+
             OnConfigurationChanged?.Invoke(selectedList, rocket, summary);
+        }
+
+        private void HandleAutopilotRulesChanged(List<AutopilotRule> rules)
+        {
+            MissionGoal activeGoal = GetActiveMissionGoal();
+            OrbitDefinition activeOrbit = GetActiveOrbit(activeGoal);
+            List<SatelliteComponent> selectedList = GetSelectedComponentsList();
+            RocketOption rocket = GetSelectedRocket();
+
+            if (dryRunUI != null)
+            {
+                dryRunUI.UpdateConfigurationAndAudit(selectedList, rocket, activeOrbit, activeGoal, rules);
+            }
+            UpdateDryRunButtonBadge(selectedList, rocket, activeOrbit, activeGoal);
+        }
+
+        private void UpdateDryRunButtonBadge(
+            List<SatelliteComponent> components,
+            RocketOption rocket,
+            OrbitDefinition orbit,
+            MissionGoal goal)
+        {
+            if (_dryRunButtonText == null) return;
+
+            if (_auditor == null)
+            {
+                _auditor = new AstraAuditor(new ResourceCalculator(), _repository);
+            }
+
+            List<AstraAuditMessage> msgs = _auditor.AuditConfiguration(
+                components, rocket, orbit, goal, GetActiveAutopilotRules());
+
+            int crits = 0;
+            int warns = 0;
+            for (int i = 0; i < msgs.Count; i++)
+            {
+                if (msgs[i].Severity == AuditSeverity.Critical) crits++;
+                else if (msgs[i].Severity == AuditSeverity.Warning) warns++;
+            }
+
+            if (crits > 0)
+                _dryRunButtonText.text = string.Format("A.S.T.R.A. / Dry Run ({0} CRIT!)", crits);
+            else if (warns > 0)
+                _dryRunButtonText.text = string.Format("A.S.T.R.A. / Dry Run ({0} WARN)", warns);
+            else
+                _dryRunButtonText.text = "▶ A.S.T.R.A. & Dry Run (OK)";
         }
 
         private void UpdateIconDisplay(Image targetImage, Text placeholderText, string itemId, string fallbackLabel)
@@ -408,51 +561,8 @@ namespace AstraLink.UI.Workshop
                 return simResult;
             }
 
-            float totalMass = 0f;
-            float totalCost = rocket != null ? rocket.CostThousands : 0f;
-            float maxSolar = 0f;
-            float rtgWatts = 0f;
-            float maxBattery = 0f;
-            float maxSsd = 0f;
-            float downlink = 0f;
-            float shielding = 0f;
-            float reliability = rocket != null ? rocket.BaseReliability : 0.95f;
-
-            if (components != null)
-            {
-                for (int i = 0; i < components.Count; i++)
-                {
-                    var c = components[i];
-                    if (c == null) continue;
-                    totalMass += c.MassKg;
-                    totalCost += c.CostThousands;
-                    maxSolar += c.SolarWatts;
-                    rtgWatts += c.RtgWatts;
-                    maxBattery += c.BatteryCapacityWh;
-                    maxSsd += c.SsdCapacityGb;
-                    downlink += c.DownlinkRateGbPerTick;
-                    shielding += c.RadiationShielding;
-                    reliability *= c.BaseReliability;
-                }
-            }
-
-            float maxOrbitMass = ResourceGaugesUI.GetMaxRocketMassForOrbit(rocket, orbit);
-            float budgetLimit = goal != null ? goal.BudgetLimitThousands : 120f;
-
-            return new ResourceSummary
-            {
-                TotalMassKg = totalMass,
-                TotalCostThousands = totalCost,
-                MaxSolarWatts = maxSolar,
-                RtgWatts = rtgWatts,
-                MaxBatteryWh = maxBattery,
-                MaxSsdGb = maxSsd,
-                DownlinkGbPerTick = downlink,
-                OverallReliability = Mathf.Clamp01(reliability),
-                TotalShielding = shielding,
-                IsMassValid = totalMass <= maxOrbitMass + 0.001f,
-                IsBudgetValid = totalCost <= budgetLimit + 0.001f
-            };
+            var calc = new ResourceCalculator();
+            return calc.CalculateResources(components, rocket, orbit, goal);
         }
 
         private List<SatelliteComponent> GetUnlockedComponentsForCategory(ComponentCategory category)
@@ -509,7 +619,7 @@ namespace AstraLink.UI.Workshop
             rootLayout.childForceExpandWidth = true;
             rootLayout.childForceExpandHeight = false;
 
-            // 1. TOP KSP-STYLE ACTIVE CONTRACT BAR
+            // 1. TOP KSP-STYLE ACTIVE CONTRACT BAR + 3 MODAL BUTTONS (Autopilot, A.S.T.R.A./DryRun, R&D)
             GameObject contractBar = CreateUIObject("ActiveContractBar", rootObj.transform);
             Image barBg = contractBar.AddComponent<Image>();
             barBg.color = new Color(0.06f, 0.11f, 0.20f, 0.96f);
@@ -517,28 +627,36 @@ namespace AstraLink.UI.Workshop
             barLe.preferredHeight = 62f;
 
             HorizontalLayoutGroup barLayout = contractBar.AddComponent<HorizontalLayoutGroup>();
-            barLayout.padding = new RectOffset(18, 18, 8, 8);
-            barLayout.spacing = 14f;
+            barLayout.padding = new RectOffset(16, 16, 8, 8);
+            barLayout.spacing = 10f;
             barLayout.childAlignment = TextAnchor.MiddleLeft;
             barLayout.childControlWidth = true;
             barLayout.childControlHeight = true;
             barLayout.childForceExpandWidth = false;
 
             _activeContractBannerText = CreateText("ContractBannerText", contractBar.transform, font,
-                "ACTIVE CONTRACT: 1. LEO Weather CubeSat", 17, FontStyle.Normal,
+                "CONTRACT: 1. LEO Weather CubeSat", 15, FontStyle.Normal,
                 new Color(0.92f, 0.96f, 1f, 1f), TextAnchor.MiddleLeft);
             _activeContractBannerText.supportRichText = true;
             LayoutElement bannerLe = _activeContractBannerText.gameObject.AddComponent<LayoutElement>();
             bannerLe.flexibleWidth = 1f;
 
-            CreateButton(contractBar.transform, "Btn_ResetTemplate", "Reset M1 Template",
-                new Color(0.20f, 0.34f, 0.52f, 1f), 190f, 44f, font, ApplyMission1StarterTemplate);
+            CreateButton(contractBar.transform, "Btn_ResetTemplate", "Reset M1",
+                new Color(0.20f, 0.34f, 0.52f, 1f), 115f, 44f, font, ApplyMission1StarterTemplate);
 
-            Button rndBtn = CreateButton(contractBar.transform, "Btn_OpenRnD", "R&D Tech Tree ($50k)",
-                new Color(0.55f, 0.36f, 0.10f, 1f), 250f, 44f, font, OpenRnDOverlay);
+            Button apBtn = CreateButton(contractBar.transform, "Btn_OpenAutopilot", "⚙ Autopilot (2/6)",
+                new Color(0.18f, 0.42f, 0.65f, 1f), 185f, 44f, font, OpenAutopilotOverlay);
+            _autopilotButtonText = apBtn.GetComponentInChildren<Text>();
+
+            Button drBtn = CreateButton(contractBar.transform, "Btn_OpenDryRun", "▶ A.S.T.R.A. & Dry Run",
+                new Color(0.14f, 0.50f, 0.34f, 1f), 235f, 44f, font, OpenDryRunOverlay);
+            _dryRunButtonText = drBtn.GetComponentInChildren<Text>();
+
+            Button rndBtn = CreateButton(contractBar.transform, "Btn_OpenRnD", "R&D Tree ($50k)",
+                new Color(0.55f, 0.36f, 0.10f, 1f), 185f, 44f, font, OpenRnDOverlay);
             _agencyCapitalButtonText = rndBtn.GetComponentInChildren<Text>();
 
-            // 2. MAIN WORKSPACE COLUMNS
+            // 2. MAIN WORKSPACE COLUMNS (Clean 2-Column Hangar: 5 Module Slots + Rocket | 6 NASA Resource Gauges)
             GameObject columnsRow = CreateUIObject("MainColumns", rootObj.transform);
             LayoutElement colsLe = columnsRow.AddComponent<LayoutElement>();
             colsLe.flexibleHeight = 1f;
@@ -595,11 +713,32 @@ namespace AstraLink.UI.Workshop
             resourceGaugesUI = rightCol.AddComponent<ResourceGaugesUI>();
             resourceGaugesUI.EnsureGaugesUIHierarchy();
 
-            // 3. MODAL R&D TECH TREE OVERLAY
+            // 3. MODAL #1: CONSTRUCT-STYLE AUTOPILOT RULE EDITOR OVERLAY
+            GameObject apOverlay = CreateUIObject("AutopilotModalOverlay", transform);
+            StretchFull(apOverlay.GetComponent<RectTransform>());
+            autopilotUI = apOverlay.AddComponent<AutopilotUI>();
+            autopilotUI.Initialize(_agencyState, GetSelectedComponentsList());
+            autopilotUI.OnRulesChanged -= HandleAutopilotRulesChanged;
+            autopilotUI.OnRulesChanged += HandleAutopilotRulesChanged;
+            autopilotUI.OnRequestOpenDryRun -= OpenDryRunOverlay;
+            autopilotUI.OnRequestOpenDryRun += OpenDryRunOverlay;
+            apOverlay.SetActive(false);
+
+            // 4. MODAL #2: A.S.T.R.A. AUDITOR & 3s DRY RUN BENCH OVERLAY
+            GameObject drOverlay = CreateUIObject("DryRunModalOverlay", transform);
+            StretchFull(drOverlay.GetComponent<RectTransform>());
+            dryRunUI = drOverlay.AddComponent<DryRunUI>();
+            dryRunUI.Initialize(_auditor, _simulator, _repository, autopilotUI);
+            dryRunUI.OnRequestOpenAutopilot -= OpenAutopilotOverlay;
+            dryRunUI.OnRequestOpenAutopilot += OpenAutopilotOverlay;
+            drOverlay.SetActive(false);
+
+            // 5. MODAL #3: KSP-STYLE R&D TECH TREE OVERLAY
             GameObject rndOverlay = CreateUIObject("RnDModalOverlay", transform);
             StretchFull(rndOverlay.GetComponent<RectTransform>());
             rndPanelUI = rndOverlay.AddComponent<RnDPanelUI>();
             rndPanelUI.Initialize(_agencyState, _allComponents);
+            rndPanelUI.OnRnDStateChanged -= RefreshWorkshopUI;
             rndPanelUI.OnRnDStateChanged += RefreshWorkshopUI;
             rndOverlay.SetActive(false);
         }
@@ -613,6 +752,22 @@ namespace AstraLink.UI.Workshop
             {
                 resetBtn.onClick.RemoveAllListeners();
                 resetBtn.onClick.AddListener(ApplyMission1StarterTemplate);
+            }
+
+            Button apBtn = FindChild<Button>(root, "ActiveContractBar/Btn_OpenAutopilot");
+            if (apBtn != null)
+            {
+                apBtn.onClick.RemoveAllListeners();
+                apBtn.onClick.AddListener(OpenAutopilotOverlay);
+                _autopilotButtonText = apBtn.GetComponentInChildren<Text>();
+            }
+
+            Button drBtn = FindChild<Button>(root, "ActiveContractBar/Btn_OpenDryRun");
+            if (drBtn != null)
+            {
+                drBtn.onClick.RemoveAllListeners();
+                drBtn.onClick.AddListener(OpenDryRunOverlay);
+                _dryRunButtonText = drBtn.GetComponentInChildren<Text>();
             }
 
             Button rndBtn = FindChild<Button>(root, "ActiveContractBar/Btn_OpenRnD");
@@ -686,6 +841,28 @@ namespace AstraLink.UI.Workshop
             {
                 resourceGaugesUI = rightCol.GetComponent<ResourceGaugesUI>();
                 if (resourceGaugesUI == null) resourceGaugesUI = rightCol.gameObject.AddComponent<ResourceGaugesUI>();
+            }
+
+            Transform apModal = transform.Find("AutopilotModalOverlay");
+            if (apModal != null)
+            {
+                autopilotUI = apModal.GetComponent<AutopilotUI>();
+                if (autopilotUI == null) autopilotUI = apModal.gameObject.AddComponent<AutopilotUI>();
+                autopilotUI.Initialize(_agencyState, GetSelectedComponentsList());
+                autopilotUI.OnRulesChanged -= HandleAutopilotRulesChanged;
+                autopilotUI.OnRulesChanged += HandleAutopilotRulesChanged;
+                autopilotUI.OnRequestOpenDryRun -= OpenDryRunOverlay;
+                autopilotUI.OnRequestOpenDryRun += OpenDryRunOverlay;
+            }
+
+            Transform drModal = transform.Find("DryRunModalOverlay");
+            if (drModal != null)
+            {
+                dryRunUI = drModal.GetComponent<DryRunUI>();
+                if (dryRunUI == null) dryRunUI = drModal.gameObject.AddComponent<DryRunUI>();
+                dryRunUI.Initialize(_auditor, _simulator, _repository, autopilotUI);
+                dryRunUI.OnRequestOpenAutopilot -= OpenAutopilotOverlay;
+                dryRunUI.OnRequestOpenAutopilot += OpenAutopilotOverlay;
             }
 
             Transform rndModal = transform.Find("RnDModalOverlay");
@@ -970,7 +1147,7 @@ namespace AstraLink.UI.Workshop
             if (width > 0f) le.preferredWidth = width;
             if (height > 0f) le.preferredHeight = height;
 
-            Text txt = CreateText("Text", btnObj.transform, font, label, 15, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
+            Text txt = CreateText("Text", btnObj.transform, font, label, 14, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
             StretchFull(txt.GetComponent<RectTransform>());
             return btn;
         }
