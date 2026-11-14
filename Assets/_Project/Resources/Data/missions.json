@@ -1,0 +1,46 @@
+{
+  "missions": [
+    {
+      "Id": "m1_leo_cubesat",
+      "Title": "1. LEO Weather CubeSat",
+      "Brief": "Place a weather satellite in a 400 km Earth orbit, collect 100 science points, and complete 4 orbits. Add a rule to save power during eclipse.",
+      "OrbitId": "orbit_leo",
+      "BudgetLimitThousands": 120.0,
+      "TargetSciencePoints": 100.0,
+      "RequiredOrbits": 4,
+      "RewardThousands": 130,
+      "PassiveIncomeThousands": 20,
+      "MinChipSlots": 2,
+      "RequiredSensorTag": "Camera",
+      "EventId": ""
+    },
+    {
+      "Id": "m2_lunar_mapper",
+      "Title": "2. Lunar Mapper",
+      "Brief": "Map lunar craters using synthetic aperture radar. Eclipse covers 45% of each orbit, and the transmitter may overheat on orbit 2.",
+      "OrbitId": "orbit_lunar",
+      "BudgetLimitThousands": 450.0,
+      "TargetSciencePoints": 250.0,
+      "RequiredOrbits": 5,
+      "RewardThousands": 280,
+      "PassiveIncomeThousands": 45,
+      "MinChipSlots": 4,
+      "RequiredSensorTag": "Radar",
+      "EventId": "evt_tx_overheat"
+    },
+    {
+      "Id": "m3_mars_probe",
+      "Title": "3. Mars Probe",
+      "Brief": "Use a spectrometer to study the composition of the Martian atmosphere. Solar flux is only 43% of Earth's, a coronal mass ejection is expected on orbit 3, and the signal delay is 10 seconds.",
+      "OrbitId": "orbit_mars",
+      "BudgetLimitThousands": 900.0,
+      "TargetSciencePoints": 400.0,
+      "RequiredOrbits": 6,
+      "RewardThousands": 300,
+      "PassiveIncomeThousands": 80,
+      "MinChipSlots": 6,
+      "RequiredSensorTag": "Spectrometer",
+      "EventId": "evt_cme_storm"
+    }
+  ]
+}

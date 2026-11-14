@@ -1,0 +1,34 @@
+{
+  "rockets": [
+    {
+      "Id": "rocket_light",
+      "Name": "Strila-1 Light Launch Vehicle",
+      "CostThousands": 30.0,
+      "MaxMassLeoKg": 25.0,
+      "MaxMassLunarKg": 8.0,
+      "MaxMassMarsKg": 2.0,
+      "MaxMassDeepSpaceKg": 2.0,
+      "BaseReliability": 0.95
+    },
+    {
+      "Id": "rocket_medium",
+      "Name": "Sokil-M Medium Launch Vehicle",
+      "CostThousands": 120.0,
+      "MaxMassLeoKg": 120.0,
+      "MaxMassLunarKg": 45.0,
+      "MaxMassMarsKg": 18.0,
+      "MaxMassDeepSpaceKg": 15.0,
+      "BaseReliability": 0.97
+    },
+    {
+      "Id": "rocket_heavy",
+      "Name": "Titan-9 Heavy Interplanetary Launch Vehicle",
+      "CostThousands": 280.0,
+      "MaxMassLeoKg": 500.0,
+      "MaxMassLunarKg": 180.0,
+      "MaxMassMarsKg": 75.0,
+      "MaxMassDeepSpaceKg": 65.0,
+      "BaseReliability": 0.98
+    }
+  ]
+}
