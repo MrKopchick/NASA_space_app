@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using AstraLink.Core;
+using AstraLink.UI.Flight;
 using AstraLink.UI.Hub;
 using AstraLink.UI.Workshop;
 using UnityEngine;
@@ -10,14 +11,24 @@ using UnityEngine.UI;
 namespace AstraLink.UI.Debrief
 {
     /// <summary>
-    /// Screen 4 Controller: Post-Flight Mission Debriefing and Root-Cause Analysis (Task S2-05).
-    /// Receives a MissionReport and renders two distinct states:
-    /// 1. Victory (MissionStatus.Success): FinalScore, engineering grade, DeliveredScience, BudgetSpentThousands,
-    ///    MinBatteryPercent, FinalHealthPercent, +50 reliability margin bonus, and contract reward + passive income payout,
-    ///    with a button to return to the Contract Hub.
-    /// 2. Failure (MissionStatus.Failed): "Why did it fail?" root-cause analysis powered by FailureDebriefBuilder (Task S2-02),
-    ///    displaying FailureTitle, FailureCause (exact orbit/tick and numeric deficit/losses), and FailureRecommendation,
-    ///    with a free return button to the Hangar (Workshop) for immediate build or autopilot fixes.
+    /// Combined Flight Telemetry Playback (Task S2-04) and Post-Flight Mission Debriefing Controller (Task S2-05).
+    /// <para>
+    /// <b>Task S2-04 (Live Flight Telemetry &amp; Radar Playback):</b>
+    /// Connects step-by-step playback of <see cref="MissionReport.Ticks"/> (with <c>1x</c>, <c>5x</c>, <c>10x</c> speed switches)
+    /// to <see cref="OrbitRadarUI"/>, updates live telemetry gauges (<see cref="Slider"/> and <see cref="Image.fillAmount"/> + text counters)
+    /// for Battery, SSD, Electronics Health, Delivered Science, and Radiation, updates phase indicators
+    /// (<see cref="SimulationTickSnapshot.IsInEclipse"/>, <see cref="SimulationTickSnapshot.IsInCommWindow"/>, <see cref="SimulationTickSnapshot.SafeModeActive"/>)
+    /// and <see cref="EventPopupUI"/> (<see cref="SimulationTickSnapshot.ActiveEventTitle"/>), highlights triggered autopilot rules
+    /// (<see cref="SimulationTickSnapshot.TriggeredRuleIds"/>) in green, and provides 3 signal-delayed manual override commands
+    /// (<c>Toggle Instruments</c>, <c>Toggle Comms</c>, <c>Enable Safe Mode</c>) that append a <see cref="ManualCommandRequest"/>
+    /// to <see cref="activeManualCommands"/> and invoke <see cref="IMissionSimulator.SimulateFullMission"/> for instant recalculation.
+    /// </para>
+    /// <para>
+    /// <b>Task S2-05 (Post-Flight Debriefing &amp; Root-Cause Analysis):</b>
+    /// Renders <see cref="MissionStatus.Success"/> (FinalScore, grade, +50 reliability bonus, contract &amp; passive payout, Return to Hub)
+    /// and <see cref="MissionStatus.Failed"/> ("Why did it fail?" powered by <see cref="FailureDebriefBuilder"/> with FailureTitle,
+    /// FailureCause, FailureRecommendation, and Free Return to Hangar).
+    /// </para>
     /// </summary>
     public class MissionReportUI : MonoBehaviour
     {
@@ -46,6 +57,30 @@ namespace AstraLink.UI.Debrief
         /// </summary>
         public static MissionReportUI Instance { get; private set; }
 
+        [Header("Mode Selection (S2-04 Live Flight vs S2-05 Debrief Summary)")]
+        [SerializeField] private bool startInLiveFlightMode = true;
+        [SerializeField] private GameObject liveFlightModeRoot;
+        [SerializeField] private GameObject debriefSummaryModeRoot;
+        [SerializeField] private Button switchToLiveFlightButton;
+        [SerializeField] private Button switchToDebriefButton;
+
+        [Header("S2-04 Connected Flight Components (OrbitRadarUI, TelemetryHUD, ManualOverrideUI, EventPopupUI)")]
+        [SerializeField] private OrbitRadarUI orbitRadarUI;
+        [SerializeField] private TelemetryHUD telemetryHUD;
+        [SerializeField] private ManualOverrideUI manualOverrideUI;
+        [SerializeField] private EventPopupUI eventPopupUI;
+
+        [Header("S2-04 Playback Speed Switches (1x, 5x, 10x)")]
+        [SerializeField] private Button playbackSpeed1xButton;
+        [SerializeField] private Button playbackSpeed5xButton;
+        [SerializeField] private Button playbackSpeed10xButton;
+        [SerializeField] private Button playbackPlayPauseButton;
+        [SerializeField] private Text playbackPlayPauseLabel;
+        [SerializeField] private Button playbackStepTickButton;
+
+        [Header("S2-04 Active Manual Commands Queue")]
+        [SerializeField] private List<ManualCommandRequest> activeManualCommands = new List<ManualCommandRequest>();
+
         [Header("Header & Outcome Banner")]
         [SerializeField] private Text missionContextSubtitleText;
         [SerializeField] private Image statusBadgeBackground;
@@ -54,7 +89,7 @@ namespace AstraLink.UI.Debrief
         [SerializeField] private Text outcomeHeadlineText;
         [SerializeField] private Text outcomeSublineText;
 
-        [Header("Left Column: Flight Telemetry Metrics")]
+        [Header("S2-05 Left Column: Flight Telemetry Summary Metrics")]
         [SerializeField] private Text scienceMetricValueText;
         [SerializeField] private Text scienceMetricDetailText;
         [SerializeField] private Image scienceMetricBarFill;
@@ -75,7 +110,7 @@ namespace AstraLink.UI.Debrief
         [SerializeField] private Text reliabilityMetricDetailText;
         [SerializeField] private Image reliabilityMetricBarFill;
 
-        [Header("Right Column: Success State (MissionStatus.Success)")]
+        [Header("S2-05 Right Column: Success State (MissionStatus.Success)")]
         [SerializeField] private GameObject successStateRoot;
         [SerializeField] private Text finalScoreValueText;
         [SerializeField] private Image ratingGradeBadgeBg;
@@ -89,7 +124,7 @@ namespace AstraLink.UI.Debrief
         [SerializeField] private Text agencyCapitalSummaryText;
         [SerializeField] private Button returnToHubButton;
 
-        [Header("Right Column: Failure State (MissionStatus.Failed - Why Did It Fail?)")]
+        [Header("S2-05 Right Column: Failure State (MissionStatus.Failed - Why Did It Fail?)")]
         [SerializeField] private GameObject failureStateRoot;
         [SerializeField] private Image failureTitleBannerBg;
         [SerializeField] private Text failureTitleText;
@@ -103,19 +138,52 @@ namespace AstraLink.UI.Debrief
         [SerializeField] private GameObject verificationBarRoot;
 
         private readonly FailureDebriefBuilder _debriefBuilder = new FailureDebriefBuilder();
+        private readonly AutopilotEvaluator _autopilotEvaluator = new AutopilotEvaluator();
 
         private IGameDataRepository _repository;
+        private IMissionSimulator _simulator;
         private AgencyState _agencyState;
         private MissionGoal _activeGoal;
         private ResourceSummary _activeResources;
         private OrbitDefinition _activeOrbit;
+        private RocketOption _activeRocket;
+        private List<SatelliteComponent> _activeComponents = new List<SatelliteComponent>();
+        private List<AutopilotRule> _activeRules = new List<AutopilotRule>();
+        private List<SpaceEventDefinition> _activeEvents = new List<SpaceEventDefinition>();
         private MissionReport _currentReport;
         private MissionReport _lastRewardedReport;
+        private bool _isLiveFlightViewActive = true;
 
         /// <summary>
-        /// Currently displayed mission report.
+        /// Gets the currently displayed <see cref="MissionReport"/>.
         /// </summary>
         public MissionReport CurrentReport => _currentReport;
+
+        /// <summary>
+        /// Gets the linked <see cref="OrbitRadarUI"/> controller (Task S1-08 / S2-04).
+        /// </summary>
+        public OrbitRadarUI OrbitRadar => orbitRadarUI;
+
+        /// <summary>
+        /// Gets the linked <see cref="TelemetryHUD"/> controller (Task S2-04).
+        /// </summary>
+        public TelemetryHUD TelemetryHud => telemetryHUD;
+
+        /// <summary>
+        /// Gets the linked <see cref="ManualOverrideUI"/> controller (Task S2-04).
+        /// </summary>
+        public ManualOverrideUI ManualOverride => manualOverrideUI;
+
+        /// <summary>
+        /// Gets the linked <see cref="EventPopupUI"/> controller (Task S2-04).
+        /// </summary>
+        public EventPopupUI EventPopup => eventPopupUI;
+
+        /// <summary>
+        /// Gets the list of active manual commands queued during the flight.
+        /// </summary>
+        public List<ManualCommandRequest> ActiveManualCommands =>
+            manualOverrideUI != null ? manualOverrideUI.ActiveManualCommands : activeManualCommands;
 
         /// <summary>
         /// Fired when the player clicks the button to return to the Contract Hub after a successful mission.
@@ -128,7 +196,7 @@ namespace AstraLink.UI.Debrief
         public event Action OnReturnToWorkshopRequested;
 
         /// <summary>
-        /// Fired whenever a new MissionReport is displayed on the debrief screen.
+        /// Fired whenever a new <see cref="MissionReport"/> is displayed.
         /// </summary>
         public event Action<MissionReport> OnReportDisplayed;
 
@@ -144,8 +212,8 @@ namespace AstraLink.UI.Debrief
             if (_currentReport == null)
             {
                 ResolveContextFromScene();
-                MissionReport initialReport = BuildSampleSuccessReport(true);
-                ShowReport(initialReport, _activeGoal, _activeResources, _activeOrbit, false);
+                SetViewMode(startInLiveFlightMode);
+                StartSampleLiveFlightScenario(0);
             }
         }
 
@@ -158,7 +226,7 @@ namespace AstraLink.UI.Debrief
         }
 
         /// <summary>
-        /// Initializes the Debrief screen with a MissionReport and optional mission context models.
+        /// Primary initialization entry point for both S2-04 (Live Flight Playback) and S2-05 (Post-Flight Debrief).
         /// </summary>
         public void Initialize(
             MissionReport report,
@@ -166,12 +234,23 @@ namespace AstraLink.UI.Debrief
             AgencyState agencyState = null,
             ResourceSummary resources = null,
             OrbitDefinition orbit = null,
-            IGameDataRepository repository = null)
+            IGameDataRepository repository = null,
+            IMissionSimulator simulator = null,
+            List<SatelliteComponent> components = null,
+            RocketOption rocket = null,
+            List<AutopilotRule> rules = null,
+            List<SpaceEventDefinition> events = null)
         {
             EnsureDebriefUIHierarchy();
             BindButtons();
 
             _repository = repository ?? _repository;
+            _simulator = simulator ?? _simulator;
+            if (components != null && components.Count > 0) _activeComponents = new List<SatelliteComponent>(components);
+            if (rocket != null) _activeRocket = rocket;
+            if (rules != null && rules.Count > 0) _activeRules = new List<AutopilotRule>(rules);
+            if (events != null) _activeEvents = new List<SpaceEventDefinition>(events);
+
             if (agencyState != null)
             {
                 _agencyState = agencyState;
@@ -187,8 +266,7 @@ namespace AstraLink.UI.Debrief
         }
 
         /// <summary>
-        /// Displays the provided MissionReport on the Debrief screen and updates either the Success or Failure view.
-        /// Automatically invokes FailureDebriefBuilder (S2-02) if a failed report does not yet have its debrief fields populated.
+        /// Displays the provided <see cref="MissionReport"/> and synchronizes both the S2-04 live flight playback and S2-05 debrief summary.
         /// </summary>
         public void ShowReport(
             MissionReport report,
@@ -200,7 +278,7 @@ namespace AstraLink.UI.Debrief
             EnsureDebriefUIHierarchy();
             ResolveContextFromScene(goal, resources, orbit);
 
-            _currentReport = report ?? BuildSampleSuccessReport(true);
+            _currentReport = report ?? BuildFullFlightSampleReport(_activeOrbit, _activeGoal, _activeRules, activeManualCommands, _activeEvents);
 
             if (_currentReport.Status == MissionStatus.Failed)
             {
@@ -211,16 +289,300 @@ namespace AstraLink.UI.Debrief
                 ApplySuccessPayoutIfNeeded(_currentReport);
             }
 
+            SyncFlightComponentsWithReport(_currentReport, autoPlay: _isLiveFlightViewActive, resetTickIndex: true);
             RefreshUI();
             OnReportDisplayed?.Invoke(_currentReport);
         }
 
         /// <summary>
-        /// Convenience overload for displaying a MissionReport using the active mission context.
+        /// Convenience overload for displaying a <see cref="MissionReport"/> using the active mission context.
         /// </summary>
         public void DisplayReport(MissionReport report)
         {
             ShowReport(report, _activeGoal, _activeResources, _activeOrbit, true);
+        }
+
+        /// <summary>
+        /// Switches to the S2-04 Live Flight &amp; Radar Telemetry view.
+        /// </summary>
+        public void ShowLiveFlightView()
+        {
+            SetViewMode(true);
+            if (orbitRadarUI != null && !orbitRadarUI.IsPlaying && _currentReport != null && _currentReport.Ticks != null && _currentReport.Ticks.Count > 1)
+            {
+                orbitRadarUI.LoadMissionReport(_currentReport, _activeOrbit, autoPlay: true, resetTickIndex: false);
+            }
+            RefreshUI();
+        }
+
+        /// <summary>
+        /// Switches to the S2-05 Post-Flight Debrief Summary view.
+        /// </summary>
+        public void ShowDebriefSummaryView()
+        {
+            SetViewMode(false);
+            RefreshUI();
+        }
+
+        private void SetViewMode(bool liveFlightMode)
+        {
+            _isLiveFlightViewActive = liveFlightMode;
+            if (liveFlightModeRoot != null) liveFlightModeRoot.SetActive(liveFlightMode);
+            if (debriefSummaryModeRoot != null) debriefSummaryModeRoot.SetActive(!liveFlightMode);
+
+            HighlightModeButton(switchToLiveFlightButton, liveFlightMode, new Color(0.14f, 0.58f, 0.86f, 1f));
+            HighlightModeButton(switchToDebriefButton, !liveFlightMode, new Color(0.16f, 0.56f, 0.36f, 1f));
+        }
+
+        private static void HighlightModeButton(Button btn, bool active, Color activeColor)
+        {
+            if (btn == null) return;
+            Image img = btn.GetComponent<Image>();
+            if (img != null)
+            {
+                img.color = active ? activeColor : new Color(0.12f, 0.18f, 0.28f, 0.96f);
+            }
+        }
+
+        // --- S2-04 Speed Controls & Step-by-Step Playback ---
+
+        /// <summary>
+        /// Sets simulation playback speed to 1x.
+        /// </summary>
+        public void SetPlaybackSpeed1x() => SetPlaybackSpeed(1.0f);
+
+        /// <summary>
+        /// Sets simulation playback speed to 5x.
+        /// </summary>
+        public void SetPlaybackSpeed5x() => SetPlaybackSpeed(5.0f);
+
+        /// <summary>
+        /// Sets simulation playback speed to 10x.
+        /// </summary>
+        public void SetPlaybackSpeed10x() => SetPlaybackSpeed(10.0f);
+
+        /// <summary>
+        /// Sets the simulation playback speed multiplier on <see cref="OrbitRadarUI"/> and updates speed button highlights.
+        /// </summary>
+        public void SetPlaybackSpeed(float multiplier)
+        {
+            if (orbitRadarUI != null)
+            {
+                orbitRadarUI.SetPlaybackSpeed(multiplier);
+            }
+            UpdatePlaybackSpeedButtonHighlights(multiplier);
+        }
+
+        /// <summary>
+        /// Toggles play/pause of the step-by-step <see cref="MissionReport.Ticks"/> playback.
+        /// </summary>
+        public void TogglePlaybackPlayPause()
+        {
+            if (orbitRadarUI != null)
+            {
+                orbitRadarUI.TogglePlayPause();
+                if (playbackPlayPauseLabel != null)
+                {
+                    playbackPlayPauseLabel.text = orbitRadarUI.IsPlaying ? "PAUSE" : "PLAY";
+                }
+            }
+        }
+
+        /// <summary>
+        /// Advances playback by a single tick for step-by-step inspection.
+        /// </summary>
+        public void StepPlaybackNextTick()
+        {
+            if (orbitRadarUI != null)
+            {
+                orbitRadarUI.StepSingleTick(1);
+                if (playbackPlayPauseLabel != null)
+                {
+                    playbackPlayPauseLabel.text = "PLAY";
+                }
+            }
+        }
+
+        // --- S2-04 Manual Command Overrides (Signal-Delayed + SimulateFullMission Recalculation) ---
+
+        /// <summary>
+        /// S2-04 Manual Command 1: Toggles science instruments with visual signal delay according to <see cref="OrbitDefinition.SignalDelaySeconds"/>.
+        /// </summary>
+        public void TriggerManualToggleInstruments()
+        {
+            if (manualOverrideUI != null)
+            {
+                manualOverrideUI.TriggerToggleInstruments();
+            }
+        }
+
+        /// <summary>
+        /// S2-04 Manual Command 2: Toggles communications transmitter with visual signal delay according to <see cref="OrbitDefinition.SignalDelaySeconds"/>.
+        /// </summary>
+        public void TriggerManualToggleComms()
+        {
+            if (manualOverrideUI != null)
+            {
+                manualOverrideUI.TriggerToggleComms();
+            }
+        }
+
+        /// <summary>
+        /// S2-04 Manual Command 3: Enables (or toggles) Safe Mode with visual signal delay according to <see cref="OrbitDefinition.SignalDelaySeconds"/>.
+        /// </summary>
+        public void TriggerManualEnableSafeMode()
+        {
+            if (manualOverrideUI != null)
+            {
+                manualOverrideUI.TriggerEnableSafeMode();
+            }
+        }
+
+        private void HandleRadarTickUpdated(SimulationTickSnapshot snapshot, int tickIndex)
+        {
+            if (snapshot == null) return;
+
+            int totalTicks = (_currentReport != null && _currentReport.Ticks != null) ? _currentReport.Ticks.Count : 20;
+
+            if (telemetryHUD != null)
+            {
+                telemetryHUD.UpdateFromTick(snapshot, tickIndex, totalTicks);
+            }
+
+            if (eventPopupUI != null)
+            {
+                eventPopupUI.UpdateFromTick(snapshot);
+            }
+
+            if (manualOverrideUI != null)
+            {
+                manualOverrideUI.UpdateButtonLabelsFromSnapshot(snapshot);
+            }
+
+            if (playbackPlayPauseLabel != null && orbitRadarUI != null)
+            {
+                playbackPlayPauseLabel.text = orbitRadarUI.IsPlaying ? "PAUSE" : "PLAY";
+            }
+        }
+
+        private void HandleRadarSpeedChanged(float newSpeed)
+        {
+            UpdatePlaybackSpeedButtonHighlights(newSpeed);
+        }
+
+        private void HandleManualMissionRecalculated(MissionReport recalculatedReport, ManualCommandRequest command)
+        {
+            if (recalculatedReport == null) return;
+
+            activeManualCommands = manualOverrideUI != null
+                ? new List<ManualCommandRequest>(manualOverrideUI.ActiveManualCommands)
+                : activeManualCommands;
+
+            // Enrich recalculated ticks if MockMissionSimulator is currently active so telemetry, rules, and events stay accurate
+            if (_simulator is MockMissionSimulator)
+            {
+                recalculatedReport = BuildFullFlightSampleReport(
+                    _activeOrbit,
+                    _activeGoal,
+                    _activeRules,
+                    activeManualCommands,
+                    _activeEvents);
+
+                if (orbitRadarUI != null)
+                {
+                    orbitRadarUI.LoadMissionReport(recalculatedReport, _activeOrbit, autoPlay: orbitRadarUI.IsPlaying, resetTickIndex: false);
+                }
+            }
+
+            _currentReport = recalculatedReport;
+            if (_currentReport.Status == MissionStatus.Failed)
+            {
+                EnsureFailureDebriefPopulated(_currentReport);
+            }
+
+            RefreshTelemetryMetricsColumn(_currentReport);
+        }
+
+        private void SyncFlightComponentsWithReport(MissionReport report, bool autoPlay, bool resetTickIndex)
+        {
+            if (telemetryHUD != null)
+            {
+                telemetryHUD.Initialize(_activeGoal, _activeResources, _activeOrbit, _activeRules, orbitRadarUI, eventPopupUI);
+            }
+
+            if (manualOverrideUI != null)
+            {
+                manualOverrideUI.Initialize(
+                    _simulator,
+                    _activeComponents,
+                    _activeRocket,
+                    _activeOrbit,
+                    _activeGoal,
+                    _activeRules,
+                    orbitRadarUI,
+                    telemetryHUD,
+                    _activeEvents);
+            }
+
+            if (orbitRadarUI != null)
+            {
+                orbitRadarUI.OnTickUpdated -= HandleRadarTickUpdated;
+                orbitRadarUI.OnTickUpdated += HandleRadarTickUpdated;
+                orbitRadarUI.OnSpeedChanged -= HandleRadarSpeedChanged;
+                orbitRadarUI.OnSpeedChanged += HandleRadarSpeedChanged;
+
+                orbitRadarUI.LoadMissionReport(report, _activeOrbit, autoPlay: autoPlay, resetTickIndex: resetTickIndex);
+                UpdatePlaybackSpeedButtonHighlights(orbitRadarUI.SpeedMultiplier);
+            }
+
+            if (manualOverrideUI != null)
+            {
+                manualOverrideUI.OnMissionRecalculated -= HandleManualMissionRecalculated;
+                manualOverrideUI.OnMissionRecalculated += HandleManualMissionRecalculated;
+            }
+
+            if (report != null && report.Ticks != null && report.Ticks.Count > 0)
+            {
+                int idx = orbitRadarUI != null ? Mathf.Clamp(orbitRadarUI.CurrentTickIndex, 0, report.Ticks.Count - 1) : 0;
+                HandleRadarTickUpdated(report.Ticks[idx], idx);
+            }
+        }
+
+        private void UpdatePlaybackSpeedButtonHighlights(float speed)
+        {
+            HighlightModeButton(playbackSpeed1xButton, Mathf.Approximately(speed, 1.0f), new Color(0.14f, 0.62f, 0.88f, 1f));
+            HighlightModeButton(playbackSpeed5xButton, Mathf.Approximately(speed, 5.0f), new Color(0.14f, 0.62f, 0.88f, 1f));
+            HighlightModeButton(playbackSpeed10xButton, Mathf.Approximately(speed, 10.0f), new Color(0.14f, 0.62f, 0.88f, 1f));
+        }
+
+        /// <summary>
+        /// Starts one of the 3 preset orbital live-flight scenarios for testing S2-04:
+        /// 0 = LEO CubeSat (1.0s Signal Delay, Eclipse Rule triggers in shadow),
+        /// 1 = Lunar Mapper (3.0s Signal Delay, Transmitter Overheat Event on ticks 4..11),
+        /// 2 = Mars Probe (10.0s Signal Delay, Solar Storm CME Event on ticks 5..13 with Radiation > 50).
+        /// </summary>
+        public void StartSampleLiveFlightScenario(int scenarioIndex)
+        {
+            ResolveContextFromScene();
+            activeManualCommands.Clear();
+
+            List<MissionGoal> defaultMissions = ContractHubUI.BuildDefaultMissionsFromSpec();
+            int clampedIdx = Mathf.Clamp(scenarioIndex, 0, defaultMissions.Count - 1);
+            _activeGoal = defaultMissions[clampedIdx];
+            _activeOrbit = BuildDefaultOrbitForGoal(_activeGoal);
+            _activeRules = TelemetryHUD.BuildDefaultSampleRules();
+            _activeEvents = BuildDefaultEventsForMission(_activeGoal);
+
+            SetViewMode(true);
+
+            MissionReport flightReport = BuildFullFlightSampleReport(
+                _activeOrbit,
+                _activeGoal,
+                _activeRules,
+                activeManualCommands,
+                _activeEvents);
+
+            ShowReport(flightReport, _activeGoal, _activeResources, _activeOrbit, false);
         }
 
         /// <summary>
@@ -249,13 +611,13 @@ namespace AstraLink.UI.Debrief
         }
 
         /// <summary>
-        /// Editor context menu utility to generate the complete Debrief UI hierarchy inside a prefab or scene.
+        /// Editor context menu utility to generate the complete S2-04 + S2-05 UI hierarchy inside a prefab or scene.
         /// </summary>
         [ContextMenu("Generate Debrief UI In Scene")]
         public void BuildUIInEditor()
         {
             CleanupOldRoots();
-            Transform existing = transform.Find("DebriefContentRoot_v3");
+            Transform existing = transform.Find("DebriefContentRoot_v4");
             if (existing != null)
             {
                 DestroyImmediate(existing.gameObject);
@@ -264,7 +626,8 @@ namespace AstraLink.UI.Debrief
             EnsureDebriefUIHierarchy();
             BindButtons();
             ResolveContextFromScene();
-            ShowReport(BuildSampleSuccessReport(true), _activeGoal, _activeResources, _activeOrbit, false);
+            SetViewMode(startInLiveFlightMode);
+            StartSampleLiveFlightScenario(0);
         }
 
         private void ResolveContextFromScene(
@@ -272,6 +635,13 @@ namespace AstraLink.UI.Debrief
             ResourceSummary explicitResources = null,
             OrbitDefinition explicitOrbit = null)
         {
+            if (_simulator == null)
+            {
+                _simulator = (GameManager.Instance != null && GameManager.Instance.Simulator != null)
+                    ? GameManager.Instance.Simulator
+                    : new MockMissionSimulator();
+            }
+
             if (_agencyState == null)
             {
                 _agencyState = GameManager.Instance != null && GameManager.Instance.CurrentAgencyState != null
@@ -302,6 +672,30 @@ namespace AstraLink.UI.Debrief
             else if (_activeOrbit == null)
             {
                 _activeOrbit = BuildDefaultOrbitForGoal(_activeGoal);
+            }
+
+            if (_activeComponents == null || _activeComponents.Count == 0)
+            {
+                if (BuilderPanelUI.Instance != null && BuilderPanelUI.Instance.GetSelectedComponentsList().Count > 0)
+                {
+                    _activeComponents = BuilderPanelUI.Instance.GetSelectedComponentsList();
+                    _activeRocket = BuilderPanelUI.Instance.GetSelectedRocket();
+                }
+                else
+                {
+                    _activeComponents = BuildDefaultStarterComponents();
+                    _activeRocket = BuildDefaultStarterRocket();
+                }
+            }
+
+            if (_activeRules == null || _activeRules.Count == 0)
+            {
+                _activeRules = TelemetryHUD.BuildDefaultSampleRules();
+            }
+
+            if (_activeEvents == null || _activeEvents.Count == 0)
+            {
+                _activeEvents = BuildDefaultEventsForMission(_activeGoal);
             }
 
             if (explicitResources != null)
@@ -389,12 +783,19 @@ namespace AstraLink.UI.Debrief
 
             ResolveContextFromScene();
 
+            if (liveFlightModeRoot != null) liveFlightModeRoot.SetActive(_isLiveFlightViewActive);
+            if (debriefSummaryModeRoot != null) debriefSummaryModeRoot.SetActive(!_isLiveFlightViewActive);
+
+            HighlightModeButton(switchToLiveFlightButton, _isLiveFlightViewActive, new Color(0.14f, 0.58f, 0.86f, 1f));
+            HighlightModeButton(switchToDebriefButton, !_isLiveFlightViewActive, new Color(0.16f, 0.56f, 0.36f, 1f));
+
             string missionTitle = _activeGoal != null && !string.IsNullOrEmpty(_activeGoal.Title)
                 ? _activeGoal.Title
                 : "1. LEO Weather CubeSat";
             string orbitName = _activeOrbit != null && !string.IsNullOrEmpty(_activeOrbit.Name)
                 ? _activeOrbit.Name
                 : "LEO 400 km (Earth)";
+            float delaySec = _activeOrbit != null ? _activeOrbit.SignalDelaySeconds : 1.0f;
 
             int completedOrbits = GetCompletedOrbits(_currentReport);
             int requiredOrbits = _activeGoal != null && _activeGoal.RequiredOrbits > 0
@@ -405,9 +806,10 @@ namespace AstraLink.UI.Debrief
             {
                 missionContextSubtitleText.text = string.Format(
                     CultureInfo.InvariantCulture,
-                    "Contract: {0}   •   Target Orbit: {1}   •   Orbits Logged: {2} / {3}",
+                    "Contract: {0}   •   Orbit: {1} (Delay: {2:0.1}s)   •   Orbits: {3} / {4}",
                     missionTitle,
                     orbitName,
+                    delaySec,
                     completedOrbits,
                     requiredOrbits);
             }
@@ -829,30 +1231,222 @@ namespace AstraLink.UI.Debrief
             return last != null ? last.TickIndex : (report.Ticks.Count - 1);
         }
 
-        // --- Sample Scenarios Powered by FailureDebriefBuilder (Task S2-02) ---
+        // --- Sample Scenarios Powered by AutopilotEvaluator (S2-01) and FailureDebriefBuilder (S2-02) ---
 
         /// <summary>
-        /// Triggers a sample successful mission report (with or without the +50 reliability bonus) for testing.
+        /// Triggers a sample successful mission report (with or without the +50 reliability bonus) and switches to the S2-05 Debrief Summary view.
         /// </summary>
         public void TriggerSampleSuccessScenario(bool withReliabilityBonus)
         {
             ResolveContextFromScene();
+            SetViewMode(false);
             MissionReport report = BuildSampleSuccessReport(withReliabilityBonus);
             ShowReport(report, _activeGoal, _activeResources, _activeOrbit, false);
         }
 
         /// <summary>
-        /// Triggers one of the deterministic failure scenarios and populates it using FailureDebriefBuilder (S2-02).
+        /// Triggers one of the deterministic failure scenarios, populates it using <see cref="FailureDebriefBuilder"/> (S2-02),
+        /// and switches to the S2-05 Debrief Summary view.
         /// </summary>
         public void TriggerSampleFailureScenario(FailureScenarioType scenarioType)
         {
             ResolveContextFromScene();
+            SetViewMode(false);
             MissionReport report = BuildSampleFailureReport(scenarioType);
             ShowReport(report, _activeGoal, _activeResources, _activeOrbit, false);
         }
 
+        private MissionReport BuildFullFlightSampleReport(
+            OrbitDefinition orbit,
+            MissionGoal goal,
+            List<AutopilotRule> rules,
+            List<ManualCommandRequest> manualCommands,
+            List<SpaceEventDefinition> events)
+        {
+            const int ticksPerOrbit = 20;
+            OrbitDefinition activeOrbit = orbit ?? OrbitRadarUI.CreateDefaultLeoOrbit();
+            MissionGoal activeGoal = goal ?? BuildDefaultMissionGoal();
+
+            // Always invoke IMissionSimulator.SimulateFullMission first when available
+            if (_simulator != null && !(_simulator is MockMissionSimulator))
+            {
+                MissionReport simReport = _simulator.SimulateFullMission(
+                    _activeComponents,
+                    _activeRocket,
+                    activeOrbit,
+                    activeGoal,
+                    rules,
+                    manualCommands,
+                    events);
+
+                if (simReport != null && simReport.Ticks != null && simReport.Ticks.Count > 0)
+                {
+                    ManualOverrideUI.ApplyManualOverridesToReportSnapshots(simReport, manualCommands);
+                    return simReport;
+                }
+            }
+
+            float maxBatWh = (_activeResources != null && _activeResources.MaxBatteryWh > 0f) ? _activeResources.MaxBatteryWh : 45.0f;
+            float maxSsdGb = (_activeResources != null && _activeResources.MaxSsdGb > 0f) ? _activeResources.MaxSsdGb : 16.0f;
+            float maxSolarW = (_activeResources != null && _activeResources.MaxSolarWatts > 0f) ? _activeResources.MaxSolarWatts : 45.0f;
+            float downlinkPerTick = (_activeResources != null && _activeResources.DownlinkGbPerTick > 0f) ? _activeResources.DownlinkGbPerTick : 2.5f;
+            float shielding = (_activeResources != null && _activeResources.TotalShielding > 0f) ? _activeResources.TotalShielding : 15.0f;
+            float tickHours = activeOrbit.OrbitPeriodHours / ticksPerOrbit;
+
+            float batteryWh = maxBatWh;
+            float minBatteryPct = 100.0f;
+            float ssdUsedGb = 1.2f;
+            float pendingScience = 12.0f;
+            float deliveredScience = 0.0f;
+            float health = 100.0f;
+            bool scienceActive = true;
+            bool commsActive = true;
+            bool safeModeActive = false;
+
+            var report = new MissionReport
+            {
+                Status = MissionStatus.Success,
+                BudgetSpentThousands = 90.0f,
+                Ticks = new List<SimulationTickSnapshot>(ticksPerOrbit)
+            };
+
+            for (int tick = 0; tick < ticksPerOrbit; tick++)
+            {
+                float progress = tick / (float)ticksPerOrbit;
+                bool isInEclipse = progress >= (1.0f - activeOrbit.EclipseFraction - 0.0001f);
+                bool isInCommWindow = progress < (activeOrbit.CommWindowFraction - 0.0001f);
+
+                float eventRadBoost = 0f;
+                float eventSolarMult = 1f;
+                float eventDownlinkMult = 1f;
+                string activeEventTitle = string.Empty;
+
+                if (events != null)
+                {
+                    for (int e = 0; e < events.Count; e++)
+                    {
+                        SpaceEventDefinition ev = events[e];
+                        if (ev == null) continue;
+                        int startTick = 4;
+                        int duration = ev.DurationTicks > 0 ? ev.DurationTicks : 7;
+                        if (tick >= startTick && tick < startTick + duration)
+                        {
+                            eventRadBoost += ev.RadiationBoost;
+                            eventSolarMult *= Mathf.Max(0.1f, ev.SolarMultiplier);
+                            eventDownlinkMult *= Mathf.Max(0.1f, ev.DownlinkMultiplier);
+                            activeEventTitle = !string.IsNullOrEmpty(ev.Title) ? ev.Title : ev.Id;
+                        }
+                    }
+                }
+
+                if (manualCommands != null && manualCommands.Count > 0)
+                {
+                    _autopilotEvaluator.ApplyManualCommandsForTick(tick, manualCommands, ref scienceActive, ref commsActive, ref safeModeActive);
+                }
+
+                float solarGenBeforeRules = isInEclipse ? 0.0f : (maxSolarW * activeOrbit.SolarFluxFactor * eventSolarMult);
+                float batPctBeforeRules = 100.0f * batteryWh / maxBatWh;
+                float ssdPctBeforeRules = 100.0f * ssdUsedGb / maxSsdGb;
+                float radiation = activeOrbit.BaseRadiation + eventRadBoost;
+
+                var triggeredRuleIds = new List<string>();
+                if (rules != null && rules.Count > 0)
+                {
+                    _autopilotEvaluator.EvaluateRulesForTick(
+                        rules,
+                        solarGenBeforeRules,
+                        batPctBeforeRules,
+                        ssdPctBeforeRules,
+                        radiation,
+                        ref scienceActive,
+                        ref commsActive,
+                        ref safeModeActive,
+                        triggeredRuleIds);
+                }
+
+                // Re-apply manual commands at or after ExecuteAtTick so manual toggles remain authoritative
+                if (manualCommands != null && manualCommands.Count > 0)
+                {
+                    for (int m = 0; m < manualCommands.Count; m++)
+                    {
+                        ManualCommandRequest cmd = manualCommands[m];
+                        if (cmd != null && tick >= cmd.ExecuteAtTick)
+                        {
+                            AutopilotEvaluator.ApplyAction(cmd.Action, ref scienceActive, ref commsActive, ref safeModeActive);
+                        }
+                    }
+                }
+
+                AutopilotEvaluator.ResolveEffectiveSubsystems(scienceActive, commsActive, safeModeActive, out bool effScience, out bool effComms);
+
+                float drawWatts = safeModeActive
+                    ? 5.0f
+                    : (8.0f + (effScience ? 14.0f : 0.0f) + (effComms && isInCommWindow ? 10.0f : 0.0f));
+
+                batteryWh = Mathf.Clamp(batteryWh + (solarGenBeforeRules - drawWatts) * tickHours, 0.0f, maxBatWh);
+                float batteryPct = 100.0f * batteryWh / maxBatWh;
+                minBatteryPct = Mathf.Min(minBatteryPct, batteryPct);
+
+                if (effScience && batteryWh > 0.0f)
+                {
+                    ssdUsedGb = Mathf.Min(maxSsdGb, ssdUsedGb + 1.1f);
+                    pendingScience += 9.5f;
+                }
+
+                if (effComms && isInCommWindow && ssdUsedGb > 0.01f && batteryWh > 0.0f)
+                {
+                    float sentGb = Mathf.Min(ssdUsedGb, downlinkPerTick * eventDownlinkMult);
+                    float deliveredNow = pendingScience * (sentGb / ssdUsedGb);
+                    deliveredScience += deliveredNow;
+                    pendingScience = Mathf.Max(0f, pendingScience - deliveredNow);
+                    ssdUsedGb = Mathf.Max(0f, ssdUsedGb - sentGb);
+                }
+
+                if (radiation > 50.0f && !safeModeActive && batteryWh > 0.0f)
+                {
+                    health = Mathf.Max(0.0f, health - Mathf.Max(0.0f, (radiation - shielding) * 0.25f));
+                }
+
+                report.Ticks.Add(new SimulationTickSnapshot
+                {
+                    TickIndex = tick,
+                    OrbitNumber = 1,
+                    OrbitProgress = progress,
+                    IsInEclipse = isInEclipse,
+                    IsInCommWindow = isInCommWindow,
+                    SafeModeActive = safeModeActive,
+                    ScienceActive = effScience,
+                    CommsActive = effComms,
+                    SolarGenWatts = solarGenBeforeRules,
+                    PowerDrawWatts = drawWatts,
+                    BatteryWh = batteryWh,
+                    BatteryPercent = batteryPct,
+                    SsdUsedGb = ssdUsedGb,
+                    SsdUsedPercent = 100.0f * ssdUsedGb / maxSsdGb,
+                    RadiationLevel = radiation,
+                    HealthPercent = health,
+                    DeliveredScience = deliveredScience,
+                    ActiveEventTitle = activeEventTitle,
+                    TriggeredRuleIds = triggeredRuleIds
+                });
+            }
+
+            report.DeliveredScience = Mathf.Max(deliveredScience, activeGoal.TargetSciencePoints + 20.0f);
+            report.MinBatteryPercent = minBatteryPct;
+            report.FinalHealthPercent = health;
+            report.FinalScore = report.DeliveredScience + Mathf.Max(0f, (activeGoal.BudgetLimitThousands - report.BudgetSpentThousands) * 0.5f) + ReliabilityBonusPoints;
+
+            if (report.Ticks.Count > 0)
+            {
+                report.Ticks[report.Ticks.Count - 1].DeliveredScience = report.DeliveredScience;
+            }
+
+            return report;
+        }
+
         private MissionReport BuildSampleSuccessReport(bool withReliabilityBonus)
         {
+            MissionReport report = BuildFullFlightSampleReport(_activeOrbit, _activeGoal, _activeRules, activeManualCommands, _activeEvents);
             float targetScience = _activeGoal != null && _activeGoal.TargetSciencePoints > 0f
                 ? _activeGoal.TargetSciencePoints
                 : 100.0f;
@@ -866,33 +1460,16 @@ namespace AstraLink.UI.Debrief
             float bonus = withReliabilityBonus ? ReliabilityBonusPoints : 0.0f;
             float finalScore = deliveredScience + Mathf.Max(0f, (budgetLimit - budgetSpent) * 0.5f) + bonus;
 
-            var report = new MissionReport
-            {
-                Status = MissionStatus.Success,
-                FinalScore = finalScore,
-                DeliveredScience = deliveredScience,
-                LostDataGb = 0.0f,
-                BudgetSpentThousands = budgetSpent,
-                MinBatteryPercent = minBattery,
-                FinalHealthPercent = finalHealth,
-                FailureTitle = string.Empty,
-                FailureCause = string.Empty,
-                FailureRecommendation = string.Empty,
-                Ticks = new List<SimulationTickSnapshot>
-                {
-                    new SimulationTickSnapshot
-                    {
-                        TickIndex = 79,
-                        OrbitNumber = _activeGoal != null && _activeGoal.RequiredOrbits > 0 ? _activeGoal.RequiredOrbits : 4,
-                        OrbitProgress = 0.95f,
-                        BatteryPercent = 88.0f,
-                        BatteryWh = 39.6f,
-                        HealthPercent = finalHealth,
-                        DeliveredScience = deliveredScience
-                    }
-                }
-            };
-
+            report.Status = MissionStatus.Success;
+            report.FinalScore = finalScore;
+            report.DeliveredScience = deliveredScience;
+            report.LostDataGb = 0.0f;
+            report.BudgetSpentThousands = budgetSpent;
+            report.MinBatteryPercent = minBattery;
+            report.FinalHealthPercent = finalHealth;
+            report.FailureTitle = string.Empty;
+            report.FailureCause = string.Empty;
+            report.FailureRecommendation = string.Empty;
             return report;
         }
 
@@ -1002,6 +1579,73 @@ namespace AstraLink.UI.Debrief
             return report;
         }
 
+        private static List<SpaceEventDefinition> BuildDefaultEventsForMission(MissionGoal goal)
+        {
+            var list = new List<SpaceEventDefinition>();
+            if (goal == null || string.IsNullOrWhiteSpace(goal.EventId))
+            {
+                return list;
+            }
+
+            if (string.Equals(goal.EventId, "evt_tx_overheat", StringComparison.OrdinalIgnoreCase))
+            {
+                list.Add(new SpaceEventDefinition
+                {
+                    Id = "evt_tx_overheat",
+                    Title = "Transmitter Overheat (Downlink 45%)",
+                    Description = "Thermal spike throttles ground downlink bandwidth to 45%.",
+                    TriggerOrbit = 1,
+                    DurationTicks = 8,
+                    RadiationBoost = 0.0f,
+                    SolarMultiplier = 1.0f,
+                    DownlinkMultiplier = 0.45f
+                });
+            }
+            else if (string.Equals(goal.EventId, "evt_cme_storm", StringComparison.OrdinalIgnoreCase))
+            {
+                list.Add(new SpaceEventDefinition
+                {
+                    Id = "evt_cme_storm",
+                    Title = "Solar Storm (CME) Radiation Surge",
+                    Description = "Coronal Mass Ejection increases orbital radiation by +85 rads.",
+                    TriggerOrbit = 1,
+                    DurationTicks = 8,
+                    RadiationBoost = 85.0f,
+                    SolarMultiplier = 1.0f,
+                    DownlinkMultiplier = 1.0f
+                });
+            }
+
+            return list;
+        }
+
+        private static List<SatelliteComponent> BuildDefaultStarterComponents()
+        {
+            return new List<SatelliteComponent>
+            {
+                new SatelliteComponent { Id = "bus_1", Name = "CubeSat 3U Bus", Category = ComponentCategory.CorePlatform, MassKg = 3f, CostThousands = 12f, BasePowerDrawWatts = 4f, RadiationShielding = 15f, BaseReliability = 0.98f },
+                new SatelliteComponent { Id = "pwr_1", Name = "Deployable Solar Array", Category = ComponentCategory.PowerGeneration, MassKg = 3f, CostThousands = 15f, SolarWatts = 45f, BaseReliability = 0.98f },
+                new SatelliteComponent { Id = "bat_1", Name = "Li-Ion Battery Pack", Category = ComponentCategory.EnergyStorage, MassKg = 3f, CostThousands = 14f, BatteryCapacityWh = 45f, BaseReliability = 0.99f },
+                new SatelliteComponent { Id = "com_1", Name = "S-Band Transceiver + 16GB SSD", Category = ComponentCategory.CommsAndStorage, MassKg = 2f, CostThousands = 14f, ActivePowerDrawWatts = 8f, SsdCapacityGb = 16f, DownlinkRateGbPerTick = 2.5f, BaseReliability = 0.98f },
+                new SatelliteComponent { Id = "sci_1", Name = "Optical Weather Camera", Category = ComponentCategory.SciencePayload, MassKg = 3f, CostThousands = 15f, ActivePowerDrawWatts = 12f, DataGenGbPerTick = 1.0f, SciencePointsPerTick = 9f, SensorTag = "Camera", BaseReliability = 0.98f }
+            };
+        }
+
+        private static RocketOption BuildDefaultStarterRocket()
+        {
+            return new RocketOption
+            {
+                Id = "rkt_light",
+                Name = "Arrow-1 Light Launcher",
+                CostThousands = 20f,
+                MaxMassLeoKg = 25f,
+                MaxMassLunarKg = 15f,
+                MaxMassMarsKg = 10f,
+                MaxMassDeepSpaceKg = 6f,
+                BaseReliability = 0.96f
+            };
+        }
+
         private static MissionGoal BuildDefaultMissionGoal()
         {
             return new MissionGoal
@@ -1083,6 +1727,48 @@ namespace AstraLink.UI.Debrief
                 returnToWorkshopButton.onClick.RemoveListener(ReturnToWorkshopFree);
                 returnToWorkshopButton.onClick.AddListener(ReturnToWorkshopFree);
             }
+
+            if (switchToLiveFlightButton != null)
+            {
+                switchToLiveFlightButton.onClick.RemoveListener(ShowLiveFlightView);
+                switchToLiveFlightButton.onClick.AddListener(ShowLiveFlightView);
+            }
+
+            if (switchToDebriefButton != null)
+            {
+                switchToDebriefButton.onClick.RemoveListener(ShowDebriefSummaryView);
+                switchToDebriefButton.onClick.AddListener(ShowDebriefSummaryView);
+            }
+
+            if (playbackSpeed1xButton != null)
+            {
+                playbackSpeed1xButton.onClick.RemoveListener(SetPlaybackSpeed1x);
+                playbackSpeed1xButton.onClick.AddListener(SetPlaybackSpeed1x);
+            }
+
+            if (playbackSpeed5xButton != null)
+            {
+                playbackSpeed5xButton.onClick.RemoveListener(SetPlaybackSpeed5x);
+                playbackSpeed5xButton.onClick.AddListener(SetPlaybackSpeed5x);
+            }
+
+            if (playbackSpeed10xButton != null)
+            {
+                playbackSpeed10xButton.onClick.RemoveListener(SetPlaybackSpeed10x);
+                playbackSpeed10xButton.onClick.AddListener(SetPlaybackSpeed10x);
+            }
+
+            if (playbackPlayPauseButton != null)
+            {
+                playbackPlayPauseButton.onClick.RemoveListener(TogglePlaybackPlayPause);
+                playbackPlayPauseButton.onClick.AddListener(TogglePlaybackPlayPause);
+            }
+
+            if (playbackStepTickButton != null)
+            {
+                playbackStepTickButton.onClick.RemoveListener(StepPlaybackNextTick);
+                playbackStepTickButton.onClick.AddListener(StepPlaybackNextTick);
+            }
         }
 
         private void Update()
@@ -1097,16 +1783,14 @@ namespace AstraLink.UI.Debrief
 
         private void CleanupOldRoots()
         {
-            Transform oldV1 = transform.Find("DebriefContentRoot");
-            if (oldV1 != null)
+            string[] oldNames = { "DebriefContentRoot", "DebriefContentRoot_v2", "DebriefContentRoot_v3" };
+            for (int i = 0; i < oldNames.Length; i++)
             {
-                DestroyImmediate(oldV1.gameObject);
-            }
-
-            Transform oldV2 = transform.Find("DebriefContentRoot_v2");
-            if (oldV2 != null)
-            {
-                DestroyImmediate(oldV2.gameObject);
+                Transform old = transform.Find(oldNames[i]);
+                if (old != null)
+                {
+                    DestroyImmediate(old.gameObject);
+                }
             }
         }
 
@@ -1114,8 +1798,15 @@ namespace AstraLink.UI.Debrief
         {
             CleanupOldRoots();
 
-            Transform root = transform.Find("DebriefContentRoot_v3");
-            if (root != null && finalScoreValueText != null && failureTitleText != null && returnToWorkshopButton != null)
+            Transform root = transform.Find("DebriefContentRoot_v4");
+            if (root != null &&
+                orbitRadarUI != null &&
+                telemetryHUD != null &&
+                manualOverrideUI != null &&
+                eventPopupUI != null &&
+                finalScoreValueText != null &&
+                failureTitleText != null &&
+                returnToWorkshopButton != null)
             {
                 return;
             }
@@ -1143,51 +1834,44 @@ namespace AstraLink.UI.Debrief
             {
                 baseBg = gameObject.AddComponent<Image>();
             }
-            baseBg.color = new Color(0.05f, 0.08f, 0.14f, 1f);
+            baseBg.color = new Color(0.04f, 0.07f, 0.13f, 1f);
 
-            GameObject contentRoot = CreateUIObject("DebriefContentRoot_v3", transform);
+            GameObject contentRoot = CreateUIObject("DebriefContentRoot_v4", transform);
             StretchFull(contentRoot.GetComponent<RectTransform>());
 
             VerticalLayoutGroup rootLayout = contentRoot.AddComponent<VerticalLayoutGroup>();
-            rootLayout.padding = new RectOffset(22, 22, 10, 10);
-            rootLayout.spacing = 8f;
+            rootLayout.padding = new RectOffset(18, 18, 8, 8);
+            rootLayout.spacing = 6f;
             rootLayout.childControlWidth = true;
             rootLayout.childControlHeight = true;
             rootLayout.childForceExpandWidth = true;
             rootLayout.childForceExpandHeight = false;
 
-            // 1. Top Header Bar
+            // 1. Top Header Bar (with S2-04 Live Flight vs S2-05 Debrief Mode Switcher)
             BuildTopHeaderBar(contentRoot.transform, font);
 
-            // 2. Top Verification Switcher Bar (Always visible right below header)
+            // 2. Top Verification & Scenario Switcher Bar
             BuildVerificationSwitcherBar(contentRoot.transform, font);
 
-            // 3. Outcome Headline Banner
-            BuildOutcomeBanner(contentRoot.transform, font);
+            // 3. Mode Container (holds S2-04 Live Flight View and S2-05 Post-Flight Debrief View)
+            GameObject modesBody = CreateUIObject("ModesBodyContainer", contentRoot.transform);
+            LayoutElement modesBodyLe = modesBody.AddComponent<LayoutElement>();
+            modesBodyLe.flexibleHeight = 1f;
+            modesBodyLe.preferredHeight = 820f;
 
-            // 4. Main Two-Column Content Row
-            GameObject mainRow = CreateUIObject("MainContentRow", contentRoot.transform);
-            LayoutElement mainRowLe = mainRow.AddComponent<LayoutElement>();
-            mainRowLe.flexibleHeight = 1f;
-            mainRowLe.preferredHeight = 470f;
+            // 3A. S2-04 Live Flight Telemetry & Radar View
+            BuildLiveFlightModeView(modesBody.transform, font);
 
-            HorizontalLayoutGroup mainRowLayout = mainRow.AddComponent<HorizontalLayoutGroup>();
-            mainRowLayout.spacing = 16f;
-            mainRowLayout.childControlWidth = true;
-            mainRowLayout.childControlHeight = true;
-            mainRowLayout.childForceExpandWidth = true;
-            mainRowLayout.childForceExpandHeight = true;
-
-            BuildTelemetryMetricsColumn(mainRow.transform, font);
-            BuildRightStateColumn(mainRow.transform, font);
+            // 3B. S2-05 Post-Flight Debrief Summary View
+            BuildDebriefSummaryModeView(modesBody.transform, font);
         }
 
         private void BuildTopHeaderBar(Transform parent, Font font)
         {
-            GameObject headerBar = CreatePanel("HeaderBar", parent, new Color(0.08f, 0.13f, 0.22f, 0.98f), 54f);
+            GameObject headerBar = CreatePanel("HeaderBar", parent, new Color(0.07f, 0.12f, 0.21f, 0.98f), 50f);
             HorizontalLayoutGroup headerLayout = headerBar.AddComponent<HorizontalLayoutGroup>();
-            headerLayout.padding = new RectOffset(18, 18, 6, 6);
-            headerLayout.spacing = 14f;
+            headerLayout.padding = new RectOffset(14, 14, 5, 5);
+            headerLayout.spacing = 10f;
             headerLayout.childAlignment = TextAnchor.MiddleLeft;
             headerLayout.childControlWidth = true;
             headerLayout.childControlHeight = true;
@@ -1209,8 +1893,8 @@ namespace AstraLink.UI.Debrief
                 "ScreenTitle",
                 titleStack.transform,
                 font,
-                "ASTRA-LINK // POST-FLIGHT MISSION DEBRIEFING & ANALYSIS",
-                19,
+                "ASTRA-LINK // FLIGHT TELEMETRY PLAYBACK (S2-04) & MISSION DEBRIEF (S2-05)",
+                17,
                 FontStyle.Bold,
                 new Color(0.92f, 0.97f, 1.0f, 1f),
                 TextAnchor.MiddleLeft);
@@ -1219,15 +1903,35 @@ namespace AstraLink.UI.Debrief
                 "MissionSubtitle",
                 titleStack.transform,
                 font,
-                "Contract: 1. LEO Weather CubeSat   •   Target Orbit: LEO 400 km (Earth)",
-                13,
+                "Contract: 1. LEO Weather CubeSat   •   Orbit: LEO 400 km (Delay: 1.0s)",
+                12,
                 FontStyle.Normal,
                 new Color(0.65f, 0.80f, 0.95f, 1f),
                 TextAnchor.MiddleLeft);
 
-            GameObject badgeObj = CreatePanel("StatusBadge", headerBar.transform, new Color(0.12f, 0.48f, 0.28f, 1f), 40f);
+            switchToLiveFlightButton = CreateActionButton(
+                headerBar.transform,
+                "Btn_Mode_LiveFlight_S204",
+                "[S2-04] LIVE FLIGHT & RADAR",
+                new Color(0.14f, 0.58f, 0.86f, 1f),
+                245f,
+                38f,
+                font,
+                ShowLiveFlightView);
+
+            switchToDebriefButton = CreateActionButton(
+                headerBar.transform,
+                "Btn_Mode_Debrief_S205",
+                "[S2-05] POST-FLIGHT DEBRIEF",
+                new Color(0.12f, 0.18f, 0.28f, 0.96f),
+                245f,
+                38f,
+                font,
+                ShowDebriefSummaryView);
+
+            GameObject badgeObj = CreatePanel("StatusBadge", headerBar.transform, new Color(0.12f, 0.48f, 0.28f, 1f), 38f);
             LayoutElement badgeLe = badgeObj.GetComponent<LayoutElement>();
-            badgeLe.preferredWidth = 270f;
+            badgeLe.preferredWidth = 230f;
             statusBadgeBackground = badgeObj.GetComponent<Image>();
 
             statusBadgeText = CreateText(
@@ -1235,20 +1939,214 @@ namespace AstraLink.UI.Debrief
                 badgeObj.transform,
                 font,
                 "STATUS: MISSION SUCCESS",
-                15,
+                14,
                 FontStyle.Bold,
                 Color.white,
                 TextAnchor.MiddleCenter);
             StretchFull(statusBadgeText.GetComponent<RectTransform>());
         }
 
+        private void BuildLiveFlightModeView(Transform parent, Font font)
+        {
+            liveFlightModeRoot = CreateUIObject("LiveFlightModeView_S204", parent);
+            StretchFull(liveFlightModeRoot.GetComponent<RectTransform>());
+
+            VerticalLayoutGroup vLayout = liveFlightModeRoot.AddComponent<VerticalLayoutGroup>();
+            vLayout.spacing = 6f;
+            vLayout.childControlWidth = true;
+            vLayout.childControlHeight = true;
+            vLayout.childForceExpandWidth = true;
+            vLayout.childForceExpandHeight = false;
+
+            // Top S2-04 Controls & Event Popup Row
+            GameObject topControlsRow = CreateUIObject("FlightTopControlsAndEventRow", liveFlightModeRoot.transform);
+            topControlsRow.AddComponent<LayoutElement>().preferredHeight = 52f;
+            HorizontalLayoutGroup topRowLayout = topControlsRow.AddComponent<HorizontalLayoutGroup>();
+            topRowLayout.spacing = 10f;
+            topRowLayout.childControlWidth = true;
+            topRowLayout.childControlHeight = true;
+            topRowLayout.childForceExpandWidth = false;
+            topRowLayout.childForceExpandHeight = true;
+
+            // EventPopupUI (ActiveEventTitle notification banner)
+            GameObject eventPopupObj = CreateUIObject("EventPopupUI", topControlsRow.transform);
+            LayoutElement popupLe = eventPopupObj.AddComponent<LayoutElement>();
+            popupLe.flexibleWidth = 1f;
+            eventPopupUI = eventPopupObj.AddComponent<EventPopupUI>();
+            eventPopupUI.EnsurePopupHierarchy();
+
+            // Speed & Playback Bar (1x, 5x, 10x, Play/Pause, Step +1, Scenario Presets)
+            GameObject speedBar = CreatePanel("PlaybackSpeedAndOrbitBar", topControlsRow.transform, new Color(0.07f, 0.12f, 0.21f, 0.98f), 52f);
+            LayoutElement speedBarLe = speedBar.GetComponent<LayoutElement>();
+            speedBarLe.preferredWidth = 820f;
+
+            HorizontalLayoutGroup speedLayout = speedBar.AddComponent<HorizontalLayoutGroup>();
+            speedLayout.padding = new RectOffset(10, 10, 6, 6);
+            speedLayout.spacing = 6f;
+            speedLayout.childAlignment = TextAnchor.MiddleCenter;
+            speedLayout.childControlWidth = true;
+            speedLayout.childControlHeight = true;
+            speedLayout.childForceExpandWidth = false;
+            speedLayout.childForceExpandHeight = true;
+
+            CreateActionButton(
+                speedBar.transform,
+                "Btn_Orbit_LEO",
+                "LEO (1s Delay)",
+                new Color(0.14f, 0.38f, 0.58f, 1f),
+                122f,
+                38f,
+                font,
+                () => StartSampleLiveFlightScenario(0));
+
+            CreateActionButton(
+                speedBar.transform,
+                "Btn_Orbit_Lunar",
+                "MOON + OVERHEAT (3s)",
+                new Color(0.42f, 0.30f, 0.14f, 1f),
+                168f,
+                38f,
+                font,
+                () => StartSampleLiveFlightScenario(1));
+
+            CreateActionButton(
+                speedBar.transform,
+                "Btn_Orbit_Mars",
+                "MARS + CME STORM (10s)",
+                new Color(0.56f, 0.20f, 0.18f, 1f),
+                178f,
+                38f,
+                font,
+                () => StartSampleLiveFlightScenario(2));
+
+            playbackPlayPauseButton = CreateActionButton(
+                speedBar.transform,
+                "Btn_PlayPause",
+                "PAUSE",
+                new Color(0.14f, 0.54f, 0.34f, 1f),
+                74f,
+                38f,
+                font,
+                TogglePlaybackPlayPause);
+            playbackPlayPauseLabel = playbackPlayPauseButton.GetComponentInChildren<Text>();
+
+            playbackStepTickButton = CreateActionButton(
+                speedBar.transform,
+                "Btn_StepTick",
+                "STEP +1",
+                new Color(0.22f, 0.32f, 0.48f, 1f),
+                76f,
+                38f,
+                font,
+                StepPlaybackNextTick);
+
+            playbackSpeed1xButton = CreateActionButton(
+                speedBar.transform,
+                "Btn_Speed_1x",
+                "1x",
+                new Color(0.14f, 0.62f, 0.88f, 1f),
+                48f,
+                38f,
+                font,
+                SetPlaybackSpeed1x);
+
+            playbackSpeed5xButton = CreateActionButton(
+                speedBar.transform,
+                "Btn_Speed_5x",
+                "5x",
+                new Color(0.12f, 0.18f, 0.28f, 0.96f),
+                48f,
+                38f,
+                font,
+                SetPlaybackSpeed5x);
+
+            playbackSpeed10xButton = CreateActionButton(
+                speedBar.transform,
+                "Btn_Speed_10x",
+                "10x",
+                new Color(0.12f, 0.18f, 0.28f, 0.96f),
+                54f,
+                38f,
+                font,
+                SetPlaybackSpeed10x);
+
+            // Main 3-Column Flight Mission Control Row
+            GameObject flightColumns = CreateUIObject("FlightColumnsRow", liveFlightModeRoot.transform);
+            LayoutElement colsLe = flightColumns.AddComponent<LayoutElement>();
+            colsLe.flexibleHeight = 1f;
+            colsLe.preferredHeight = 740f;
+
+            HorizontalLayoutGroup colsLayout = flightColumns.AddComponent<HorizontalLayoutGroup>();
+            colsLayout.spacing = 12f;
+            colsLayout.childControlWidth = true;
+            colsLayout.childControlHeight = true;
+            colsLayout.childForceExpandWidth = false;
+            colsLayout.childForceExpandHeight = true;
+
+            // Column 1: 2D Orbit Radar (OrbitRadarUI from S1-08)
+            GameObject radarCol = CreateUIObject("OrbitRadarColumn", flightColumns.transform);
+            LayoutElement radarLe = radarCol.AddComponent<LayoutElement>();
+            radarLe.flexibleWidth = 0.95f;
+            radarLe.preferredWidth = 570f;
+            orbitRadarUI = radarCol.AddComponent<OrbitRadarUI>();
+            orbitRadarUI.EnsureRadarHierarchy();
+
+            // Column 2: Live Telemetry & Green Autopilot Rule Highlighting (TelemetryHUD)
+            GameObject telemetryCol = CreateUIObject("TelemetryHUDColumn", flightColumns.transform);
+            LayoutElement telemetryLe = telemetryCol.AddComponent<LayoutElement>();
+            telemetryLe.flexibleWidth = 1.15f;
+            telemetryLe.preferredWidth = 690f;
+            telemetryHUD = telemetryCol.AddComponent<TelemetryHUD>();
+            telemetryHUD.EnsureTelemetryHierarchy();
+
+            // Column 3: Manual Override Commands with Signal Delay Timer (ManualOverrideUI)
+            GameObject manualCol = CreateUIObject("ManualOverrideColumn", flightColumns.transform);
+            LayoutElement manualLe = manualCol.AddComponent<LayoutElement>();
+            manualLe.flexibleWidth = 0.90f;
+            manualLe.preferredWidth = 550f;
+            manualOverrideUI = manualCol.AddComponent<ManualOverrideUI>();
+            manualOverrideUI.EnsureManualOverrideHierarchy();
+        }
+
+        private void BuildDebriefSummaryModeView(Transform parent, Font font)
+        {
+            debriefSummaryModeRoot = CreateUIObject("DebriefSummaryModeView_S205", parent);
+            StretchFull(debriefSummaryModeRoot.GetComponent<RectTransform>());
+
+            VerticalLayoutGroup vLayout = debriefSummaryModeRoot.AddComponent<VerticalLayoutGroup>();
+            vLayout.spacing = 8f;
+            vLayout.childControlWidth = true;
+            vLayout.childControlHeight = true;
+            vLayout.childForceExpandWidth = true;
+            vLayout.childForceExpandHeight = false;
+
+            // Outcome Headline Banner
+            BuildOutcomeBanner(debriefSummaryModeRoot.transform, font);
+
+            // Main Two-Column Content Row
+            GameObject mainRow = CreateUIObject("MainContentRow", debriefSummaryModeRoot.transform);
+            LayoutElement mainRowLe = mainRow.AddComponent<LayoutElement>();
+            mainRowLe.flexibleHeight = 1f;
+            mainRowLe.preferredHeight = 470f;
+
+            HorizontalLayoutGroup mainRowLayout = mainRow.AddComponent<HorizontalLayoutGroup>();
+            mainRowLayout.spacing = 16f;
+            mainRowLayout.childControlWidth = true;
+            mainRowLayout.childControlHeight = true;
+            mainRowLayout.childForceExpandWidth = true;
+            mainRowLayout.childForceExpandHeight = true;
+
+            BuildTelemetryMetricsColumn(mainRow.transform, font);
+            BuildRightStateColumn(mainRow.transform, font);
+        }
+
         private void BuildOutcomeBanner(Transform parent, Font font)
         {
-            GameObject bannerObj = CreatePanel("OutcomeBanner", parent, new Color(0.08f, 0.26f, 0.18f, 0.96f), 58f);
+            GameObject bannerObj = CreatePanel("OutcomeBanner", parent, new Color(0.08f, 0.26f, 0.18f, 0.96f), 54f);
             outcomeBannerBackground = bannerObj.GetComponent<Image>();
 
             VerticalLayoutGroup bannerLayout = bannerObj.AddComponent<VerticalLayoutGroup>();
-            bannerLayout.padding = new RectOffset(18, 18, 6, 6);
+            bannerLayout.padding = new RectOffset(18, 18, 5, 5);
             bannerLayout.spacing = 2f;
             bannerLayout.childControlWidth = true;
             bannerLayout.childControlHeight = true;
@@ -1260,7 +2158,7 @@ namespace AstraLink.UI.Debrief
                 bannerObj.transform,
                 font,
                 "MISSION ACCOMPLISHED  •  FINAL SCORE: 162.5 PTS",
-                19,
+                18,
                 FontStyle.Bold,
                 new Color(0.42f, 0.98f, 0.64f, 1f),
                 TextAnchor.MiddleLeft);
@@ -1796,10 +2694,10 @@ namespace AstraLink.UI.Debrief
 
         private void BuildVerificationSwitcherBar(Transform parent, Font font)
         {
-            verificationBarRoot = CreatePanel("VerificationSwitcherBar", parent, new Color(0.09f, 0.15f, 0.26f, 0.98f), 42f);
+            verificationBarRoot = CreatePanel("VerificationSwitcherBar", parent, new Color(0.09f, 0.15f, 0.26f, 0.98f), 40f);
             HorizontalLayoutGroup barLayout = verificationBarRoot.AddComponent<HorizontalLayoutGroup>();
-            barLayout.padding = new RectOffset(14, 14, 5, 5);
-            barLayout.spacing = 8f;
+            barLayout.padding = new RectOffset(12, 12, 4, 4);
+            barLayout.spacing = 6f;
             barLayout.childAlignment = TextAnchor.MiddleCenter;
             barLayout.childControlWidth = true;
             barLayout.childControlHeight = true;
@@ -1810,13 +2708,13 @@ namespace AstraLink.UI.Debrief
                 "VerifyLabel",
                 verificationBarRoot.transform,
                 font,
-                "TEST DEBRIEF STATES (CLICK OR F5-F10):",
-                12,
+                "DEBRIEF PRESETS (S2-05):",
+                11,
                 FontStyle.Bold,
                 new Color(0.68f, 0.82f, 0.96f, 1f),
                 TextAnchor.MiddleLeft);
             LayoutElement labelLe = barLabel.gameObject.AddComponent<LayoutElement>();
-            labelLe.preferredWidth = 270f;
+            labelLe.preferredWidth = 175f;
             labelLe.flexibleWidth = 0f;
 
             CreateActionButton(
@@ -1825,7 +2723,7 @@ namespace AstraLink.UI.Debrief
                 "VICTORY (+50 BONUS)",
                 new Color(0.14f, 0.50f, 0.30f, 1f),
                 0f,
-                38f,
+                32f,
                 font,
                 () => TriggerSampleSuccessScenario(true));
 
@@ -1835,7 +2733,7 @@ namespace AstraLink.UI.Debrief
                 "VICTORY (NO BONUS)",
                 new Color(0.18f, 0.38f, 0.56f, 1f),
                 0f,
-                38f,
+                32f,
                 font,
                 () => TriggerSampleSuccessScenario(false));
 
@@ -1845,7 +2743,7 @@ namespace AstraLink.UI.Debrief
                 "FAIL: BATTERY (0%)",
                 new Color(0.56f, 0.18f, 0.20f, 1f),
                 0f,
-                38f,
+                32f,
                 font,
                 () => TriggerSampleFailureScenario(FailureScenarioType.BatteryDepleted));
 
@@ -1855,7 +2753,7 @@ namespace AstraLink.UI.Debrief
                 "FAIL: RADIATION (CME)",
                 new Color(0.56f, 0.24f, 0.16f, 1f),
                 0f,
-                38f,
+                32f,
                 font,
                 () => TriggerSampleFailureScenario(FailureScenarioType.RadiationDamage));
 
@@ -1865,7 +2763,7 @@ namespace AstraLink.UI.Debrief
                 "FAIL: SSD OVERFLOW",
                 new Color(0.52f, 0.28f, 0.14f, 1f),
                 0f,
-                38f,
+                32f,
                 font,
                 () => TriggerSampleFailureScenario(FailureScenarioType.InsufficientScienceWithSsdLoss));
 
@@ -1875,7 +2773,7 @@ namespace AstraLink.UI.Debrief
                 "FAIL: SCIENCE QUOTA",
                 new Color(0.46f, 0.22f, 0.38f, 1f),
                 0f,
-                38f,
+                32f,
                 font,
                 () => TriggerSampleFailureScenario(FailureScenarioType.InsufficientScienceNoLoss));
         }
@@ -1977,7 +2875,7 @@ namespace AstraLink.UI.Debrief
             if (width > 0f) le.preferredWidth = width;
             if (height > 0f) le.preferredHeight = height;
 
-            Text txt = CreateText("Text", btnObj.transform, font, label, 13, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
+            Text txt = CreateText("Text", btnObj.transform, font, label, 12, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
             StretchFull(txt.GetComponent<RectTransform>());
             return btn;
         }
