@@ -4,11 +4,16 @@ namespace AstraLink.Core
 {
     public enum SpaceEventType
     {
-        Custom = 0,
-        CoronalMassEjection = 1,
-        TransmitterOverheat = 2,
-        MicrometeoroidNoise = 3
+
+        Custom,
+        CoronalMassEjection,
+        TransmitterOverheat,
+        MicrometeoroidNoise
     }
+
+    /// <summary>
+    /// Defines an orbital space weather event or anomaly triggered at a specific orbit and duration.
+    /// </summary>
 
     [Serializable]
     public class SpaceEventDefinition
