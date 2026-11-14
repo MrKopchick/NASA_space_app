@@ -5,48 +5,54 @@ namespace AstraLink.Core
 {
     public class ResourceCalculator
     {
-        public ResourceSummary ResourceCalculator(List<SatelliteComponent> components, RocketOption rocketOption, OrbitDefinition orbitDefinition, MissionGoal missionGoal)
+        public ResourceSummary CalculateResources(
+            List<SatelliteComponent> components,
+            RocketOption rocketOption,
+            OrbitDefinition orbitDefinition,
+            MissionGoal missionGoal)
         {
             var summary = new ResourceSummary();
+            if (components == null || rocketOption == null || orbitDefinition == null || missionGoal == null)
+                return summary;
 
             float totalMass = 0f;
-            float TotalCostThousands = rocketOption.CostThousands;
-            float MaxSolarWatts = 0f;
-            float RtgWatts = 0f;
-            float MaxBatteryWh = 0f;
-            float MaxSsdGb = 0f;
-            float DownlinkGbPerTick = 0f;
-            float TotalShielding = 0f;
-            float OverallReliability = 1f;
-            bool IsBudgetValid = false;
-            bool IsMassValid = false;
+            float totalCostThousands = rocketOption.CostThousands;
+            float maxSolarWatts = 0f;
+            float rtgWatts = 0f;
+            float maxBatteryWh = 0f;
+            float maxSsdGb = 0f;
+            float downlinkGbPerTick = 0f;
+            float totalShielding = 0f;
+            float overallReliability = rocketOption.BaseReliability;
 
-            for (int i = 0; i < components.Count; i++) {
-                if (components[i] == null) continue;
-                totalMass += components[i].MassKg;
-                TotalCostThousands += components[i].CostThousands;
-                MaxSolarWatts += components[i].SolarWatts;
-                RtgWatts += components[i].RtgWatts;
-                MaxBatteryWh += components[i].BatteryCapacityWh;
-                MaxSsdGb += components[i].SsdCapacityGb;
-                DownlinkGbPerTick += components[i].DownlinkRateGbPerTick;
-                TotalShielding += components[i].RadiationShielding;
-                OverallReliability *= components[i].BaseReliability;
+            for (int i = 0; i < components.Count; i++)
+            {
+                var c = components[i];
+                if (c == null) continue;
+
+                totalMass += c.MassKg;
+                totalCostThousands += c.CostThousands;
+                maxSolarWatts += c.SolarWatts;
+                rtgWatts += c.RtgWatts;
+                maxBatteryWh += c.BatteryCapacityWh;
+                maxSsdGb += c.SsdCapacityGb;
+                downlinkGbPerTick += c.DownlinkRateGbPerTick;
+                totalShielding += c.RadiationShielding;
+                overallReliability *= c.BaseReliability;
             }
-            if (TotalCostThousands <= MissionGoal.BudgetLimitThousands) IsBudgetValid = true;
-            if (totalMass <= MaxOrbitKg(rocketOption, orbitDefinition.OrbitType)) IsMassValid = true;
+
             summary.TotalMassKg = totalMass;
-            summary.TotalCostThousands = TotalCostThousands;
+            summary.TotalCostThousands = totalCostThousands;
             summary.MaxSolarWatts = maxSolarWatts;
             summary.RtgWatts = rtgWatts;
             summary.MaxBatteryWh = maxBatteryWh;
             summary.MaxSsdGb = maxSsdGb;
             summary.DownlinkGbPerTick = downlinkGbPerTick;
             summary.TotalShielding = totalShielding;
-            summary.OverallReliability = OverallReliability;
-            summary.IsBudgetValid = IsBudgetValid;
-            summary.IsMassValid = IsMassValid;
-            
+            summary.OverallReliability = Math.Clamp(overallReliability, 0f, 1f);
+            summary.IsBudgetValid = totalCostThousands <= missionGoal.BudgetLimitThousands;
+            summary.IsMassValid = totalMass <= MaxOrbitKg(rocketOption, orbitDefinition.Type);
+
             return summary;
         }
 
