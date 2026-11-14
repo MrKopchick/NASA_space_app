@@ -63,7 +63,7 @@ namespace AstraLink.UI.Workshop
             rootLayout.childForceExpandHeight = false;
 
             Text header = CreateText("HeaderTitle", rootObj.transform, font,
-                "NASA 6-RESOURCE TELEMETRY", 21, FontStyle.Bold,
+                "NASA 6-RESOURCE TELEMETRY", 20, FontStyle.Bold,
                 new Color(0.55f, 0.85f, 1f, 1f), TextAnchor.MiddleLeft);
             LayoutElement headerLe = header.gameObject.AddComponent<LayoutElement>();
             headerLe.preferredHeight = 30f;
@@ -305,7 +305,7 @@ namespace AstraLink.UI.Workshop
             LayoutElement titleLe = titleTxt.gameObject.AddComponent<LayoutElement>();
             titleLe.flexibleWidth = 1f;
 
-            Text valueTxt = CreateText("Value", topRow.transform, font, "...", 16, FontStyle.Bold,
+            Text valueTxt = CreateText("Value", topRow.transform, font, "...", 15, FontStyle.Bold,
                 Color.white, TextAnchor.MiddleRight);
             LayoutElement valLe = valueTxt.gameObject.AddComponent<LayoutElement>();
             valLe.preferredWidth = 310f;
