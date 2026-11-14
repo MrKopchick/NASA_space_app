@@ -321,7 +321,7 @@ namespace AstraLink.UI.Debrief
             activeManualCommands.Clear();
             _payoutAppliedForCurrentLaunch = false;
             _devSafeMode = false;
-            _isFlightPlaybackCompleted = !_isLiveFlightViewActive || showVerificationControls;
+            _isFlightPlaybackCompleted = !_isLiveFlightViewActive || showVerificationBar;
             if (_solarHudPanel != null) _solarHudPanel.SetDebriefUnlocked(_isFlightPlaybackCompleted);
             if (switchToDebriefButton != null) switchToDebriefButton.interactable = _isFlightPlaybackCompleted;
             if (components != null) _activeComponents = new List<SatelliteComponent>(components);
@@ -373,7 +373,7 @@ namespace AstraLink.UI.Debrief
                 _payoutAppliedForCurrentLaunch = false;
             }
             _devSafeMode = false;
-            _isFlightPlaybackCompleted = !_isLiveFlightViewActive || showVerificationControls;
+            _isFlightPlaybackCompleted = !_isLiveFlightViewActive || showVerificationBar;
             if (_solarHudPanel != null) _solarHudPanel.SetDebriefUnlocked(_isFlightPlaybackCompleted);
             if (switchToDebriefButton != null) switchToDebriefButton.interactable = _isFlightPlaybackCompleted;
 
@@ -432,7 +432,7 @@ namespace AstraLink.UI.Debrief
         /// </summary>
         public void ShowDebriefSummaryView()
         {
-            if (!_isFlightPlaybackCompleted && !showVerificationControls)
+            if (!_isFlightPlaybackCompleted && !showVerificationBar)
             {
                 return;
             }
