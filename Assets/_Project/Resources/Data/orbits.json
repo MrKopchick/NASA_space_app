@@ -2,7 +2,7 @@
   "orbits": [
     {
       "Id": "orbit_leo",
-      "Name": "LEO 400 км (Земля)",
+      "Name": "Low Earth Orbit (400 km)",
       "Type": "LowEarth",
       "OrbitPeriodHours": 1.5,
       "EclipseFraction": 0.35,
@@ -13,7 +13,7 @@
     },
     {
       "Id": "orbit_lunar",
-      "Name": "Орбіта Місяця (100 км)",
+      "Name": "Lunar Orbit (100 km)",
       "Type": "Lunar",
       "OrbitPeriodHours": 2.0,
       "EclipseFraction": 0.45,
@@ -24,7 +24,7 @@
     },
     {
       "Id": "orbit_mars",
-      "Name": "Орбіта Марса (350 км)",
+      "Name": "Mars Orbit (350 km)",
       "Type": "Mars",
       "OrbitPeriodHours": 2.0,
       "EclipseFraction": 0.35,
@@ -35,7 +35,7 @@
     },
     {
       "Id": "orbit_venus",
-      "Name": "Орбіта Венери (300 км, Пісочниця)",
+      "Name": "Venus Orbit (300 km, Sandbox)",
       "Type": "DeepSpace",
       "OrbitPeriodHours": 1.6,
       "EclipseFraction": 0.40,

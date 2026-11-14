@@ -2,7 +2,7 @@
   "rockets": [
     {
       "Id": "rocket_light",
-      "Name": "Легка ракета «Стріла-1»",
+      "Name": "Strila-1 Light Launch Vehicle",
       "CostThousands": 30.0,
       "MaxMassLeoKg": 25.0,
       "MaxMassLunarKg": 8.0,
@@ -12,7 +12,7 @@
     },
     {
       "Id": "rocket_medium",
-      "Name": "Середня ракета «Сокіл-М»",
+      "Name": "Sokil-M Medium Launch Vehicle",
       "CostThousands": 120.0,
       "MaxMassLeoKg": 120.0,
       "MaxMassLunarKg": 45.0,
@@ -22,7 +22,7 @@
     },
     {
       "Id": "rocket_heavy",
-      "Name": "Важка міжпланетна «Титан-9»",
+      "Name": "Titan-9 Heavy Interplanetary Launch Vehicle",
       "CostThousands": 280.0,
       "MaxMassLeoKg": 500.0,
       "MaxMassLunarKg": 180.0,

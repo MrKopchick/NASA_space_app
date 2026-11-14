@@ -2,8 +2,8 @@
   "missions": [
     {
       "Id": "m1_leo_cubesat",
-      "Title": "1. LEO Метео-Кубсат",
-      "Brief": "Виведіть метеосупутник на орбіту Землі 400 км, зберіть 100 балів науки та переживіть 4 витки. Не забудьте про правило економії енергії в тіні!",
+      "Title": "1. LEO Weather CubeSat",
+      "Brief": "Place a weather satellite in a 400 km Earth orbit, collect 100 science points, and complete 4 orbits. Add a rule to save power during eclipse.",
       "OrbitId": "orbit_leo",
       "BudgetLimitThousands": 120.0,
       "TargetSciencePoints": 100.0,
@@ -16,8 +16,8 @@
     },
     {
       "Id": "m2_lunar_mapper",
-      "Title": "2. Місячний Картограф",
-      "Brief": "Створіть карту кратерів Місяця за допомогою радара SAR. Тінь сягає 45% витка, а на 2-му витку можливий перегрів передавача.",
+      "Title": "2. Lunar Mapper",
+      "Brief": "Map lunar craters using synthetic aperture radar. Eclipse covers 45% of each orbit, and the transmitter may overheat on orbit 2.",
       "OrbitId": "orbit_lunar",
       "BudgetLimitThousands": 450.0,
       "TargetSciencePoints": 250.0,
@@ -30,8 +30,8 @@
     },
     {
       "Id": "m3_mars_probe",
-      "Title": "3. Марсіанський Зонд",
-      "Brief": "Дослідіть склад атмосфери Марса спектрометром. Сонце дає лише 43% потоку, на 3-му витку очікується сонячний спалах, а затримка сигналу становить 10 секунд.",
+      "Title": "3. Mars Probe",
+      "Brief": "Use a spectrometer to study the composition of the Martian atmosphere. Solar flux is only 43% of Earth's, a coronal mass ejection is expected on orbit 3, and the signal delay is 10 seconds.",
       "OrbitId": "orbit_mars",
       "BudgetLimitThousands": 900.0,
       "TargetSciencePoints": 400.0,
