@@ -215,9 +215,9 @@ namespace AstraLink.Core
                 int orbitNumber = tick / TicksPerOrbit + 1;
                 float position = (tick % TicksPerOrbit) / (float)TicksPerOrbit;
                 bool eclipse = false;
-                if (position >= 1f - orbit.EclipseFraction) eclipse = true;
+                if (position >= 1f - orbit.EclipseFraction) eclipse = true; // ПОТІМ ПОКРАЩИТИ
                 else eclipse = false;
-                bool inCommWindow = position < orbit.CommWindowFraction;
+                bool inCommWindow = position < orbit.CommWindowFraction; // може потім покращити
 
                 float eventRadiationBoost = 0f, eventSolarMultiplier = 1f, eventDownlinkMultiplier = 1f;
                 string activeEventTitle = string.Empty;
