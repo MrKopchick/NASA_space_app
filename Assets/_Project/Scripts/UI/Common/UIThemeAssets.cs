@@ -12,7 +12,8 @@ namespace AstraLink.UI.Common
     }
 
     /// <summary>
-    /// Central asset registry for all _Project/Art UI, icon, portrait, planet, and spacecraft sprites.
+    /// Central asset registry for all _Project/Art UI, icon, portrait, planet, celestial, spacecraft,
+    /// and segmented LED telemetry bar sprites.
     /// Stored in Resources/UIThemeAssets so both Editor and standalone builds load it reliably.
     /// </summary>
     [CreateAssetMenu(fileName = "UIThemeAssets", menuName = "AstraLink/UI Theme Assets")]
@@ -32,11 +33,16 @@ namespace AstraLink.UI.Common
         public Sprite missionBadge;
         public Sprite spaceCreditsCoin;
 
-        [Header("Portraits")]
+        [Header("Portraits & Frame")]
+        public Sprite portraitFrame;
         public Sprite astraNormal;
         public Sprite astraWarn;
         public Sprite astraError;
         public Sprite dispatcher;
+        public Sprite dispatcherBlue;
+        public Sprite dispatcherArmored;
+        public Sprite dispatcherCyborg;
+        public Sprite spaceDog;
 
         [Header("Backgrounds")]
         public Sprite bgStarfield;
@@ -45,12 +51,32 @@ namespace AstraLink.UI.Common
         public Sprite bgQuietNebula;
         public Sprite bgRingedWorld;
 
-        [Header("Planets")]
+        [Header("Planets & Celestial Hazards")]
         public Sprite planetEarth;
         public Sprite planetMoon;
         public Sprite planetMars;
         public Sprite planetVenus;
         public Sprite planetSun;
+        public Sprite celestialEclipse;
+        public Sprite celestialSupernova;
+        public Sprite celestialMeteor;
+        public Sprite celestialAsteroidField;
+        public Sprite celestialNebula;
+
+        [Header("Launchpad & Rockets")]
+        public Sprite launchPad;
+        public Sprite launchTower;
+        public Sprite rocketFlame;
+        public Sprite rocketSmall;
+        public Sprite rocketMedium;
+        public Sprite rocketHeavy;
+
+        [Header("Telemetry LED Sheets (4x10 grid of 64x16 bars)")]
+        public Sprite telemetryBlueSheet;
+        public Sprite telemetryCyanSheet;
+        public Sprite telemetryPinkSheet;
+        public Sprite telemetryPurpleSheet;
+        public Sprite telemetryBrownSheet;
 
         [Header("Indicators & Icons")]
         public Sprite iconDataChip;
@@ -58,6 +84,14 @@ namespace AstraLink.UI.Common
         public Sprite iconStarChart;
         public Sprite iconCountdownClock;
         public Sprite iconControlPanel;
+        public Sprite iconOxygenGauge;
+        public Sprite iconStarMapTablet;
+        public Sprite iconHoloProjector;
+        public Sprite iconMissionPatchBlank;
+        public Sprite iconNextArrow;
+        public Sprite iconShield;
+        public Sprite iconSolarPanel;
+        public Sprite iconEnergyCell;
 
         [Header("Components, Rockets & Orbits")]
         public List<ItemSpriteEntry> itemSprites = new List<ItemSpriteEntry>();

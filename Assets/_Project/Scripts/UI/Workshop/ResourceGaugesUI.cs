@@ -24,21 +24,26 @@ namespace AstraLink.UI.Workshop
             public Text TitleText;
             public Text ValueText;
             public Image FillImage;
+            public Image LedBarImage;
             public Image CardBackground;
         }
 
         private readonly List<GaugeRowWidgets> _gauges = new List<GaugeRowWidgets>();
         private Text _validationBannerText;
         private Image _validationBannerBg;
+        private Image _previewRocketImg;
+        private Image _previewBusImg;
+        private Image _previewPlanetImg;
+        private Text _previewSummaryText;
 
         private static readonly string[] GaugeTitles = new string[]
         {
-            "1. MASS & LAUNCH VEHICLE LIMIT",
-            "2. MISSION BUILD BUDGET",
-            "3. POWER BALANCE & BATTERY",
-            "4. SCIENCE DATA & SSD STORAGE",
-            "5. COMMUNICATIONS & SIGNAL DELAY",
-            "6. RELIABILITY & RAD SHIELDING"
+            "MASS LIMIT",
+            "BUILD BUDGET",
+            "POWER & BATTERY",
+            "SCIENCE & SSD",
+            "COMMS LINK",
+            "RELIABILITY"
         };
 
         public void EnsureGaugesUIHierarchy()
@@ -56,18 +61,14 @@ namespace AstraLink.UI.Workshop
             StretchFull(rootObj.GetComponent<RectTransform>());
 
             VerticalLayoutGroup rootLayout = rootObj.AddComponent<VerticalLayoutGroup>();
-            rootLayout.padding = new RectOffset(18, 18, 16, 16);
-            rootLayout.spacing = 10f;
+            rootLayout.padding = new RectOffset(16, 16, 12, 12);
+            rootLayout.spacing = 8f;
             rootLayout.childControlWidth = true;
             rootLayout.childControlHeight = true;
             rootLayout.childForceExpandWidth = true;
             rootLayout.childForceExpandHeight = false;
 
-            Text header = CreateText("HeaderTitle", rootObj.transform, font,
-                "NASA 6-RESOURCE TELEMETRY", 20, FontStyle.Bold,
-                new Color(0.55f, 0.85f, 1f, 1f), TextAnchor.MiddleLeft);
-            LayoutElement headerLe = header.gameObject.AddComponent<LayoutElement>();
-            headerLe.preferredHeight = 30f;
+            BuildLaunchpadDiorama(rootObj.transform, font);
 
             _gauges.Clear();
             for (int i = 0; i < 6; i++)
@@ -78,20 +79,121 @@ namespace AstraLink.UI.Workshop
             // Validation Status Banner at bottom
             GameObject bannerObj = CreateUIObject("ValidationBanner", rootObj.transform);
             _validationBannerBg = bannerObj.AddComponent<Image>();
-            UITheme.ApplySlotFrame(_validationBannerBg, selected: true, new Color(0.65f, 1f, 0.78f, 0.96f));
+            UITheme.ApplySlotFrame(_validationBannerBg, selected: true, new Color(0.75f, 1f, 0.84f, 1f));
             LayoutElement bannerLe = bannerObj.AddComponent<LayoutElement>();
-            bannerLe.preferredHeight = 54f;
-            bannerLe.flexibleHeight = 1f;
+            bannerLe.preferredHeight = 46f;
 
             VerticalLayoutGroup bannerLayout = bannerObj.AddComponent<VerticalLayoutGroup>();
-            bannerLayout.padding = new RectOffset(14, 14, 8, 8);
+            bannerLayout.padding = new RectOffset(14, 14, 6, 6);
             bannerLayout.childControlWidth = true;
             bannerLayout.childControlHeight = true;
             bannerLayout.childForceExpandWidth = true;
             bannerLayout.childForceExpandHeight = true;
 
             _validationBannerText = CreateText("StatusText", bannerObj.transform, font,
-                "STATUS: ALL NASA SYSTEMS WITHIN LIMITS", 16, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
+                "ALL SYSTEMS NOMINAL — READY TO LAUNCH", 15, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
+        }
+
+        private void BuildLaunchpadDiorama(Transform parent, Font font)
+        {
+            UIThemeAssets assets = UITheme.Assets;
+
+            GameObject diorama = CreateUIObject("LaunchpadDiorama", parent);
+            Image dBg = diorama.AddComponent<Image>();
+            UITheme.ApplySlotFrame(dBg, selected: true);
+            LayoutElement dLe = diorama.AddComponent<LayoutElement>();
+            dLe.preferredHeight = 195f;
+            dLe.flexibleHeight = 1f;
+
+            // Space Sky Backdrop inside frame
+            GameObject skyObj = CreateUIObject("SkyBackdrop", diorama.transform);
+            RectTransform skyRt = skyObj.GetComponent<RectTransform>();
+            skyRt.anchorMin = new Vector2(0.02f, 0.05f);
+            skyRt.anchorMax = new Vector2(0.98f, 0.95f);
+            skyRt.offsetMin = Vector2.zero;
+            skyRt.offsetMax = Vector2.zero;
+            Image skyImg = skyObj.AddComponent<Image>();
+            skyImg.sprite = assets != null ? assets.bgPlanetApproach : null;
+            skyImg.color = skyImg.sprite != null ? new Color(0.78f, 0.84f, 0.95f, 1f) : new Color(0.04f, 0.08f, 0.16f, 1f);
+
+            // Target Planet in upper right
+            GameObject planetObj = CreateUIObject("TargetPlanetPreview", skyObj.transform);
+            RectTransform planetRt = planetObj.GetComponent<RectTransform>();
+            planetRt.anchorMin = new Vector2(0.74f, 0.38f);
+            planetRt.anchorMax = new Vector2(0.96f, 0.92f);
+            planetRt.offsetMin = Vector2.zero;
+            planetRt.offsetMax = Vector2.zero;
+            _previewPlanetImg = planetObj.AddComponent<Image>();
+            _previewPlanetImg.sprite = assets != null ? assets.planetEarth : null;
+            _previewPlanetImg.preserveAspect = true;
+
+            // Launch Pad Base (left)
+            if (assets != null && assets.launchPad != null)
+            {
+                GameObject padObj = CreateUIObject("LaunchPad", skyObj.transform);
+                RectTransform padRt = padObj.GetComponent<RectTransform>();
+                padRt.anchorMin = new Vector2(0.04f, 0.02f);
+                padRt.anchorMax = new Vector2(0.32f, 0.34f);
+                padRt.offsetMin = Vector2.zero;
+                padRt.offsetMax = Vector2.zero;
+                Image padImg = padObj.AddComponent<Image>();
+                padImg.sprite = assets.launchPad;
+                padImg.preserveAspect = true;
+            }
+
+            // Launch Tower (left of rocket)
+            if (assets != null && assets.launchTower != null)
+            {
+                GameObject towerObj = CreateUIObject("LaunchTower", skyObj.transform);
+                RectTransform towerRt = towerObj.GetComponent<RectTransform>();
+                towerRt.anchorMin = new Vector2(0.04f, 0.24f);
+                towerRt.anchorMax = new Vector2(0.18f, 0.92f);
+                towerRt.offsetMin = Vector2.zero;
+                towerRt.offsetMax = Vector2.zero;
+                Image towerImg = towerObj.AddComponent<Image>();
+                towerImg.sprite = assets.launchTower;
+                towerImg.preserveAspect = true;
+            }
+
+            // Selected Rocket standing on pad
+            GameObject rocketObj = CreateUIObject("SelectedRocketPreview", skyObj.transform);
+            RectTransform rocketRt = rocketObj.GetComponent<RectTransform>();
+            rocketRt.anchorMin = new Vector2(0.14f, 0.22f);
+            rocketRt.anchorMax = new Vector2(0.32f, 0.90f);
+            rocketRt.offsetMin = Vector2.zero;
+            rocketRt.offsetMax = Vector2.zero;
+            _previewRocketImg = rocketObj.AddComponent<Image>();
+            _previewRocketImg.sprite = assets != null ? assets.rocketSmall : null;
+            _previewRocketImg.preserveAspect = true;
+
+            // Assembled Spacecraft Bus Preview in center slot
+            GameObject busFrame = CreateUIObject("SpacecraftPreviewSlot", skyObj.transform);
+            RectTransform busFrameRt = busFrame.GetComponent<RectTransform>();
+            busFrameRt.anchorMin = new Vector2(0.37f, 0.22f);
+            busFrameRt.anchorMax = new Vector2(0.68f, 0.88f);
+            busFrameRt.offsetMin = Vector2.zero;
+            busFrameRt.offsetMax = Vector2.zero;
+            Image bfImg = busFrame.AddComponent<Image>();
+            UITheme.ApplySlotFrame(bfImg, selected: false, new Color(1f, 1f, 1f, 0.85f));
+
+            GameObject busSpriteObj = CreateUIObject("SelectedBusPreview", busFrame.transform);
+            RectTransform bRt = busSpriteObj.GetComponent<RectTransform>();
+            bRt.anchorMin = new Vector2(0.14f, 0.14f);
+            bRt.anchorMax = new Vector2(0.86f, 0.86f);
+            bRt.offsetMin = Vector2.zero;
+            bRt.offsetMax = Vector2.zero;
+            _previewBusImg = busSpriteObj.AddComponent<Image>();
+            _previewBusImg.sprite = UITheme.GetItemSprite("bus_cubesat_3u");
+            _previewBusImg.preserveAspect = true;
+
+            // Caption label at bottom right
+            _previewSummaryText = CreateText("DioramaLabel", skyObj.transform, font,
+                "HANGAR ASSEMBLY BAY", 14, FontStyle.Bold, UITheme.TextGold, TextAnchor.MiddleCenter);
+            RectTransform lblRt = _previewSummaryText.GetComponent<RectTransform>();
+            lblRt.anchorMin = new Vector2(0.34f, 0.02f);
+            lblRt.anchorMax = new Vector2(0.98f, 0.20f);
+            lblRt.offsetMin = Vector2.zero;
+            lblRt.offsetMax = Vector2.zero;
         }
 
         private void BindExistingHierarchy(Transform root)
@@ -107,10 +209,16 @@ namespace AstraLink.UI.Workshop
                     CardBackground = row.GetComponent<Image>(),
                     TitleText = FindChild<Text>(row, "TopRow/Title"),
                     ValueText = FindChild<Text>(row, "TopRow/Value"),
-                    FillImage = FindChild<Image>(row, "BarBg/BarFill")
+                    FillImage = FindChild<Image>(row, "BarBg/BarFill"),
+                    LedBarImage = FindChild<Image>(row, "BarBg/LedBar")
                 };
                 _gauges.Add(w);
             }
+
+            _previewRocketImg = FindChild<Image>(root, "LaunchpadDiorama/SkyBackdrop/SelectedRocketPreview");
+            _previewBusImg = FindChild<Image>(root, "LaunchpadDiorama/SkyBackdrop/SpacecraftPreviewSlot/SelectedBusPreview");
+            _previewPlanetImg = FindChild<Image>(root, "LaunchpadDiorama/SkyBackdrop/TargetPlanetPreview");
+            _previewSummaryText = FindChild<Text>(root, "LaunchpadDiorama/SkyBackdrop/DioramaLabel");
 
             Transform banner = root.Find("ValidationBanner");
             if (banner != null)
@@ -129,6 +237,8 @@ namespace AstraLink.UI.Workshop
         {
             EnsureGaugesUIHierarchy();
             if (summary == null || _gauges.Count < 6) return;
+
+            UpdateLaunchpadDiorama(selectedComponents, rocket, orbit, goal);
 
             float maxMassKg = GetMaxRocketMassForOrbit(rocket, orbit);
             float budgetLimit = goal != null ? goal.BudgetLimitThousands : 120f;
@@ -217,24 +327,65 @@ namespace AstraLink.UI.Workshop
             {
                 if (!summary.IsMassValid)
                 {
-                    _validationBannerBg.color = new Color(0.58f, 0.14f, 0.14f, 0.96f);
-                    _validationBannerText.text = "CRITICAL: SPACECRAFT MASS EXCEEDS ROCKET CAPACITY FOR THIS ORBIT!";
+                    _validationBannerBg.color = new Color(1.0f, 0.62f, 0.65f, 0.98f);
+                    _validationBannerText.text = "OVERWEIGHT: SPACECRAFT TOO HEAVY FOR ROCKET!";
                 }
                 else if (!summary.IsBudgetValid)
                 {
-                    _validationBannerBg.color = new Color(0.58f, 0.14f, 0.14f, 0.96f);
-                    _validationBannerText.text = "CRITICAL: BUILD COST EXCEEDS MISSION CONTRACT BUDGET LIMIT!";
+                    _validationBannerBg.color = new Color(1.0f, 0.62f, 0.65f, 0.98f);
+                    _validationBannerText.text = "OVER BUDGET: REDUCE COMPONENT COST!";
                 }
                 else if (!sensorValid)
                 {
-                    _validationBannerBg.color = new Color(0.62f, 0.36f, 0.10f, 0.96f);
-                    _validationBannerText.text = "WARNING: CONTRACT REQUIRES PAYLOAD SENSOR: " + reqSensor.ToUpperInvariant();
+                    _validationBannerBg.color = new Color(1.0f, 0.84f, 0.56f, 0.98f);
+                    _validationBannerText.text = "MISSING SENSOR: EQUIP " + reqSensor.ToUpperInvariant() + " PAYLOAD!";
                 }
                 else
                 {
-                    _validationBannerBg.color = new Color(0.10f, 0.38f, 0.22f, 0.96f);
-                    _validationBannerText.text = "ALL 6 NASA RESOURCES VALID — READY FOR AUTOPILOT & LAUNCH";
+                    _validationBannerBg.color = new Color(0.68f, 1.0f, 0.80f, 0.98f);
+                    _validationBannerText.text = "ALL SYSTEMS NOMINAL — READY TO LAUNCH";
                 }
+            }
+        }
+
+        private void UpdateLaunchpadDiorama(
+            List<SatelliteComponent> selectedComponents,
+            RocketOption rocket,
+            OrbitDefinition orbit,
+            MissionGoal goal)
+        {
+            if (_previewRocketImg != null && rocket != null)
+            {
+                Sprite rSprite = UITheme.GetItemSprite(rocket.Id);
+                if (rSprite != null) _previewRocketImg.sprite = rSprite;
+            }
+
+            if (_previewBusImg != null && selectedComponents != null)
+            {
+                for (int i = 0; i < selectedComponents.Count; i++)
+                {
+                    SatelliteComponent c = selectedComponents[i];
+                    if (c != null && c.Category == ComponentCategory.CorePlatform)
+                    {
+                        Sprite bSprite = UITheme.GetItemSprite(c.Id);
+                        if (bSprite != null) _previewBusImg.sprite = bSprite;
+                        break;
+                    }
+                }
+            }
+
+            if (_previewPlanetImg != null)
+            {
+                string targetKey = orbit != null ? orbit.Id : (goal != null ? goal.OrbitId : "orbit_leo");
+                Sprite pSprite = UITheme.GetPlanetSprite(targetKey);
+                if (pSprite != null) _previewPlanetImg.sprite = pSprite;
+            }
+
+            if (_previewSummaryText != null)
+            {
+                string rocketLabel = rocket != null ? rocket.Name : "Rocket";
+                string orbitLabel = orbit != null ? orbit.Name : "LEO";
+                _previewSummaryText.text = rocketLabel.ToUpperInvariant() + "  ▶  " + orbitLabel.ToUpperInvariant();
             }
         }
 
@@ -260,15 +411,28 @@ namespace AstraLink.UI.Workshop
             if (g.CardBackground != null)
             {
                 g.CardBackground.color = isAlert
-                    ? new Color(0.28f, 0.10f, 0.12f, 0.95f)
-                    : new Color(0.07f, 0.11f, 0.18f, 0.94f);
+                    ? new Color(1.0f, 0.68f, 0.70f, 0.98f)
+                    : Color.white;
             }
-            if (g.FillImage != null)
+
+            float clamped = Mathf.Clamp01(fill01);
+            LedSheetKind sheet = isAlert ? LedSheetKind.Pink : (index % 2 == 0 ? LedSheetKind.Cyan : LedSheetKind.Blue);
+            Sprite ledSprite = UITheme.GetLedBarSprite(sheet, clamped);
+
+            if (g.LedBarImage != null && ledSprite != null)
             {
+                g.LedBarImage.sprite = ledSprite;
+                g.LedBarImage.color = isAlert ? new Color(1f, 0.78f, 0.78f, 1f) : Color.white;
+                g.LedBarImage.enabled = true;
+                if (g.FillImage != null) g.FillImage.enabled = false;
+            }
+            else if (g.FillImage != null)
+            {
+                g.FillImage.enabled = true;
                 g.FillImage.color = barColor;
                 RectTransform fillRt = g.FillImage.GetComponent<RectTransform>();
                 fillRt.anchorMin = Vector2.zero;
-                fillRt.anchorMax = new Vector2(Mathf.Clamp01(fill01), 1f);
+                fillRt.anchorMax = new Vector2(clamped, 1f);
                 fillRt.offsetMin = Vector2.zero;
                 fillRt.offsetMax = Vector2.zero;
             }
@@ -281,11 +445,11 @@ namespace AstraLink.UI.Workshop
             UITheme.ApplyPanelFrame(cardBg, useDialogueBox: true);
 
             LayoutElement rowLe = rowObj.AddComponent<LayoutElement>();
-            rowLe.preferredHeight = 92f;
+            rowLe.preferredHeight = 68f;
 
             VerticalLayoutGroup vLayout = rowObj.AddComponent<VerticalLayoutGroup>();
-            vLayout.padding = new RectOffset(14, 14, 10, 10);
-            vLayout.spacing = 8f;
+            vLayout.padding = new RectOffset(12, 12, 7, 7);
+            vLayout.spacing = 4f;
             vLayout.childControlWidth = true;
             vLayout.childControlHeight = true;
             vLayout.childForceExpandWidth = true;
@@ -293,7 +457,7 @@ namespace AstraLink.UI.Workshop
 
             GameObject topRow = CreateUIObject("TopRow", rowObj.transform);
             LayoutElement topLe = topRow.AddComponent<LayoutElement>();
-            topLe.preferredHeight = 26f;
+            topLe.preferredHeight = 24f;
 
             HorizontalLayoutGroup hLayout = topRow.AddComponent<HorizontalLayoutGroup>();
             hLayout.spacing = 8f;
@@ -314,37 +478,42 @@ namespace AstraLink.UI.Workshop
                 iconImg.preserveAspect = true;
             }
 
-            Text titleTxt = CreateText("Title", topRow.transform, font, title, 15, FontStyle.Bold,
-                new Color(0.75f, 0.86f, 0.98f, 1f), TextAnchor.MiddleLeft);
+            Text titleTxt = CreateText("Title", topRow.transform, font, title, 14, FontStyle.Bold,
+                UITheme.TextGold, TextAnchor.MiddleLeft);
             LayoutElement titleLe = titleTxt.gameObject.AddComponent<LayoutElement>();
-            titleLe.flexibleWidth = 1f;
+            titleLe.preferredWidth = 140f;
 
-            Text valueTxt = CreateText("Value", topRow.transform, font, "...", 15, FontStyle.Bold,
+            Text valueTxt = CreateText("Value", topRow.transform, font, "...", 14, FontStyle.Bold,
                 Color.white, TextAnchor.MiddleRight);
             LayoutElement valLe = valueTxt.gameObject.AddComponent<LayoutElement>();
-            valLe.preferredWidth = 310f;
+            valLe.flexibleWidth = 1f;
 
             GameObject barBg = CreateUIObject("BarBg", rowObj.transform);
             Image bgImg = barBg.AddComponent<Image>();
-            UITheme.ApplyNameTab(bgImg, new Color(0.16f, 0.20f, 0.30f, 0.95f));
+            bgImg.color = new Color(0.03f, 0.05f, 0.10f, 0.85f);
             LayoutElement barLe = barBg.AddComponent<LayoutElement>();
-            barLe.preferredHeight = 20f;
+            barLe.preferredHeight = 22f;
 
             GameObject barFill = CreateUIObject("BarFill", barBg.transform);
             Image fillImg = barFill.AddComponent<Image>();
-            UITheme.ApplyNameTab(fillImg, new Color(0.20f, 0.72f, 0.42f, 1f));
-            RectTransform fillRt = barFill.GetComponent<RectTransform>();
-            fillRt.anchorMin = Vector2.zero;
-            fillRt.anchorMax = new Vector2(0.5f, 1f);
-            fillRt.offsetMin = Vector2.zero;
-            fillRt.offsetMax = Vector2.zero;
+            fillImg.color = UITheme.AccentGreen;
+            StretchFull(barFill.GetComponent<RectTransform>());
+            fillImg.enabled = false;
+
+            GameObject ledObj = CreateUIObject("LedBar", barBg.transform);
+            Image ledImg = ledObj.AddComponent<Image>();
+            ledImg.preserveAspect = false;
+            StretchFull(ledObj.GetComponent<RectTransform>());
+            Sprite initLed = UITheme.GetLedBarSprite(LedSheetKind.Cyan, 0.5f);
+            if (initLed != null) ledImg.sprite = initLed;
 
             return new GaugeRowWidgets
             {
                 CardBackground = cardBg,
                 TitleText = titleTxt,
                 ValueText = valueTxt,
-                FillImage = fillImg
+                FillImage = fillImg,
+                LedBarImage = ledImg
             };
         }
 
@@ -362,11 +531,11 @@ namespace AstraLink.UI.Workshop
             switch (index)
             {
                 case 0: return UITheme.GetItemSprite("rocket_medium");
-                case 1: return UITheme.GetItemSprite("pwr_solar_mini");
-                case 2: return UITheme.GetItemSprite("bat_li_small");
-                case 3: return assets.spaceCreditsCoin;
-                case 4: return assets.iconDataChip;
-                case 5: return assets.missionBadge;
+                case 1: return assets.spaceCreditsCoin;
+                case 2: return assets.iconSolarPanel != null ? assets.iconSolarPanel : UITheme.GetItemSprite("pwr_solar_mini");
+                case 3: return assets.iconDataChip;
+                case 4: return UITheme.GetItemSprite("comms_uhf_basic");
+                case 5: return assets.iconShield != null ? assets.iconShield : assets.missionBadge;
                 default: return null;
             }
         }

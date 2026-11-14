@@ -181,6 +181,13 @@ namespace AstraLink.UI.Debrief
         private GameObject _sampleOrbitLeoBtn;
         private GameObject _sampleOrbitLunarBtn;
         private GameObject _sampleOrbitMarsBtn;
+        private LayoutElement _playbackSpeedBarLe;
+        private Image _outcomePortraitImage;
+        private Image _scienceLedBar;
+        private Image _budgetLedBar;
+        private Image _minBatteryLedBar;
+        private Image _finalHealthLedBar;
+        private Image _reliabilityLedBar;
 
         /// <summary>
         /// Gets the currently displayed <see cref="MissionReport"/>.
@@ -438,8 +445,8 @@ namespace AstraLink.UI.Debrief
             if (liveFlightModeRoot != null) liveFlightModeRoot.SetActive(liveFlightMode);
             if (debriefSummaryModeRoot != null) debriefSummaryModeRoot.SetActive(!liveFlightMode);
 
-            HighlightModeButton(switchToLiveFlightButton, liveFlightMode, new Color(0.14f, 0.58f, 0.86f, 1f));
-            HighlightModeButton(switchToDebriefButton, !liveFlightMode, new Color(0.16f, 0.56f, 0.36f, 1f));
+            HighlightModeButton(switchToLiveFlightButton, liveFlightMode, new Color(0.60f, 0.94f, 1.0f, 1f));
+            HighlightModeButton(switchToDebriefButton, !liveFlightMode, UITheme.ButtonTintSuccess);
         }
 
         private static void HighlightModeButton(Button btn, bool active, Color activeColor)
@@ -448,7 +455,7 @@ namespace AstraLink.UI.Debrief
             Image img = btn.GetComponent<Image>();
             if (img != null)
             {
-                img.color = active ? activeColor : new Color(0.12f, 0.18f, 0.28f, 0.96f);
+                img.color = active ? activeColor : UITheme.ButtonTintMuted;
             }
         }
 
@@ -795,9 +802,10 @@ namespace AstraLink.UI.Debrief
 
         private void UpdatePlaybackSpeedButtonHighlights(float speed)
         {
-            HighlightModeButton(playbackSpeed1xButton, Mathf.Approximately(speed, 1.0f), new Color(0.14f, 0.62f, 0.88f, 1f));
-            HighlightModeButton(playbackSpeed5xButton, Mathf.Approximately(speed, 5.0f), new Color(0.14f, 0.62f, 0.88f, 1f));
-            HighlightModeButton(playbackSpeed10xButton, Mathf.Approximately(speed, 10.0f), new Color(0.14f, 0.62f, 0.88f, 1f));
+            Color activeTint = new Color(0.60f, 0.94f, 1.0f, 1f);
+            HighlightModeButton(playbackSpeed1xButton, Mathf.Approximately(speed, 1.0f), activeTint);
+            HighlightModeButton(playbackSpeed5xButton, Mathf.Approximately(speed, 5.0f), activeTint);
+            HighlightModeButton(playbackSpeed10xButton, Mathf.Approximately(speed, 10.0f), activeTint);
         }
 
         /// <summary>
@@ -1044,8 +1052,8 @@ namespace AstraLink.UI.Debrief
             if (liveFlightModeRoot != null) liveFlightModeRoot.SetActive(_isLiveFlightViewActive);
             if (debriefSummaryModeRoot != null) debriefSummaryModeRoot.SetActive(!_isLiveFlightViewActive);
 
-            HighlightModeButton(switchToLiveFlightButton, _isLiveFlightViewActive, new Color(0.14f, 0.58f, 0.86f, 1f));
-            HighlightModeButton(switchToDebriefButton, !_isLiveFlightViewActive, new Color(0.16f, 0.56f, 0.36f, 1f));
+            HighlightModeButton(switchToLiveFlightButton, _isLiveFlightViewActive, new Color(0.60f, 0.94f, 1.0f, 1f));
+            HighlightModeButton(switchToDebriefButton, !_isLiveFlightViewActive, UITheme.ButtonTintSuccess);
 
             string missionTitle = _activeGoal != null && !string.IsNullOrEmpty(_activeGoal.Title)
                 ? _activeGoal.Title
@@ -1119,9 +1127,15 @@ namespace AstraLink.UI.Debrief
             if (scienceMetricBarFill != null)
             {
                 scienceMetricBarFill.fillAmount = scienceRatio;
-                scienceMetricBarFill.color = scienceMet
-                    ? new Color(0.22f, 0.84f, 0.48f, 1f)
-                    : new Color(0.92f, 0.32f, 0.30f, 1f);
+                scienceMetricBarFill.color = new Color(
+                    scienceMet ? 0.22f : 0.92f,
+                    scienceMet ? 0.84f : 0.32f,
+                    scienceMet ? 0.48f : 0.30f,
+                    0.18f);
+            }
+            if (_scienceLedBar != null)
+            {
+                _scienceLedBar.sprite = UITheme.GetLedBarSprite(scienceMet ? LedSheetKind.Cyan : LedSheetKind.Pink, scienceRatio);
             }
 
             float budgetLimit = _activeGoal != null && _activeGoal.BudgetLimitThousands > 0f
@@ -1142,7 +1156,7 @@ namespace AstraLink.UI.Debrief
                     budgetSpent,
                     budgetLimit);
                 budgetMetricValueText.color = budgetValid
-                    ? new Color(0.45f, 0.88f, 1.0f, 1f)
+                    ? new Color(0.45f, 0.88f, 1f, 1f)
                     : new Color(1.0f, 0.45f, 0.42f, 1f);
             }
             if (budgetMetricDetailText != null)
@@ -1156,9 +1170,15 @@ namespace AstraLink.UI.Debrief
             if (budgetMetricBarFill != null)
             {
                 budgetMetricBarFill.fillAmount = budgetRatio;
-                budgetMetricBarFill.color = budgetValid
-                    ? new Color(0.24f, 0.72f, 0.96f, 1f)
-                    : new Color(0.92f, 0.32f, 0.30f, 1f);
+                budgetMetricBarFill.color = new Color(
+                    budgetValid ? 0.24f : 0.92f,
+                    budgetValid ? 0.72f : 0.32f,
+                    budgetValid ? 0.96f : 0.30f,
+                    0.18f);
+            }
+            if (_budgetLedBar != null)
+            {
+                _budgetLedBar.sprite = UITheme.GetLedBarSprite(budgetValid ? LedSheetKind.Blue : LedSheetKind.Brown, budgetRatio);
             }
 
             float minBat = Mathf.Clamp(report.MinBatteryPercent, 0f, 100f);
@@ -1181,9 +1201,15 @@ namespace AstraLink.UI.Debrief
             if (minBatteryMetricBarFill != null)
             {
                 minBatteryMetricBarFill.fillAmount = minBat / 100.0f;
-                minBatteryMetricBarFill.color = minBat <= 0.01f
-                    ? new Color(0.92f, 0.26f, 0.26f, 1f)
-                    : (batMarginMet ? new Color(0.22f, 0.84f, 0.48f, 1f) : new Color(0.95f, 0.68f, 0.20f, 1f));
+                minBatteryMetricBarFill.color = new Color(
+                    minBat <= 0.01f ? 0.92f : (batMarginMet ? 0.22f : 0.95f),
+                    minBat <= 0.01f ? 0.26f : (batMarginMet ? 0.84f : 0.68f),
+                    minBat <= 0.01f ? 0.26f : (batMarginMet ? 0.48f : 0.20f),
+                    0.18f);
+            }
+            if (_minBatteryLedBar != null)
+            {
+                _minBatteryLedBar.sprite = UITheme.GetLedBarSprite(batMarginMet ? LedSheetKind.Cyan : LedSheetKind.Brown, minBat / 100.0f);
             }
 
             float finalHealth = Mathf.Clamp(report.FinalHealthPercent, 0f, 100f);
@@ -1206,9 +1232,15 @@ namespace AstraLink.UI.Debrief
             if (finalHealthMetricBarFill != null)
             {
                 finalHealthMetricBarFill.fillAmount = finalHealth / 100.0f;
-                finalHealthMetricBarFill.color = finalHealth <= 0.01f
-                    ? new Color(0.92f, 0.26f, 0.26f, 1f)
-                    : (healthMarginMet ? new Color(0.22f, 0.84f, 0.48f, 1f) : new Color(0.95f, 0.68f, 0.20f, 1f));
+                finalHealthMetricBarFill.color = new Color(
+                    finalHealth <= 0.01f ? 0.92f : (healthMarginMet ? 0.22f : 0.95f),
+                    finalHealth <= 0.01f ? 0.26f : (healthMarginMet ? 0.84f : 0.68f),
+                    finalHealth <= 0.01f ? 0.26f : (healthMarginMet ? 0.48f : 0.20f),
+                    0.18f);
+            }
+            if (_finalHealthLedBar != null)
+            {
+                _finalHealthLedBar.sprite = UITheme.GetLedBarSprite(healthMarginMet ? LedSheetKind.Cyan : LedSheetKind.Pink, finalHealth / 100.0f);
             }
 
             float reliability = _activeResources != null && _activeResources.OverallReliability > 0f
@@ -1233,9 +1265,15 @@ namespace AstraLink.UI.Debrief
             if (reliabilityMetricBarFill != null)
             {
                 reliabilityMetricBarFill.fillAmount = reliabilityPercent / 100.0f;
-                reliabilityMetricBarFill.color = relMarginMet
-                    ? new Color(0.22f, 0.84f, 0.48f, 1f)
-                    : new Color(0.95f, 0.68f, 0.20f, 1f);
+                reliabilityMetricBarFill.color = new Color(
+                    relMarginMet ? 0.22f : 0.95f,
+                    relMarginMet ? 0.84f : 0.68f,
+                    relMarginMet ? 0.48f : 0.20f,
+                    0.18f);
+            }
+            if (_reliabilityLedBar != null)
+            {
+                _reliabilityLedBar.sprite = UITheme.GetLedBarSprite(relMarginMet ? LedSheetKind.Blue : LedSheetKind.Brown, reliabilityPercent / 100.0f);
             }
         }
 
@@ -1266,17 +1304,22 @@ namespace AstraLink.UI.Debrief
 
             if (statusBadgeBackground != null)
             {
-                statusBadgeBackground.color = new Color(0.12f, 0.48f, 0.28f, 1f);
+                statusBadgeBackground.color = UITheme.ButtonTintSuccess;
             }
             if (statusBadgeText != null)
             {
                 statusBadgeText.text = "STATUS: MISSION SUCCESS";
-                statusBadgeText.color = new Color(0.85f, 1.0f, 0.90f, 1f);
+                statusBadgeText.color = Color.white;
             }
 
+            if (_outcomePortraitImage != null && UITheme.Assets != null)
+            {
+                _outcomePortraitImage.sprite = UITheme.Assets.astraNormal;
+                _outcomePortraitImage.color = Color.white;
+            }
             if (outcomeBannerBackground != null)
             {
-                outcomeBannerBackground.color = new Color(0.08f, 0.26f, 0.18f, 0.96f);
+                outcomeBannerBackground.color = new Color(0.76f, 1.0f, 0.84f, 0.98f);
             }
             if (outcomeHeadlineText != null)
             {
@@ -1302,8 +1345,8 @@ namespace AstraLink.UI.Debrief
             if (ratingGradeBadgeBg != null)
             {
                 ratingGradeBadgeBg.color = reliabilityBonusEarned
-                    ? new Color(0.14f, 0.54f, 0.32f, 1f)
-                    : new Color(0.20f, 0.44f, 0.68f, 1f);
+                    ? UITheme.ButtonTintSuccess
+                    : new Color(0.64f, 0.92f, 1.0f, 1f);
             }
             if (ratingGradeBadgeText != null)
             {
@@ -1326,8 +1369,8 @@ namespace AstraLink.UI.Debrief
             if (reliabilityBonusCardBg != null)
             {
                 reliabilityBonusCardBg.color = reliabilityBonusEarned
-                    ? new Color(0.09f, 0.30f, 0.20f, 0.95f)
-                    : new Color(0.28f, 0.22f, 0.10f, 0.95f);
+                    ? new Color(0.76f, 1.0f, 0.84f, 0.98f)
+                    : new Color(1.0f, 0.88f, 0.58f, 0.98f);
             }
             if (reliabilityBonusTitleText != null)
             {
@@ -1399,21 +1442,26 @@ namespace AstraLink.UI.Debrief
 
             if (statusBadgeBackground != null)
             {
-                statusBadgeBackground.color = new Color(0.58f, 0.14f, 0.16f, 1f);
+                statusBadgeBackground.color = UITheme.ButtonTintDanger;
             }
             if (statusBadgeText != null)
             {
                 statusBadgeText.text = "STATUS: MISSION FAILED";
-                statusBadgeText.color = new Color(1.0f, 0.88f, 0.88f, 1f);
+                statusBadgeText.color = Color.white;
             }
 
+            if (_outcomePortraitImage != null && UITheme.Assets != null)
+            {
+                _outcomePortraitImage.sprite = UITheme.Assets.astraError;
+                _outcomePortraitImage.color = Color.white;
+            }
             if (outcomeBannerBackground != null)
             {
-                outcomeBannerBackground.color = new Color(0.32f, 0.09f, 0.12f, 0.96f);
+                outcomeBannerBackground.color = new Color(1.0f, 0.72f, 0.72f, 0.98f);
             }
             if (outcomeHeadlineText != null)
             {
-                outcomeHeadlineText.text = "WHY DID IT FAIL?  •  A.S.T.R.A. POST-FLIGHT ANOMALY INVESTIGATION";
+                outcomeHeadlineText.text = "MISSION ANOMALY REPORT  •  A.S.T.R.A. DIAGNOSTICS";
                 outcomeHeadlineText.color = new Color(1.0f, 0.48f, 0.46f, 1f);
             }
             if (outcomeSublineText != null)
@@ -1425,7 +1473,7 @@ namespace AstraLink.UI.Debrief
 
             if (failureTitleBannerBg != null)
             {
-                failureTitleBannerBg.color = new Color(0.42f, 0.11f, 0.14f, 0.98f);
+                failureTitleBannerBg.color = new Color(1.0f, 0.68f, 0.70f, 0.98f);
             }
             if (failureTitleText != null)
             {
@@ -2049,6 +2097,7 @@ namespace AstraLink.UI.Debrief
             if (_sampleOrbitLeoBtn != null) _sampleOrbitLeoBtn.SetActive(showVerificationBar);
             if (_sampleOrbitLunarBtn != null) _sampleOrbitLunarBtn.SetActive(showVerificationBar);
             if (_sampleOrbitMarsBtn != null) _sampleOrbitMarsBtn.SetActive(showVerificationBar);
+            if (_playbackSpeedBarLe != null) _playbackSpeedBarLe.preferredWidth = showVerificationBar ? 820f : 370f;
         }
 
         private void Update()
@@ -2117,7 +2166,16 @@ namespace AstraLink.UI.Debrief
             {
                 baseBg = gameObject.AddComponent<Image>();
             }
-            baseBg.color = new Color(0.04f, 0.07f, 0.13f, 1f);
+            UIThemeAssets rootAssets = UITheme.Assets;
+            if (rootAssets != null && rootAssets.bgPlanetApproach != null)
+            {
+                baseBg.sprite = rootAssets.bgPlanetApproach;
+                baseBg.color = new Color(0.28f, 0.34f, 0.44f, 1f);
+            }
+            else
+            {
+                baseBg.color = new Color(0.04f, 0.07f, 0.13f, 1f);
+            }
 
             GameObject contentRoot = CreateUIObject("DebriefContentRoot_v4", transform);
             StretchFull(contentRoot.GetComponent<RectTransform>());
@@ -2151,7 +2209,7 @@ namespace AstraLink.UI.Debrief
 
         private void BuildTopHeaderBar(Transform parent, Font font)
         {
-            GameObject headerBar = CreatePanel("HeaderBar", parent, new Color(0.07f, 0.12f, 0.21f, 0.98f), 50f);
+            GameObject headerBar = CreatePanel("HeaderBar", parent, Color.white, 54f);
             HorizontalLayoutGroup headerLayout = headerBar.AddComponent<HorizontalLayoutGroup>();
             headerLayout.padding = new RectOffset(14, 14, 5, 5);
             headerLayout.spacing = 10f;
@@ -2160,6 +2218,19 @@ namespace AstraLink.UI.Debrief
             headerLayout.childControlHeight = true;
             headerLayout.childForceExpandWidth = false;
             headerLayout.childForceExpandHeight = true;
+
+            UIThemeAssets assets = UITheme.Assets;
+            if (assets != null && assets.missionBadge != null)
+            {
+                GameObject badgeIconObj = CreateUIObject("HeaderMissionBadge", headerBar.transform);
+                LayoutElement bLe = badgeIconObj.AddComponent<LayoutElement>();
+                bLe.minWidth = 36f;
+                bLe.preferredWidth = 36f;
+                Image bImg = badgeIconObj.AddComponent<Image>();
+                bImg.sprite = assets.missionBadge;
+                bImg.preserveAspect = true;
+                bImg.raycastTarget = false;
+            }
 
             GameObject titleStack = CreateUIObject("TitleStack", headerBar.transform);
             LayoutElement titleStackLe = titleStack.AddComponent<LayoutElement>();
@@ -2176,10 +2247,10 @@ namespace AstraLink.UI.Debrief
                 "ScreenTitle",
                 titleStack.transform,
                 font,
-                "ASTRA-LINK // FLIGHT TELEMETRY PLAYBACK (S2-04) & MISSION DEBRIEF (S2-05)",
+                "ASTRA-LINK // FLIGHT TELEMETRY & MISSION REPORT",
                 17,
                 FontStyle.Bold,
-                new Color(0.92f, 0.97f, 1.0f, 1f),
+                UITheme.TextPrimary,
                 TextAnchor.MiddleLeft);
 
             missionContextSubtitleText = CreateText(
@@ -2189,32 +2260,34 @@ namespace AstraLink.UI.Debrief
                 "Contract: 1. LEO Weather CubeSat   •   Orbit: LEO 400 km (Delay: 1.0s)",
                 12,
                 FontStyle.Normal,
-                new Color(0.65f, 0.80f, 0.95f, 1f),
+                UITheme.TextSecondary,
                 TextAnchor.MiddleLeft);
 
             switchToLiveFlightButton = CreateActionButton(
                 headerBar.transform,
                 "Btn_Mode_LiveFlight_S204",
-                "[S2-04] LIVE FLIGHT & RADAR",
-                new Color(0.14f, 0.58f, 0.86f, 1f),
-                245f,
-                38f,
+                "LIVE FLIGHT & RADAR",
+                new Color(0.60f, 0.94f, 1.0f, 1f),
+                225f,
+                40f,
                 font,
                 ShowLiveFlightView);
+            AddButtonLeadingIcon(switchToLiveFlightButton, assets != null ? assets.radarScreen : null, 18f);
 
             switchToDebriefButton = CreateActionButton(
                 headerBar.transform,
                 "Btn_Mode_Debrief_S205",
-                "[S2-05] POST-FLIGHT DEBRIEF",
-                new Color(0.12f, 0.18f, 0.28f, 0.96f),
-                245f,
-                38f,
+                "POST-FLIGHT DEBRIEF",
+                UITheme.ButtonTintMuted,
+                225f,
+                40f,
                 font,
                 ShowDebriefSummaryView);
+            AddButtonLeadingIcon(switchToDebriefButton, assets != null ? assets.missionBadge : null, 18f);
 
-            GameObject badgeObj = CreatePanel("StatusBadge", headerBar.transform, new Color(0.12f, 0.48f, 0.28f, 1f), 38f);
+            GameObject badgeObj = CreatePanel("StatusBadge", headerBar.transform, UITheme.ButtonTintSuccess, 40f);
             LayoutElement badgeLe = badgeObj.GetComponent<LayoutElement>();
-            badgeLe.preferredWidth = 230f;
+            badgeLe.preferredWidth = 220f;
             statusBadgeBackground = badgeObj.GetComponent<Image>();
 
             statusBadgeText = CreateText(
@@ -2222,11 +2295,14 @@ namespace AstraLink.UI.Debrief
                 badgeObj.transform,
                 font,
                 "STATUS: MISSION SUCCESS",
-                14,
+                13,
                 FontStyle.Bold,
                 Color.white,
                 TextAnchor.MiddleCenter);
             StretchFull(statusBadgeText.GetComponent<RectTransform>());
+            Shadow statusShadow = statusBadgeText.gameObject.AddComponent<Shadow>();
+            statusShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
+            statusShadow.effectDistance = new Vector2(1f, -1f);
         }
 
         private void BuildLiveFlightModeView(Transform parent, Font font)
@@ -2259,9 +2335,9 @@ namespace AstraLink.UI.Debrief
             eventPopupUI.EnsurePopupHierarchy();
 
             // Speed & Playback Bar (1x, 5x, 10x, Play/Pause, Step +1, Scenario Presets)
-            GameObject speedBar = CreatePanel("PlaybackSpeedAndOrbitBar", topControlsRow.transform, new Color(0.07f, 0.12f, 0.21f, 0.98f), 52f);
-            LayoutElement speedBarLe = speedBar.GetComponent<LayoutElement>();
-            speedBarLe.preferredWidth = 820f;
+            GameObject speedBar = CreatePanel("PlaybackSpeedAndOrbitBar", topControlsRow.transform, Color.white, 52f);
+            _playbackSpeedBarLe = speedBar.GetComponent<LayoutElement>();
+            _playbackSpeedBarLe.preferredWidth = showVerificationBar ? 820f : 370f;
 
             HorizontalLayoutGroup speedLayout = speedBar.AddComponent<HorizontalLayoutGroup>();
             speedLayout.padding = new RectOffset(10, 10, 6, 6);
@@ -2436,11 +2512,29 @@ namespace AstraLink.UI.Debrief
 
         private void BuildOutcomeBanner(Transform parent, Font font)
         {
-            GameObject bannerObj = CreatePanel("OutcomeBanner", parent, new Color(0.08f, 0.26f, 0.18f, 0.96f), 54f);
+            GameObject bannerObj = CreatePanel("OutcomeBanner", parent, Color.white, 72f);
             outcomeBannerBackground = bannerObj.GetComponent<Image>();
 
-            VerticalLayoutGroup bannerLayout = bannerObj.AddComponent<VerticalLayoutGroup>();
-            bannerLayout.padding = new RectOffset(18, 18, 5, 5);
+            HorizontalLayoutGroup bannerRow = bannerObj.AddComponent<HorizontalLayoutGroup>();
+            bannerRow.padding = new RectOffset(14, 16, 6, 6);
+            bannerRow.spacing = 14f;
+            bannerRow.childAlignment = TextAnchor.MiddleLeft;
+            bannerRow.childControlWidth = true;
+            bannerRow.childControlHeight = true;
+            bannerRow.childForceExpandWidth = false;
+            bannerRow.childForceExpandHeight = true;
+
+            UIThemeAssets assets = UITheme.Assets;
+            GameObject portraitHolder = UITheme.CreateFramedPortrait(bannerObj.transform, "OutcomeAstraPortrait", assets != null ? assets.astraNormal : null, 58f);
+            Transform charTf = portraitHolder.transform.Find("CharacterSprite");
+            if (charTf != null)
+            {
+                _outcomePortraitImage = charTf.GetComponent<Image>();
+            }
+
+            GameObject textCol = CreateUIObject("OutcomeTextCol", bannerObj.transform);
+            textCol.AddComponent<LayoutElement>().flexibleWidth = 1f;
+            VerticalLayoutGroup bannerLayout = textCol.AddComponent<VerticalLayoutGroup>();
             bannerLayout.spacing = 2f;
             bannerLayout.childControlWidth = true;
             bannerLayout.childControlHeight = true;
@@ -2449,7 +2543,7 @@ namespace AstraLink.UI.Debrief
 
             outcomeHeadlineText = CreateText(
                 "OutcomeHeadline",
-                bannerObj.transform,
+                textCol.transform,
                 font,
                 "MISSION ACCOMPLISHED  •  FINAL SCORE: 162.5 PTS",
                 18,
@@ -2459,25 +2553,37 @@ namespace AstraLink.UI.Debrief
 
             outcomeSublineText = CreateText(
                 "OutcomeSubline",
-                bannerObj.transform,
+                textCol.transform,
                 font,
                 "All orbital objectives verified by NASA Ground Control.",
                 13,
                 FontStyle.Normal,
-                new Color(0.84f, 0.95f, 0.88f, 1f),
+                UITheme.TextPrimary,
                 TextAnchor.MiddleLeft);
+
+            if (assets != null && assets.missionBadge != null)
+            {
+                GameObject badgeIcon = CreateUIObject("OutcomeBadgeIcon", bannerObj.transform);
+                LayoutElement bLe = badgeIcon.AddComponent<LayoutElement>();
+                bLe.minWidth = 48f;
+                bLe.preferredWidth = 48f;
+                Image bImg = badgeIcon.AddComponent<Image>();
+                bImg.sprite = assets.missionBadge;
+                bImg.preserveAspect = true;
+                bImg.raycastTarget = false;
+            }
         }
 
         private void BuildTelemetryMetricsColumn(Transform parent, Font font)
         {
-            GameObject leftCol = CreatePanel("TelemetryMetricsColumn", parent, new Color(0.07f, 0.11f, 0.19f, 0.98f), 0f);
+            GameObject leftCol = CreatePanel("TelemetryMetricsColumn", parent, Color.white, 0f);
             LayoutElement leftLe = leftCol.AddComponent<LayoutElement>();
             leftLe.flexibleWidth = 0.95f;
             leftLe.preferredWidth = 820f;
 
             VerticalLayoutGroup leftLayout = leftCol.AddComponent<VerticalLayoutGroup>();
             leftLayout.padding = new RectOffset(16, 16, 12, 12);
-            leftLayout.spacing = 7f;
+            leftLayout.spacing = 8f;
             leftLayout.childControlWidth = true;
             leftLayout.childControlHeight = true;
             leftLayout.childForceExpandWidth = true;
@@ -2487,71 +2593,88 @@ namespace AstraLink.UI.Debrief
                 "MetricsHeader",
                 leftCol.transform,
                 font,
-                "FLIGHT TELEMETRY & NASA RESOURCE SUMMARY",
+                "FLIGHT TELEMETRY & RESOURCE SUMMARY",
                 16,
                 FontStyle.Bold,
-                new Color(0.55f, 0.84f, 1.0f, 1f),
+                UITheme.AccentCyan,
                 TextAnchor.MiddleLeft);
+
+            UIThemeAssets assets = UITheme.Assets;
 
             BuildMetricCard(
                 leftCol.transform,
                 font,
                 "Metric_Science",
-                "1. DELIVERED SCIENCE (DOWNLINKED QUOTA)",
+                "DELIVERED SCIENCE QUOTA",
                 "120.0 / 100.0 pts",
                 "Downlinked Quota: 100%   •   Lost SSD Overflow Data: 0.0 Gb",
                 new Color(0.22f, 0.84f, 0.48f, 1f),
+                assets != null ? assets.iconStarChart : null,
+                LedSheetKind.Cyan,
                 out scienceMetricValueText,
                 out scienceMetricDetailText,
-                out scienceMetricBarFill);
+                out scienceMetricBarFill,
+                out _scienceLedBar);
 
             BuildMetricCard(
                 leftCol.transform,
                 font,
                 "Metric_Budget",
-                "2. MISSION BUDGET SPENT (HARDWARE + ROCKET)",
+                "MISSION BUDGET SPENT",
                 "$90.0k / $120.0k",
                 "Unspent Margin: $30.0k   •   Efficiency Score Bonus: +15.0 pts",
                 new Color(0.24f, 0.72f, 0.96f, 1f),
+                assets != null ? assets.spaceCreditsCoin : null,
+                LedSheetKind.Blue,
                 out budgetMetricValueText,
                 out budgetMetricDetailText,
-                out budgetMetricBarFill);
+                out budgetMetricBarFill,
+                out _budgetLedBar);
 
             BuildMetricCard(
                 leftCol.transform,
                 font,
                 "Metric_MinBattery",
-                "3. MINIMUM BATTERY CHARGE (ECLIPSE RESERVE)",
+                "MINIMUM BATTERY RESERVE",
                 "60.0%",
                 "PASS: Above 15.0% NASA reserve threshold (Reliability Bonus OK)",
                 new Color(0.22f, 0.84f, 0.48f, 1f),
+                assets != null ? assets.iconEnergyCell : null,
+                LedSheetKind.Cyan,
                 out minBatteryMetricValueText,
                 out minBatteryMetricDetailText,
-                out minBatteryMetricBarFill);
+                out minBatteryMetricBarFill,
+                out _minBatteryLedBar);
 
             BuildMetricCard(
                 leftCol.transform,
                 font,
                 "Metric_FinalHealth",
-                "4. FINAL ELECTRONICS HEALTH (RADIATION INTEGRITY)",
+                "FINAL ELECTRONICS HEALTH",
                 "100.0%",
                 "PASS: Above 80.0% electronics integrity threshold (Reliability Bonus OK)",
                 new Color(0.22f, 0.84f, 0.48f, 1f),
+                assets != null ? assets.iconShield : null,
+                LedSheetKind.Cyan,
                 out finalHealthMetricValueText,
                 out finalHealthMetricDetailText,
-                out finalHealthMetricBarFill);
+                out finalHealthMetricBarFill,
+                out _finalHealthLedBar);
 
             BuildMetricCard(
                 leftCol.transform,
                 font,
                 "Metric_Reliability",
-                "5. SPACECRAFT OVERALL RELIABILITY",
+                "SPACECRAFT OVERALL RELIABILITY",
                 "92.0%",
                 "PASS: Spacecraft assembly reliability >= 85.0% NASA standard",
                 new Color(0.22f, 0.84f, 0.48f, 1f),
+                assets != null ? assets.missionBadge : null,
+                LedSheetKind.Blue,
                 out reliabilityMetricValueText,
                 out reliabilityMetricDetailText,
-                out reliabilityMetricBarFill);
+                out reliabilityMetricBarFill,
+                out _reliabilityLedBar);
         }
 
         private static void BuildMetricCard(
@@ -2562,20 +2685,52 @@ namespace AstraLink.UI.Debrief
             string initialValue,
             string initialDetail,
             Color barColor,
+            Sprite iconSprite,
+            LedSheetKind ledKind,
             out Text valueText,
             out Text detailText,
-            out Image barFill)
+            out Image barFill,
+            out Image ledBarImage)
         {
-            GameObject card = CreatePanel(name, parent, new Color(0.04f, 0.07f, 0.13f, 0.95f), 74f);
-            VerticalLayoutGroup cardLayout = card.AddComponent<VerticalLayoutGroup>();
-            cardLayout.padding = new RectOffset(14, 14, 6, 6);
+            GameObject card = CreatePanel(name, parent, Color.white, 78f);
+            HorizontalLayoutGroup cardRow = card.AddComponent<HorizontalLayoutGroup>();
+            cardRow.padding = new RectOffset(12, 14, 7, 7);
+            cardRow.spacing = 12f;
+            cardRow.childAlignment = TextAnchor.MiddleLeft;
+            cardRow.childControlWidth = true;
+            cardRow.childControlHeight = true;
+            cardRow.childForceExpandWidth = false;
+            cardRow.childForceExpandHeight = true;
+
+            GameObject iconFrame = CreateUIObject("IconFrame", card.transform);
+            UITheme.ApplySlotFrame(iconFrame.AddComponent<Image>(), selected: false);
+            LayoutElement iconLe = iconFrame.AddComponent<LayoutElement>();
+            iconLe.minWidth = 46f;
+            iconLe.preferredWidth = 46f;
+            if (iconSprite != null)
+            {
+                GameObject iconObj = CreateUIObject("IconSprite", iconFrame.transform);
+                RectTransform iconRt = iconObj.GetComponent<RectTransform>();
+                iconRt.anchorMin = new Vector2(0.12f, 0.12f);
+                iconRt.anchorMax = new Vector2(0.88f, 0.88f);
+                iconRt.offsetMin = Vector2.zero;
+                iconRt.offsetMax = Vector2.zero;
+                Image iconImg = iconObj.AddComponent<Image>();
+                iconImg.sprite = iconSprite;
+                iconImg.preserveAspect = true;
+                iconImg.raycastTarget = false;
+            }
+
+            GameObject contentCol = CreateUIObject("ContentCol", card.transform);
+            contentCol.AddComponent<LayoutElement>().flexibleWidth = 1f;
+            VerticalLayoutGroup cardLayout = contentCol.AddComponent<VerticalLayoutGroup>();
             cardLayout.spacing = 4f;
             cardLayout.childControlWidth = true;
             cardLayout.childControlHeight = true;
             cardLayout.childForceExpandWidth = true;
             cardLayout.childForceExpandHeight = false;
 
-            GameObject topRow = CreateUIObject("TopRow", card.transform);
+            GameObject topRow = CreateUIObject("TopRow", contentCol.transform);
             HorizontalLayoutGroup topLayout = topRow.AddComponent<HorizontalLayoutGroup>();
             topLayout.childControlWidth = true;
             topLayout.childControlHeight = true;
@@ -2589,7 +2744,7 @@ namespace AstraLink.UI.Debrief
                 label,
                 13,
                 FontStyle.Bold,
-                new Color(0.76f, 0.86f, 0.96f, 1f),
+                UITheme.TextPrimary,
                 TextAnchor.MiddleLeft);
             LayoutElement titleLe = titleTxt.gameObject.AddComponent<LayoutElement>();
             titleLe.flexibleWidth = 1f;
@@ -2604,7 +2759,7 @@ namespace AstraLink.UI.Debrief
                 new Color(0.35f, 0.96f, 0.58f, 1f),
                 TextAnchor.MiddleRight);
 
-            GameObject barTrack = CreatePanel("BarTrack", card.transform, new Color(0.12f, 0.18f, 0.28f, 1f), 9f);
+            GameObject barTrack = CreatePanel("BarTrack", contentCol.transform, Color.white, 15f);
             GameObject fillObj = CreateUIObject("BarFill", barTrack.transform);
             StretchFull(fillObj.GetComponent<RectTransform>());
             barFill = fillObj.AddComponent<Image>();
@@ -2613,16 +2768,24 @@ namespace AstraLink.UI.Debrief
             barFill.fillMethod = Image.FillMethod.Horizontal;
             barFill.fillOrigin = (int)Image.OriginHorizontal.Left;
             barFill.fillAmount = 0.85f;
-            barFill.color = barColor;
+            barFill.color = new Color(barColor.r, barColor.g, barColor.b, 0.18f);
+
+            GameObject ledObj = CreateUIObject("LedBarOverlay", barTrack.transform);
+            StretchFull(ledObj.GetComponent<RectTransform>());
+            ledBarImage = ledObj.AddComponent<Image>();
+            ledBarImage.sprite = UITheme.GetLedBarSprite(ledKind, 0.85f);
+            ledBarImage.type = Image.Type.Sliced;
+            ledBarImage.color = Color.white;
+            ledBarImage.raycastTarget = false;
 
             detailText = CreateText(
                 "Detail",
-                card.transform,
+                contentCol.transform,
                 font,
                 initialDetail,
                 12,
                 FontStyle.Normal,
-                new Color(0.68f, 0.78f, 0.90f, 1f),
+                UITheme.TextSecondary,
                 TextAnchor.MiddleLeft);
         }
 
@@ -2830,17 +2993,19 @@ namespace AstraLink.UI.Debrief
             returnToHubButton = CreateActionButton(
                 successStateRoot.transform,
                 "Btn_ReturnToHub",
-                "RETURN TO CONTRACT HUB (COLLECT REWARD & NEXT MISSION)",
-                new Color(0.14f, 0.56f, 0.34f, 1f),
+                "COLLECT REWARD & NEXT CONTRACT  ▶",
+                UITheme.ButtonTintSuccess,
                 0f,
                 48f,
                 font,
                 ReturnToHub);
+            UIThemeAssets btnAssets = UITheme.Assets;
+            AddButtonLeadingIcon(returnToHubButton, btnAssets != null ? btnAssets.spaceCreditsCoin : null, 22f);
         }
 
         private void BuildFailureStatePanel(Transform parent, Font font)
         {
-            failureStateRoot = CreatePanel("FailureStatePanel", parent, new Color(0.14f, 0.08f, 0.12f, 0.98f), 0f);
+            failureStateRoot = CreatePanel("FailureStatePanel", parent, Color.white, 0f);
             StretchFull(failureStateRoot.GetComponent<RectTransform>());
 
             VerticalLayoutGroup layout = failureStateRoot.AddComponent<VerticalLayoutGroup>();
@@ -2855,14 +3020,14 @@ namespace AstraLink.UI.Debrief
                 "FailureHeader",
                 failureStateRoot.transform,
                 font,
-                "WHY DID IT FAIL? — A.S.T.R.A. FAILURE DEBRIEF BUILDER",
+                "WHAT WENT WRONG? — A.S.T.R.A. DIAGNOSTICS",
                 16,
                 FontStyle.Bold,
                 new Color(1.0f, 0.50f, 0.48f, 1f),
                 TextAnchor.MiddleLeft);
 
             // 1. FailureTitle Box
-            GameObject titleBox = CreatePanel("FailureTitleBox", failureStateRoot.transform, new Color(0.42f, 0.11f, 0.14f, 0.98f), 68f);
+            GameObject titleBox = CreatePanel("FailureTitleBox", failureStateRoot.transform, Color.white, 68f);
             failureTitleBannerBg = titleBox.GetComponent<Image>();
 
             VerticalLayoutGroup titleBoxLayout = titleBox.AddComponent<VerticalLayoutGroup>();
@@ -2877,7 +3042,7 @@ namespace AstraLink.UI.Debrief
                 "FailureTitleTag",
                 titleBox.transform,
                 font,
-                "1. PRIMARY ANOMALY CLASSIFICATION (FailureTitle):",
+                "1. ANOMALY CLASSIFICATION",
                 12,
                 FontStyle.Bold,
                 new Color(1.0f, 0.78f, 0.78f, 1f),
@@ -2894,7 +3059,7 @@ namespace AstraLink.UI.Debrief
                 TextAnchor.MiddleLeft);
 
             // 2. FailureCause Box
-            GameObject causeBox = CreatePanel("FailureCauseBox", failureStateRoot.transform, new Color(0.06f, 0.08f, 0.14f, 0.96f), 104f);
+            GameObject causeBox = CreatePanel("FailureCauseBox", failureStateRoot.transform, Color.white, 104f);
             VerticalLayoutGroup causeBoxLayout = causeBox.AddComponent<VerticalLayoutGroup>();
             causeBoxLayout.padding = new RectOffset(16, 16, 8, 8);
             causeBoxLayout.spacing = 4f;
@@ -2907,7 +3072,7 @@ namespace AstraLink.UI.Debrief
                 "FailureCauseTag",
                 causeBox.transform,
                 font,
-                "2. ROOT CAUSE & ORBITAL TELEMETRY ANALYSIS (FailureCause):",
+                "2. ROOT CAUSE & ORBITAL TELEMETRY",
                 13,
                 FontStyle.Bold,
                 new Color(1.0f, 0.74f, 0.36f, 1f),
@@ -2925,7 +3090,7 @@ namespace AstraLink.UI.Debrief
             failureCauseText.lineSpacing = 1.15f;
 
             // 3. FailureRecommendation Box
-            GameObject recBox = CreatePanel("FailureRecommendationBox", failureStateRoot.transform, new Color(0.06f, 0.17f, 0.24f, 0.96f), 100f);
+            GameObject recBox = CreatePanel("FailureRecommendationBox", failureStateRoot.transform, Color.white, 100f);
             VerticalLayoutGroup recBoxLayout = recBox.AddComponent<VerticalLayoutGroup>();
             recBoxLayout.padding = new RectOffset(16, 16, 8, 8);
             recBoxLayout.spacing = 4f;
@@ -2938,7 +3103,7 @@ namespace AstraLink.UI.Debrief
                 "FailureRecommendationTag",
                 recBox.transform,
                 font,
-                "3. A.S.T.R.A. CORRECTIVE ENGINEERING ACTION (FailureRecommendation):",
+                "3. A.S.T.R.A. RECOMMENDED ENGINEERING FIX",
                 13,
                 FontStyle.Bold,
                 new Color(0.42f, 0.92f, 1.0f, 1f),
@@ -2956,7 +3121,7 @@ namespace AstraLink.UI.Debrief
             failureRecommendationText.lineSpacing = 1.15f;
 
             // 4. Free Retry Summary Box
-            GameObject noteBox = CreatePanel("FailureTelemetryNoteBox", failureStateRoot.transform, new Color(0.05f, 0.09f, 0.15f, 0.94f), 54f);
+            GameObject noteBox = CreatePanel("FailureTelemetryNoteBox", failureStateRoot.transform, Color.white, 54f);
             VerticalLayoutGroup noteLayout = noteBox.AddComponent<VerticalLayoutGroup>();
             noteLayout.padding = new RectOffset(14, 14, 6, 6);
             noteLayout.childControlWidth = true;
@@ -2971,24 +3136,26 @@ namespace AstraLink.UI.Debrief
                 "FREE RETRY POLICY: $0k deducted from Agency Capital. Modify your components or autopilot rules in the Hangar at no penalty.",
                 12,
                 FontStyle.Normal,
-                new Color(0.82f, 0.90f, 0.96f, 1f),
+                UITheme.TextPrimary,
                 TextAnchor.MiddleLeft);
             failureTelemetryNoteText.supportRichText = true;
 
             returnToWorkshopButton = CreateActionButton(
                 failureStateRoot.transform,
                 "Btn_ReturnToWorkshop",
-                "FREE RETURN TO HANGAR (FIX SATELLITE BUILD / AUTOPILOT RULES)",
-                new Color(0.78f, 0.42f, 0.12f, 1f),
+                "FREE RETURN TO HANGAR (FIX BUILD & RULES)  ▶",
+                UITheme.ButtonTintGold,
                 0f,
                 48f,
                 font,
                 ReturnToWorkshopFree);
+            UIThemeAssets failAssets = UITheme.Assets;
+            AddButtonLeadingIcon(returnToWorkshopButton, failAssets != null ? failAssets.iconRepairWrench : null, 22f);
         }
 
         private void BuildVerificationSwitcherBar(Transform parent, Font font)
         {
-            verificationBarRoot = CreatePanel("VerificationSwitcherBar", parent, new Color(0.09f, 0.15f, 0.26f, 0.98f), 40f);
+            verificationBarRoot = CreatePanel("VerificationSwitcherBar", parent, Color.white, 40f);
             HorizontalLayoutGroup barLayout = verificationBarRoot.AddComponent<HorizontalLayoutGroup>();
             barLayout.padding = new RectOffset(12, 12, 4, 4);
             barLayout.spacing = 6f;
@@ -3002,10 +3169,10 @@ namespace AstraLink.UI.Debrief
                 "VerifyLabel",
                 verificationBarRoot.transform,
                 font,
-                "DEBRIEF PRESETS (S2-05):",
+                "DEBRIEF PRESETS:",
                 11,
                 FontStyle.Bold,
-                new Color(0.68f, 0.82f, 0.96f, 1f),
+                UITheme.TextSecondary,
                 TextAnchor.MiddleLeft);
             LayoutElement labelLe = barLabel.gameObject.AddComponent<LayoutElement>();
             labelLe.preferredWidth = 175f;
@@ -3118,19 +3285,19 @@ namespace AstraLink.UI.Debrief
 
             if (name.Contains("BarTrack") || name.Contains("BarBg"))
             {
-                UITheme.ApplyNameTab(img, new Color(0.18f, 0.24f, 0.36f, 0.95f));
+                UITheme.ApplyNameTab(img, new Color(0.55f, 0.65f, 0.82f, 1.0f));
             }
             else if (name.Contains("Badge") || name.Contains("Reward") || name.Contains("Passive"))
             {
-                UITheme.ApplyNameTab(img, Color.white);
-            }
-            else if (name.Contains("Failure"))
-            {
-                UITheme.ApplyPanelFrame(img, useDialogueBox: true, new Color(1.0f, 0.72f, 0.74f, 0.96f));
+                UITheme.ApplyNameTab(img, bgColor == default(Color) ? Color.white : bgColor);
             }
             else if (name.Contains("Column") || name.Contains("StatePanel"))
             {
                 UITheme.ApplyPanelFrame(img, useDialogueBox: false);
+            }
+            else if (name.Contains("Failure"))
+            {
+                UITheme.ApplyPanelFrame(img, useDialogueBox: true, new Color(1.0f, 0.72f, 0.74f, 0.98f));
             }
             else
             {
@@ -3183,9 +3350,10 @@ namespace AstraLink.UI.Debrief
             Button btn = btnObj.AddComponent<Button>();
 
             Color tint = Color.white;
-            if (name.Contains("Retry") || name.Contains("Hangar")) tint = new Color(1.0f, 0.86f, 0.56f, 1f);
+            if (name.Contains("Retry") || name.Contains("Hangar") || name.Contains("Workshop")) tint = UITheme.ButtonTintGold;
             else if (name.Contains("Return") || name.Contains("Hub") || name.Contains("Play")) tint = UITheme.ButtonTintSuccess;
             else if (name.Contains("Speed")) tint = UITheme.ButtonTintMuted;
+            else if (name.Contains("Step")) tint = UITheme.ButtonTintMuted;
             UITheme.ApplyButtonStyle(btn, img, tint);
 
             btn.onClick.AddListener(onClick);
@@ -3197,6 +3365,32 @@ namespace AstraLink.UI.Debrief
             Text txt = CreateText("Text", btnObj.transform, font, label, 12, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
             StretchFull(txt.GetComponent<RectTransform>());
             return btn;
+        }
+
+        private static void AddButtonLeadingIcon(Button btn, Sprite iconSprite, float iconSize)
+        {
+            if (btn == null || iconSprite == null) return;
+
+            GameObject iconObj = CreateUIObject("LeadingIcon", btn.transform);
+            RectTransform rt = iconObj.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0f, 0.5f);
+            rt.anchorMax = new Vector2(0f, 0.5f);
+            rt.pivot = new Vector2(0f, 0.5f);
+            rt.anchoredPosition = new Vector2(10f, 0f);
+            rt.sizeDelta = new Vector2(iconSize, iconSize);
+
+            Image iconImg = iconObj.AddComponent<Image>();
+            iconImg.sprite = iconSprite;
+            iconImg.preserveAspect = true;
+            iconImg.raycastTarget = false;
+
+            Text label = btn.GetComponentInChildren<Text>();
+            if (label != null)
+            {
+                RectTransform labelRt = label.GetComponent<RectTransform>();
+                labelRt.offsetMin = new Vector2(iconSize + 12f, 0f);
+                labelRt.offsetMax = new Vector2(-8f, 0f);
+            }
         }
     }
 }

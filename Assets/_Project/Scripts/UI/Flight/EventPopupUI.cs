@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using AstraLink.Core;
+using AstraLink.UI.Common;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -17,6 +18,7 @@ namespace AstraLink.UI.Flight
         [SerializeField] private GameObject popupBannerRoot;
         [SerializeField] private Image bannerBackground;
         [SerializeField] private Image alertBadgeBackground;
+        [SerializeField] private Image eventIconImage;
         [SerializeField] private Text alertBadgeText;
         [SerializeField] private Text activeEventTitleText;
         [SerializeField] private Text eventImpactDescriptionText;
@@ -101,15 +103,24 @@ namespace AstraLink.UI.Flight
             if (bannerBackground != null)
             {
                 bannerBackground.color = isRadiationStorm
-                    ? new Color(0.46f, 0.11f, 0.14f, 0.98f)
-                    : new Color(0.44f, 0.25f, 0.08f, 0.98f);
+                    ? new Color(1.0f, 0.72f, 0.72f, 0.98f)
+                    : new Color(1.0f, 0.88f, 0.64f, 0.98f);
             }
 
             if (alertBadgeBackground != null)
             {
                 alertBadgeBackground.color = isRadiationStorm
-                    ? new Color(0.86f, 0.20f, 0.22f, 1.0f)
-                    : new Color(0.84f, 0.50f, 0.12f, 1.0f);
+                    ? UITheme.ButtonTintDanger
+                    : UITheme.ButtonTintGold;
+            }
+
+            if (eventIconImage != null)
+            {
+                Sprite hazardSprite = UITheme.GetHazardSprite(cleanTitle);
+                eventIconImage.sprite = hazardSprite != null
+                    ? hazardSprite
+                    : (UITheme.Assets != null ? (isRadiationStorm ? UITheme.Assets.astraError : UITheme.Assets.astraWarn) : null);
+                eventIconImage.color = Color.white;
             }
 
             if (alertBadgeText != null)
@@ -161,12 +172,18 @@ namespace AstraLink.UI.Flight
 
             if (bannerBackground != null)
             {
-                bannerBackground.color = new Color(0.06f, 0.13f, 0.22f, 0.94f);
+                bannerBackground.color = Color.white;
             }
 
             if (alertBadgeBackground != null)
             {
-                alertBadgeBackground.color = new Color(0.12f, 0.44f, 0.32f, 1.0f);
+                alertBadgeBackground.color = UITheme.ButtonTintSuccess;
+            }
+
+            if (eventIconImage != null && UITheme.Assets != null)
+            {
+                eventIconImage.sprite = UITheme.Assets.astraNormal;
+                eventIconImage.color = Color.white;
             }
 
             if (alertBadgeText != null)
@@ -251,6 +268,11 @@ namespace AstraLink.UI.Flight
                     alertBadgeBackground = badgeTf.GetComponent<Image>();
                     alertBadgeText = badgeTf.GetComponentInChildren<Text>();
                 }
+                Transform iconTf = existingBanner.Find("EventIconFrame/EventIconSprite");
+                if (iconTf != null)
+                {
+                    eventIconImage = iconTf.GetComponent<Image>();
+                }
                 Transform textCol = existingBanner.Find("EventTextColumn");
                 if (textCol != null)
                 {
@@ -273,7 +295,7 @@ namespace AstraLink.UI.Flight
             bannerRt.offsetMax = Vector2.zero;
 
             bannerBackground = popupBannerRoot.GetComponent<Image>();
-            bannerBackground.color = new Color(0.06f, 0.13f, 0.22f, 0.94f);
+            UITheme.ApplyPanelFrame(bannerBackground, useDialogueBox: true);
 
             HorizontalLayoutGroup hLayout = popupBannerRoot.AddComponent<HorizontalLayoutGroup>();
             hLayout.padding = new RectOffset(12, 12, 8, 8);
@@ -284,14 +306,34 @@ namespace AstraLink.UI.Flight
             hLayout.childForceExpandWidth = false;
             hLayout.childForceExpandHeight = true;
 
-            // Left Badge
+            // Left Framed Event / A.S.T.R.A. Icon
+            GameObject iconFrame = new GameObject("EventIconFrame", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            iconFrame.transform.SetParent(popupBannerRoot.transform, false);
+            UITheme.ApplySlotFrame(iconFrame.GetComponent<Image>(), selected: false);
+            LayoutElement iconFrameLe = iconFrame.AddComponent<LayoutElement>();
+            iconFrameLe.preferredWidth = 44f;
+            iconFrameLe.minWidth = 44f;
+
+            GameObject iconSpriteObj = new GameObject("EventIconSprite", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            iconSpriteObj.transform.SetParent(iconFrame.transform, false);
+            RectTransform iconRt = iconSpriteObj.GetComponent<RectTransform>();
+            iconRt.anchorMin = new Vector2(0.10f, 0.10f);
+            iconRt.anchorMax = new Vector2(0.90f, 0.90f);
+            iconRt.offsetMin = Vector2.zero;
+            iconRt.offsetMax = Vector2.zero;
+            eventIconImage = iconSpriteObj.GetComponent<Image>();
+            eventIconImage.preserveAspect = true;
+            eventIconImage.sprite = UITheme.Assets != null ? UITheme.Assets.astraNormal : null;
+            eventIconImage.color = Color.white;
+
+            // Status Name Tab Badge
             var badgeObj = new GameObject("AlertBadge", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
             badgeObj.transform.SetParent(popupBannerRoot.transform, false);
             alertBadgeBackground = badgeObj.GetComponent<Image>();
-            alertBadgeBackground.color = new Color(0.12f, 0.44f, 0.32f, 1.0f);
+            UITheme.ApplyNameTab(alertBadgeBackground, UITheme.ButtonTintSuccess);
             LayoutElement badgeLe = badgeObj.AddComponent<LayoutElement>();
-            badgeLe.preferredWidth = 126f;
-            badgeLe.minWidth = 110f;
+            badgeLe.preferredWidth = 132f;
+            badgeLe.minWidth = 114f;
 
             var badgeTxtObj = new GameObject("BadgeText", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
             badgeTxtObj.transform.SetParent(badgeObj.transform, false);
@@ -307,6 +349,9 @@ namespace AstraLink.UI.Flight
             alertBadgeText.fontStyle = FontStyle.Bold;
             alertBadgeText.color = Color.white;
             alertBadgeText.alignment = TextAnchor.MiddleCenter;
+            Shadow badgeTxtShadow = badgeTxtObj.AddComponent<Shadow>();
+            badgeTxtShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
+            badgeTxtShadow.effectDistance = new Vector2(1f, -1f);
 
             // Right Text Column
             var textColObj = new GameObject("EventTextColumn", typeof(RectTransform));

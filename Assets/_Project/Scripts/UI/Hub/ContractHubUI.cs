@@ -192,13 +192,13 @@ namespace AstraLink.UI.Hub
                     Button btn = _cardButtonLabels[i].GetComponentInParent<Button>();
                     if (isSelected)
                     {
-                        _cardButtonLabels[i].text = isCompleted ? "REBUILD IN HANGAR →" : "BUILD IN HANGAR →";
+                        _cardButtonLabels[i].text = isCompleted ? "COMPLETED • OPEN HANGAR ▶" : "ACTIVE • OPEN HANGAR ▶";
                         if (btn != null) UITheme.ApplyButtonStyle(btn, null, UITheme.ButtonTintSuccess);
                     }
                     else
                     {
-                        _cardButtonLabels[i].text = isCompleted ? "COMPLETED • SELECT" : "SELECT CONTRACT";
-                        if (btn != null) UITheme.ApplyButtonStyle(btn, null, UITheme.ButtonTintMuted);
+                        _cardButtonLabels[i].text = isCompleted ? "COMPLETED • SELECT & BUILD ▶" : "SELECT & BUILD ▶";
+                        if (btn != null) UITheme.ApplyButtonStyle(btn, null, UITheme.ButtonTintPrimary);
                     }
                 }
             }
@@ -297,10 +297,10 @@ namespace AstraLink.UI.Hub
             rootLayout.childForceExpandHeight = false;
 
             // Dispatcher Briefing Bar
-            GameObject briefingBar = CreatePanel("BriefingBar", rootObj.transform, Color.white, 86f);
+            GameObject briefingBar = CreatePanel("BriefingBar", rootObj.transform, Color.white, 92f);
             UITheme.ApplyPanelFrame(briefingBar.GetComponent<Image>(), useDialogueBox: true);
             HorizontalLayoutGroup briefHlg = briefingBar.AddComponent<HorizontalLayoutGroup>();
-            briefHlg.padding = new RectOffset(18, 18, 10, 10);
+            briefHlg.padding = new RectOffset(16, 16, 10, 10);
             briefHlg.spacing = 16f;
             briefHlg.childAlignment = TextAnchor.MiddleLeft;
             briefHlg.childControlWidth = true;
@@ -308,24 +308,18 @@ namespace AstraLink.UI.Hub
             briefHlg.childForceExpandWidth = false;
             briefHlg.childForceExpandHeight = false;
 
-            GameObject portraitObj = CreateUIObject("DispatcherPortrait", briefingBar.transform);
-            LayoutElement portraitLe = portraitObj.AddComponent<LayoutElement>();
-            portraitLe.preferredWidth = 64f;
-            portraitLe.preferredHeight = 64f;
-            Image portraitImg = portraitObj.AddComponent<Image>();
-            portraitImg.sprite = assets != null ? assets.dispatcher : null;
-            portraitImg.preserveAspect = true;
-            portraitImg.color = portraitImg.sprite != null ? Color.white : new Color(0f, 0f, 0f, 0f);
+            UITheme.CreateFramedPortrait(briefingBar.transform, "AstraBriefPortrait",
+                assets != null ? assets.astraNormal : null, 70f);
 
             Text sectionTitle = CreateText("SectionTitle", briefingBar.transform, defaultFont,
-                "MISSION CONTROL  —  Pick a NASA contract below, then build your satellite in the Hangar.",
-                21, FontStyle.Bold, UITheme.TextPrimary, TextAnchor.MiddleLeft);
+                "MISSION CONTROL  —  Pick a NASA contract card below to design, test, and launch your spacecraft!",
+                20, FontStyle.Bold, UITheme.TextPrimary, TextAnchor.MiddleLeft);
             LayoutElement titleLe = sectionTitle.gameObject.AddComponent<LayoutElement>();
             titleLe.flexibleWidth = 1f;
             titleLe.preferredHeight = 60f;
 
             Button goHangarBtn = CreateActionButton(briefingBar.transform, "Btn_OpenHangar",
-                "OPEN HANGAR →", UITheme.ButtonTintSuccess, 230f, 52f, defaultFont,
+                "OPEN HANGAR ▶", UITheme.ButtonTintSuccess, 220f, 52f, defaultFont,
                 () => GameManager.Instance?.ShowWorkshop());
             UITheme.ApplyButtonStyle(goHangarBtn, null, UITheme.ButtonTintSuccess);
 
@@ -387,109 +381,154 @@ namespace AstraLink.UI.Hub
 
         private void BuildMissionCard(int index, MissionGoal mission, Transform parent, Font font)
         {
+            UIThemeAssets assets = UITheme.Assets;
             GameObject cardObj = CreateUIObject("MissionCard_" + mission.Id, parent);
             Image cardBg = cardObj.AddComponent<Image>();
             UITheme.ApplySlotFrame(cardBg, selected: false);
             _cardBackgrounds.Add(cardBg);
 
             VerticalLayoutGroup cardLayout = cardObj.AddComponent<VerticalLayoutGroup>();
-            cardLayout.padding = new RectOffset(22, 22, 22, 22);
+            cardLayout.padding = new RectOffset(20, 20, 20, 20);
             cardLayout.spacing = 12f;
             cardLayout.childControlWidth = true;
             cardLayout.childControlHeight = true;
             cardLayout.childForceExpandWidth = true;
             cardLayout.childForceExpandHeight = false;
 
-            // 1. Header Row: Planet Sprite + Title
-            GameObject headerRow = CreateUIObject("HeaderRow", cardObj.transform);
-            LayoutElement headerLe = headerRow.AddComponent<LayoutElement>();
-            headerLe.preferredHeight = 64f;
-            HorizontalLayoutGroup headerHlg = headerRow.AddComponent<HorizontalLayoutGroup>();
-            headerHlg.spacing = 12f;
-            headerHlg.childAlignment = TextAnchor.MiddleLeft;
-            headerHlg.childControlWidth = true;
-            headerHlg.childControlHeight = true;
-            headerHlg.childForceExpandWidth = false;
-            headerHlg.childForceExpandHeight = false;
+            // 1. Visual Planet + Client Officer Showcase Box
+            GameObject heroBox = CreatePanel("PlanetHeroBox", cardObj.transform, Color.white, 118f);
+            UITheme.ApplyPanelFrame(heroBox.GetComponent<Image>(), useDialogueBox: true);
+            HorizontalLayoutGroup heroHlg = heroBox.AddComponent<HorizontalLayoutGroup>();
+            heroHlg.padding = new RectOffset(14, 14, 10, 10);
+            heroHlg.spacing = 14f;
+            heroHlg.childAlignment = TextAnchor.MiddleLeft;
+            heroHlg.childControlWidth = true;
+            heroHlg.childControlHeight = true;
+            heroHlg.childForceExpandWidth = false;
+            heroHlg.childForceExpandHeight = false;
 
-            GameObject planetObj = CreateUIObject("PlanetIcon", headerRow.transform);
+            GameObject planetObj = CreateUIObject("PlanetHero", heroBox.transform);
             LayoutElement planetLe = planetObj.AddComponent<LayoutElement>();
-            planetLe.preferredWidth = 60f;
-            planetLe.preferredHeight = 60f;
+            planetLe.preferredWidth = 92f;
+            planetLe.preferredHeight = 92f;
             Image planetImg = planetObj.AddComponent<Image>();
             planetImg.sprite = UITheme.GetPlanetSprite(mission.OrbitId);
             planetImg.preserveAspect = true;
-            planetImg.color = planetImg.sprite != null ? Color.white : new Color(0f, 0f, 0f, 0f);
 
-            Text titleTxt = CreateText("Title", headerRow.transform, font, mission.Title, 24, FontStyle.Bold,
+            GameObject titleStack = CreateUIObject("TitleStack", heroBox.transform);
+            LayoutElement stackLe = titleStack.AddComponent<LayoutElement>();
+            stackLe.flexibleWidth = 1f;
+            VerticalLayoutGroup stackV = titleStack.AddComponent<VerticalLayoutGroup>();
+            stackV.spacing = 4f;
+            stackV.childControlWidth = true;
+            stackV.childControlHeight = true;
+            stackV.childForceExpandWidth = true;
+            stackV.childForceExpandHeight = false;
+
+            string cleanTitle = StripNumericPrefix(mission.Title);
+            Text titleTxt = CreateText("Title", titleStack.transform, font, cleanTitle, 23, FontStyle.Bold,
                 UITheme.TextGold, TextAnchor.MiddleLeft);
-            LayoutElement titleLe = titleTxt.gameObject.AddComponent<LayoutElement>();
-            titleLe.flexibleWidth = 1f;
-            titleLe.preferredHeight = 60f;
+            titleTxt.gameObject.AddComponent<LayoutElement>().preferredHeight = 32f;
 
-            // 2. Orbit Summary Tag
-            GameObject orbitTag = CreatePanel("OrbitTag", cardObj.transform, Color.white, 40f);
-            UITheme.ApplyNameTab(orbitTag.GetComponent<Image>(), new Color(0.85f, 0.95f, 1f, 0.95f));
-            HorizontalLayoutGroup orbitHlg = orbitTag.AddComponent<HorizontalLayoutGroup>();
-            orbitHlg.padding = new RectOffset(12, 12, 4, 4);
-            orbitHlg.childControlWidth = true;
-            orbitHlg.childControlHeight = true;
-            orbitHlg.childForceExpandWidth = true;
-            orbitHlg.childForceExpandHeight = true;
-            string orbitInfo = GetOrbitHumanSummary(mission.OrbitId);
-            CreateText("OrbitSummary", orbitTag.transform, font, orbitInfo, 15, FontStyle.Bold,
-                UITheme.TextPrimary, TextAnchor.MiddleLeft);
+            string tierLabel = mission.OrbitId == "orbit_leo"
+                ? "STARTER • LEO 400 KM"
+                : (mission.OrbitId == "orbit_lunar" ? "INTERMEDIATE • MOON 100 KM" : "ADVANCED • MARS 350 KM");
+            Text tierTxt = CreateText("TierTag", titleStack.transform, font, tierLabel, 14, FontStyle.Bold,
+                UITheme.AccentCyan, TextAnchor.MiddleLeft);
+            tierTxt.gameObject.AddComponent<LayoutElement>().preferredHeight = 22f;
 
-            // 3. Mission Brief
-            Text briefTxt = CreateText("Brief", cardObj.transform, font, mission.Brief, 18, FontStyle.Normal,
+            UITheme.CreateFramedPortrait(heroBox.transform, "ClientPortrait",
+                UITheme.GetDispatcherForMission(mission.Id), 74f);
+
+            // 2. Concise Mission Brief
+            Text briefTxt = CreateText("Brief", cardObj.transform, font, mission.Brief, 17, FontStyle.Normal,
                 UITheme.TextPrimary, TextAnchor.UpperLeft);
             LayoutElement briefLe = briefTxt.gameObject.AddComponent<LayoutElement>();
-            briefLe.preferredHeight = 100f;
+            briefLe.preferredHeight = 82f;
 
-            // 4. Contract Requirements Box
-            string hazardText = GetEventHumanSummary(mission.EventId);
-            string specsContent = string.Format(
-                "• Budget: <b>${0:0}k</b>   |   Reward: <b>+${6}k</b> (+${7}k/orbit)\n" +
-                "• Target: <b>{1:0} science</b> in <b>{2} orbits</b>\n" +
-                "• Sensor: <b>{3}</b>   |   Chip: <b>{4}+ rule slots</b>\n" +
-                "• Hazard: <b>{5}</b>",
-                mission.BudgetLimitThousands,
-                mission.TargetSciencePoints,
-                mission.RequiredOrbits,
-                string.IsNullOrEmpty(mission.RequiredSensorTag) ? "Any" : mission.RequiredSensorTag,
-                mission.MinChipSlots,
-                hazardText,
-                mission.RewardThousands,
-                mission.PassiveIncomeThousands);
+            // 3. Visual Icon Stat Rows (Simple & Easy to Scan)
+            GameObject statsContainer = CreatePanel("StatsBox", cardObj.transform, Color.white, 210f);
+            UITheme.ApplyPanelFrame(statsBoxImage(statsContainer), useDialogueBox: true);
+            VerticalLayoutGroup statsV = statsContainer.AddComponent<VerticalLayoutGroup>();
+            statsV.padding = new RectOffset(14, 14, 12, 12);
+            statsV.spacing = 8f;
+            statsV.childControlWidth = true;
+            statsV.childControlHeight = true;
+            statsV.childForceExpandWidth = true;
+            statsV.childForceExpandHeight = true;
 
-            GameObject specsBox = CreatePanel("SpecsBox", cardObj.transform, Color.white, 175f);
-            UITheme.ApplyPanelFrame(specsBox.GetComponent<Image>(), useDialogueBox: true);
-            VerticalLayoutGroup specsLayout = specsBox.AddComponent<VerticalLayoutGroup>();
-            specsLayout.padding = new RectOffset(16, 16, 14, 14);
-            specsLayout.childControlWidth = true;
-            specsLayout.childControlHeight = true;
-            specsLayout.childForceExpandWidth = true;
-            specsLayout.childForceExpandHeight = true;
+            BuildStatRow(statsContainer.transform, font,
+                assets != null ? assets.spaceCreditsCoin : null,
+                string.Format("Budget Limit: <b>${0:0}k</b>   •   Reward: <b>+${1}k</b>", mission.BudgetLimitThousands, mission.RewardThousands),
+                UITheme.TextGold);
 
-            Text specsTxt = CreateText("SpecsText", specsBox.transform, font, specsContent, 17, FontStyle.Normal,
-                new Color(0.86f, 0.96f, 0.90f, 1f), TextAnchor.MiddleLeft);
-            specsTxt.supportRichText = true;
-            specsTxt.lineSpacing = 1.3f;
+            BuildStatRow(statsContainer.transform, font,
+                assets != null ? assets.iconStarChart : null,
+                string.Format("Goal: <b>{0:0} Science</b> across <b>{1} Orbits</b>", mission.TargetSciencePoints, mission.RequiredOrbits),
+                UITheme.TextPrimary);
+
+            BuildStatRow(statsContainer.transform, font,
+                assets != null ? assets.iconDataChip : null,
+                string.Format("Sensor: <b>{0}</b>   •   Autopilot: <b>{1}+ Slots</b>",
+                    string.IsNullOrEmpty(mission.RequiredSensorTag) ? "Any" : mission.RequiredSensorTag,
+                    mission.MinChipSlots),
+                UITheme.AccentCyan);
+
+            BuildStatRow(statsContainer.transform, font,
+                UITheme.GetHazardSprite(mission.EventId),
+                string.Format("Space Weather: <b>{0}</b>", GetEventHumanSummary(mission.EventId)),
+                string.IsNullOrEmpty(mission.EventId) ? UITheme.AccentGreen : UITheme.AccentAmber);
 
             // Spacer pushes the button to the bottom of the card
             GameObject spacer = CreateUIObject("Spacer", cardObj.transform);
-            LayoutElement spacerLe = spacer.AddComponent<LayoutElement>();
-            spacerLe.flexibleHeight = 1f;
+            spacer.AddComponent<LayoutElement>().flexibleHeight = 1f;
 
-            // 5. Action Button
+            // 4. Action Button
             int capturedIndex = index;
             Button acceptBtn = CreateActionButton(cardObj.transform, "Btn_AcceptContract_" + index,
-                "SELECT CONTRACT", UITheme.ButtonTintMuted, 0f, 56f, font,
+                "SELECT & BUILD ▶", UITheme.ButtonTintPrimary, 0f, 58f, font,
                 () => OnCardActionClicked(capturedIndex));
-            UITheme.ApplyButtonStyle(acceptBtn, null, UITheme.ButtonTintMuted);
+            UITheme.ApplyButtonStyle(acceptBtn, null, UITheme.ButtonTintPrimary);
 
             Text btnLabel = acceptBtn.GetComponentInChildren<Text>();
             _cardButtonLabels.Add(btnLabel);
+        }
+
+        private static Image statsBoxImage(GameObject go) => go.GetComponent<Image>();
+
+        private static void BuildStatRow(Transform parent, Font font, Sprite icon, string text, Color textColor)
+        {
+            GameObject row = CreatePanel("StatRow", parent, Color.white, 38f);
+            UITheme.ApplyNameTab(row.GetComponent<Image>(), new Color(0.22f, 0.30f, 0.45f, 0.72f));
+            HorizontalLayoutGroup h = row.AddComponent<HorizontalLayoutGroup>();
+            h.padding = new RectOffset(10, 10, 4, 4);
+            h.spacing = 10f;
+            h.childAlignment = TextAnchor.MiddleLeft;
+            h.childControlWidth = true;
+            h.childControlHeight = true;
+            h.childForceExpandWidth = false;
+
+            if (icon != null)
+            {
+                GameObject ic = CreateUIObject("Icon", row.transform);
+                LayoutElement icLe = ic.AddComponent<LayoutElement>();
+                icLe.preferredWidth = 26f;
+                icLe.preferredHeight = 26f;
+                Image icImg = ic.AddComponent<Image>();
+                icImg.sprite = icon;
+                icImg.preserveAspect = true;
+            }
+
+            Text txt = CreateText("Label", row.transform, font, text, 16, FontStyle.Normal, textColor, TextAnchor.MiddleLeft);
+            txt.supportRichText = true;
+            txt.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
+        }
+
+        private static string StripNumericPrefix(string raw)
+        {
+            if (string.IsNullOrEmpty(raw)) return string.Empty;
+            int dotIdx = raw.IndexOf(". ", StringComparison.Ordinal);
+            return (dotIdx > 0 && dotIdx <= 3 && dotIdx + 2 < raw.Length) ? raw.Substring(dotIdx + 2) : raw;
         }
 
         private static string GetOrbitHumanSummary(string orbitId)

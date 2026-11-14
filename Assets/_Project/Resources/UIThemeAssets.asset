@@ -24,10 +24,15 @@ MonoBehaviour:
   radarScreen: {fileID: 21300000, guid: d7359431371417e4aba5521aa5083daa, type: 3}
   missionBadge: {fileID: 21300000, guid: 1aadf27969077f34fae4dc3687123c8c, type: 3}
   spaceCreditsCoin: {fileID: 21300000, guid: 3c256688ac155d445afb0a5d82602f4b, type: 3}
+  portraitFrame: {fileID: 21300000, guid: f85a6db9877894a4281f7059125876d2, type: 3}
   astraNormal: {fileID: 21300000, guid: 2c04bcfa1bb094f41b1a8a6a3af531c0, type: 3}
   astraWarn: {fileID: 21300000, guid: 5d0db24a3cf5de24baf92306df2d62fa, type: 3}
   astraError: {fileID: 21300000, guid: c3d2b780795a9354c85989e4c3aa41a2, type: 3}
   dispatcher: {fileID: 21300000, guid: 07b5865cdf708b146ac73bcbee8fe4d3, type: 3}
+  dispatcherBlue: {fileID: 21300000, guid: 225deb74f09885b49805e8f74086cf0c, type: 3}
+  dispatcherArmored: {fileID: 21300000, guid: eb1c24afa61172e42bd5eb365a461531, type: 3}
+  dispatcherCyborg: {fileID: 21300000, guid: bef74ba09165a8b499144b383d7a6aa4, type: 3}
+  spaceDog: {fileID: 21300000, guid: 1928896339215a14e83a8ce34d13d6b3, type: 3}
   bgStarfield: {fileID: 21300000, guid: f6e97eb051d4bc64bbfc2d9a6586834b, type: 3}
   bgDistantWorlds: {fileID: 21300000, guid: 747bc9b7a1013194d887fbce22f1421b, type: 3}
   bgPlanetApproach: {fileID: 21300000, guid: 69138d29363ecad488904fac52c6483c, type: 3}
@@ -38,22 +43,46 @@ MonoBehaviour:
   planetMars: {fileID: 21300000, guid: e2aceb58a0071c5439f746e995dd0bae, type: 3}
   planetVenus: {fileID: 21300000, guid: f6135f944121f8f419e1447c099dac1c, type: 3}
   planetSun: {fileID: 21300000, guid: 9e4d551ad7689d54cb4705fe22c3650e, type: 3}
+  celestialEclipse: {fileID: 21300000, guid: 755409556c64bb7458e845483f7abec3, type: 3}
+  celestialSupernova: {fileID: 21300000, guid: f819080045c10494aacfa78c8b8ff1ba, type: 3}
+  celestialMeteor: {fileID: 21300000, guid: 9f10f0c9f8af5994fa37b0aa38c6eebb, type: 3}
+  celestialAsteroidField: {fileID: 21300000, guid: 3e8d7a862e09e7d4eb2e3dbfa74ba50f, type: 3}
+  celestialNebula: {fileID: 21300000, guid: 025253e8247c46e4aaebcfc121c9c664, type: 3}
+  launchPad: {fileID: 21300000, guid: f0f896b5d705f234c8627c925335a8f9, type: 3}
+  launchTower: {fileID: 21300000, guid: 11a2a0f8363346344b3dad20bb90f0d9, type: 3}
+  rocketFlame: {fileID: 21300000, guid: 658542c0660710d4a9478c970d68857b, type: 3}
+  rocketSmall: {fileID: 21300000, guid: a94219ba7c69a3f44947ae7ad83ac22d, type: 3}
+  rocketMedium: {fileID: 21300000, guid: ac7dd2fc22680f148a5208a7af604e9b, type: 3}
+  rocketHeavy: {fileID: 21300000, guid: f7bcc6c68a7e8ab4f841fecf9d246baa, type: 3}
+  telemetryBlueSheet: {fileID: 21300000, guid: 14cc3cf86edfe784f9f00b8114db1d78, type: 3}
+  telemetryCyanSheet: {fileID: 21300000, guid: 3ac8881f05a690844b52478d5eee5579, type: 3}
+  telemetryPinkSheet: {fileID: 21300000, guid: 2ed0e697081f897448c50e0903de3a6b, type: 3}
+  telemetryPurpleSheet: {fileID: 21300000, guid: ec38fce913b115842a9f77f5eeafcc4b, type: 3}
+  telemetryBrownSheet: {fileID: 21300000, guid: 858d4af25b5dc284db925255adf4ba35, type: 3}
   iconDataChip: {fileID: 21300000, guid: 44c5cbb15b40bd94aa762448a517b52c, type: 3}
   iconRepairWrench: {fileID: 21300000, guid: a70d3ab839473ca4e922e001770fb65e, type: 3}
   iconStarChart: {fileID: 21300000, guid: ae4a9e0ea857a2542a74ed9ca31099ce, type: 3}
   iconCountdownClock: {fileID: 21300000, guid: 04103d686431f3a46bbce27af8b0c45f, type: 3}
   iconControlPanel: {fileID: 21300000, guid: 5510b706fa6b4da4b96447de336b5310, type: 3}
+  iconOxygenGauge: {fileID: 21300000, guid: 94145a7ed0dde34488ca85f6652abc44, type: 3}
+  iconStarMapTablet: {fileID: 21300000, guid: 44b7d9df4e1c188438eea575bb50b172, type: 3}
+  iconHoloProjector: {fileID: 21300000, guid: a279d3fef91888d4695cf2dc9a560af6, type: 3}
+  iconMissionPatchBlank: {fileID: 21300000, guid: d555d852bf1352549970a8fd03b53d6c, type: 3}
+  iconNextArrow: {fileID: 21300000, guid: c9d522f3ef25aef4eba52adc0709d7d2, type: 3}
+  iconShield: {fileID: 21300000, guid: 39a1a6349aec2344c871d6b2a5131123, type: 3}
+  iconSolarPanel: {fileID: 21300000, guid: 04b43b0e6662af349824002feed7f3aa, type: 3}
+  iconEnergyCell: {fileID: 21300000, guid: 1f91e2c74dc36dc4f95d264896968a50, type: 3}
   itemSprites:
   - Id: bus_cubesat_3u
     Sprite: {fileID: 21300000, guid: 31d32b1dc3d958847acdbb2710a439a0, type: 3}
   - Id: bus_smallsat
-    Sprite: {fileID: 21300000, guid: 4aab47f95b80b054195c6f83f1d6e9a2, type: 3}
+    Sprite: {fileID: 21300000, guid: b96ef164141c44146a1098c2d0ac6cef, type: 3}
   - Id: bus_deepspace
     Sprite: {fileID: 21300000, guid: 503202c8c56bccc49b624c6bf59d1a75, type: 3}
   - Id: pwr_solar_mini
     Sprite: {fileID: 21300000, guid: 04b43b0e6662af349824002feed7f3aa, type: 3}
   - Id: pwr_solar_deployable
-    Sprite: {fileID: 21300000, guid: 04b43b0e6662af349824002feed7f3aa, type: 3}
+    Sprite: {fileID: 21300000, guid: 0b5407db914acb844878bbf79edda3dc, type: 3}
   - Id: pwr_solar_wings
     Sprite: {fileID: 21300000, guid: 04b43b0e6662af349824002feed7f3aa, type: 3}
   - Id: pwr_rtg
@@ -61,25 +90,25 @@ MonoBehaviour:
   - Id: bat_li_small
     Sprite: {fileID: 21300000, guid: 1f91e2c74dc36dc4f95d264896968a50, type: 3}
   - Id: bat_li_medium
-    Sprite: {fileID: 21300000, guid: 1f91e2c74dc36dc4f95d264896968a50, type: 3}
+    Sprite: {fileID: 21300000, guid: 7054b6b9aa9afb942bd84c865a90dee5, type: 3}
   - Id: bat_solid_heavy
-    Sprite: {fileID: 21300000, guid: 1f91e2c74dc36dc4f95d264896968a50, type: 3}
+    Sprite: {fileID: 21300000, guid: 51b1f3fb2d9612f42943cef04c6a1f66, type: 3}
   - Id: comms_uhf_basic
     Sprite: {fileID: 21300000, guid: c48cc81b95a659947810d58e09a074d5, type: 3}
   - Id: comms_sband
-    Sprite: {fileID: 21300000, guid: c48cc81b95a659947810d58e09a074d5, type: 3}
+    Sprite: {fileID: 21300000, guid: 34e1ad65ab91e0541bbbd6b1e4bda206, type: 3}
   - Id: comms_xband
-    Sprite: {fileID: 21300000, guid: c48cc81b95a659947810d58e09a074d5, type: 3}
+    Sprite: {fileID: 21300000, guid: 44c5cbb15b40bd94aa762448a517b52c, type: 3}
   - Id: comms_laser
-    Sprite: {fileID: 21300000, guid: 325f225907bed414bbade4f891edeb7a, type: 3}
+    Sprite: {fileID: 21300000, guid: b7cf5c660d046d94a888d28dd87514bf, type: 3}
   - Id: sci_camera_basic
     Sprite: {fileID: 21300000, guid: 325f225907bed414bbade4f891edeb7a, type: 3}
   - Id: sci_radar_sar
-    Sprite: {fileID: 21300000, guid: 325f225907bed414bbade4f891edeb7a, type: 3}
+    Sprite: {fileID: 21300000, guid: d7359431371417e4aba5521aa5083daa, type: 3}
   - Id: sci_spectrometer
-    Sprite: {fileID: 21300000, guid: 325f225907bed414bbade4f891edeb7a, type: 3}
+    Sprite: {fileID: 21300000, guid: 6c3a10917e8d3ac4c85337db5bc4298a, type: 3}
   - Id: sci_magnetometer
-    Sprite: {fileID: 21300000, guid: 325f225907bed414bbade4f891edeb7a, type: 3}
+    Sprite: {fileID: 21300000, guid: 39a1a6349aec2344c871d6b2a5131123, type: 3}
   - Id: rocket_light
     Sprite: {fileID: 21300000, guid: a94219ba7c69a3f44947ae7ad83ac22d, type: 3}
   - Id: rocket_medium

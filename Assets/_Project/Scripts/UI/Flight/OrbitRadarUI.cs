@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using AstraLink.Core;
+using AstraLink.UI.Common;
 
 namespace AstraLink.UI.Flight
 {
@@ -772,14 +773,25 @@ namespace AstraLink.UI.Flight
             float sunlightFraction = Mathf.Clamp01(1.0f - eclipseFraction);
             float commFraction = Mathf.Clamp01(_currentOrbit.CommWindowFraction);
 
-            // 1. Central Planet Disc
+            // 1. Central Planet Sprite (from _Project/Art/Planets)
             if (planetImage != null)
             {
-                if (planetImage.sprite == null)
+                Sprite planetSprite = UITheme.GetPlanetSprite(_currentOrbit.Id);
+                if (planetSprite != null)
                 {
-                    planetImage.sprite = RadarProceduralSprites.GetDiscSprite();
+                    planetImage.sprite = planetSprite;
+                    planetImage.preserveAspect = true;
+                    planetImage.color = Color.white;
+                    planetImage.rectTransform.sizeDelta = new Vector2(132f, 132f);
                 }
-                planetImage.color = GetPlanetColor(_currentOrbit.Type, _currentOrbit.Id);
+                else
+                {
+                    if (planetImage.sprite == null)
+                    {
+                        planetImage.sprite = RadarProceduralSprites.GetDiscSprite();
+                    }
+                    planetImage.color = GetPlanetColor(_currentOrbit.Type, _currentOrbit.Id);
+                }
             }
 
             if (planetNameLabel != null)
@@ -820,9 +832,8 @@ namespace AstraLink.UI.Flight
             if (sunlightSectorLabel != null)
             {
                 sunlightSectorLabel.text = string.Format(
-                    "SUNLIGHT ({0:0}%)\nu < {1:0.00}",
-                    sunlightFraction * 100f,
-                    sunlightFraction);
+                    "SUNLIGHT\n({0:0}%)",
+                    sunlightFraction * 100f);
             }
 
             if (sunlightLabelRect != null)
@@ -850,9 +861,8 @@ namespace AstraLink.UI.Flight
             if (eclipseSectorLabel != null)
             {
                 eclipseSectorLabel.text = string.Format(
-                    "SHADOW ({0:0}%)\nu >= {1:0.00}",
-                    eclipseFraction * 100f,
-                    sunlightFraction);
+                    "SHADOW\n({0:0}%)",
+                    eclipseFraction * 100f);
             }
 
             if (eclipseLabelRect != null)
@@ -880,9 +890,8 @@ namespace AstraLink.UI.Flight
             if (commSectorLabel != null)
             {
                 commSectorLabel.text = string.Format(
-                    "COMM LINK ({0:0}%)\nu < {1:0.00}",
-                    commFraction * 100f,
-                    commFraction);
+                    "COMM LINK\n({0:0}%)",
+                    commFraction * 100f);
             }
 
             if (commLabelRect != null)
@@ -891,10 +900,16 @@ namespace AstraLink.UI.Flight
                 commLabelRect.anchoredPosition = OrbitProgressToPosition(midCommProgress, orbitRadiusPx * 0.80f);
             }
 
-            // 6. Satellite Triangle Sprite
-            if (satelliteImage != null && satelliteImage.sprite == null)
+            // 6. Spacecraft Pixel-Art Marker Sprite (uses equipped satellite bus sprite)
+            if (satelliteImage != null)
             {
-                satelliteImage.sprite = RadarProceduralSprites.GetSatelliteTriangleSprite();
+                Sprite satSprite = ResolveSpacecraftMarkerSprite();
+                satelliteImage.sprite = satSprite != null ? satSprite : RadarProceduralSprites.GetSatelliteTriangleSprite();
+                satelliteImage.preserveAspect = true;
+                if (satelliteRect != null && satSprite != null)
+                {
+                    satelliteRect.sizeDelta = new Vector2(42f, 42f);
+                }
             }
 
             SetSatelliteOrbitProgress(_currentDisplayedProgress);
@@ -934,15 +949,15 @@ namespace AstraLink.UI.Flight
             {
                 if (inEclipseZone)
                 {
-                    satelliteImage.color = new Color(0.68f, 0.72f, 1.0f, 1.0f);
+                    satelliteImage.color = new Color(0.76f, 0.82f, 1.0f, 1.0f);
                 }
                 else if (inCommZone)
                 {
-                    satelliteImage.color = new Color(0.20f, 1.0f, 0.82f, 1.0f);
+                    satelliteImage.color = new Color(0.72f, 1.0f, 0.92f, 1.0f);
                 }
                 else
                 {
-                    satelliteImage.color = new Color(1.0f, 0.92f, 0.32f, 1.0f);
+                    satelliteImage.color = Color.white;
                 }
             }
 
@@ -996,41 +1011,34 @@ namespace AstraLink.UI.Flight
         {
             if (zoneBadgeLabel == null) return;
 
-            float eclipseStart = _currentOrbit != null ? (1.0f - _currentOrbit.EclipseFraction) : 0.65f;
-            float commEnd = _currentOrbit != null ? _currentOrbit.CommWindowFraction : 0.25f;
-
             if (inEclipseZone)
             {
                 zoneBadgeLabel.text = string.Format(
-                    "ZONE: PLANETARY SHADOW / ECLIPSE (OrbitProgress {0:0.00} >= {1:0.00})",
-                    progress,
-                    eclipseStart);
+                    "ZONE: PLANETARY SHADOW / ECLIPSE  ({0:0}% Orbit — Solar Charging Paused)",
+                    progress * 100f);
                 if (zoneBadgeBackground != null)
                 {
-                    zoneBadgeBackground.color = new Color(0.24f, 0.16f, 0.48f, 0.96f);
+                    zoneBadgeBackground.color = new Color(0.72f, 0.60f, 1.0f, 1.0f);
                 }
             }
             else if (inCommZone)
             {
                 zoneBadgeLabel.text = string.Format(
-                    "ZONE: COMM WINDOW + SUNLIGHT (OrbitProgress {0:0.00} < {1:0.00})",
-                    progress,
-                    commEnd);
+                    "ZONE: COMM WINDOW + SUNLIGHT  ({0:0}% Orbit — Downlink & Solar Active)",
+                    progress * 100f);
                 if (zoneBadgeBackground != null)
                 {
-                    zoneBadgeBackground.color = new Color(0.06f, 0.44f, 0.38f, 0.96f);
+                    zoneBadgeBackground.color = new Color(0.56f, 1.0f, 0.88f, 1.0f);
                 }
             }
             else
             {
                 zoneBadgeLabel.text = string.Format(
-                    "ZONE: SUNLIGHT SECTOR ({1:0.00} <= OrbitProgress {0:0.00} < {2:0.00})",
-                    progress,
-                    commEnd,
-                    eclipseStart);
+                    "ZONE: SUNLIGHT SECTOR  ({0:0}% Orbit — Solar Charging & Science Recording)",
+                    progress * 100f);
                 if (zoneBadgeBackground != null)
                 {
-                    zoneBadgeBackground.color = new Color(0.46f, 0.34f, 0.06f, 0.96f);
+                    zoneBadgeBackground.color = new Color(1.0f, 0.88f, 0.52f, 1.0f);
                 }
             }
         }
@@ -1042,19 +1050,17 @@ namespace AstraLink.UI.Flight
             if (statusHeaderLabel != null)
             {
                 string rocketTitle = _currentRocket != null ? _currentRocket.Name : "Arrow-1 (Default)";
-                statusHeaderLabel.text = string.Format("2D ORBIT RADAR: {0}  |  Rocket: {1}", _currentOrbit.Name, rocketTitle);
+                statusHeaderLabel.text = string.Format("ORBIT TELEMETRY: {0}  •  Rocket: {1}", _currentOrbit.Name, rocketTitle);
             }
 
             if (tickProgressLabel != null)
             {
                 float sunFraction = 1.0f - _currentOrbit.EclipseFraction;
                 tickProgressLabel.text = string.Format(
-                    "Ready (20 ticks/orbit)  |  Sunlight: {0:0}% (u < {1:0.00})  |  Shadow: {2:0}% (u >= {1:0.00})  |  Comm: {3:0}% (u < {4:0.00})",
+                    "Ready (20 ticks/orbit)  •  Sunlight: {0:0}%  •  Shadow: {1:0}%  •  Ground Link: {2:0}%",
                     sunFraction * 100f,
-                    sunFraction,
                     _currentOrbit.EclipseFraction * 100f,
-                    _currentOrbit.CommWindowFraction * 100f,
-                    _currentOrbit.CommWindowFraction);
+                    _currentOrbit.CommWindowFraction * 100f);
             }
 
             if (telemetrySnapshotLabel != null)
@@ -1159,9 +1165,30 @@ namespace AstraLink.UI.Flight
             if (img != null)
             {
                 img.color = active
-                    ? new Color(0.14f, 0.62f, 0.88f, 1.0f)
-                    : new Color(0.13f, 0.20f, 0.32f, 1.0f);
+                    ? new Color(0.56f, 0.92f, 1.0f, 1.0f)
+                    : UITheme.ButtonTintMuted;
             }
+        }
+
+        private Sprite ResolveSpacecraftMarkerSprite()
+        {
+            if (_currentComponents != null)
+            {
+                for (int i = 0; i < _currentComponents.Count; i++)
+                {
+                    SatelliteComponent c = _currentComponents[i];
+                    if (c != null && c.Category == ComponentCategory.CorePlatform)
+                    {
+                        Sprite busSprite = UITheme.GetItemSprite(c.Id);
+                        if (busSprite != null) return busSprite;
+                    }
+                }
+            }
+
+            Sprite defaultBus = UITheme.GetItemSprite("bus_basic");
+            if (defaultBus != null) return defaultBus;
+
+            return UITheme.Assets != null ? UITheme.Assets.radarScreen : null;
         }
 
         /// <summary>
@@ -1184,7 +1211,10 @@ namespace AstraLink.UI.Flight
             if (bgImage == null)
             {
                 bgImage = gameObject.AddComponent<Image>();
-                bgImage.color = new Color(0.05f, 0.09f, 0.16f, 0.96f);
+            }
+            if (bgImage.sprite == null)
+            {
+                UITheme.ApplyPanelFrame(bgImage, useDialogueBox: false);
             }
 
             Font builtinFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
@@ -1197,10 +1227,10 @@ namespace AstraLink.UI.Flight
                     "StatusHeaderLabel",
                     new Vector2(0.03f, 0.91f),
                     new Vector2(0.97f, 0.98f),
-                    "2D ORBIT RADAR (S1-08)",
+                    "ORBIT TELEMETRY RADAR",
                     21,
                     FontStyle.Bold,
-                    new Color(0.88f, 0.95f, 1.0f, 1.0f),
+                    UITheme.TextPrimary,
                     TextAnchor.MiddleLeft,
                     builtinFont);
             }
@@ -1211,10 +1241,10 @@ namespace AstraLink.UI.Flight
                 "RadarLegendLabel",
                 new Vector2(0.03f, 0.865f),
                 new Vector2(0.97f, 0.91f),
-                "SECTORS:   [GOLD] SUNLIGHT (u < 1 - Eclipse)     [PURPLE] SHADOW / ECLIPSE (u >= 1 - Eclipse)     [CYAN] COMM WINDOW (u < Comm)",
+                "SECTORS:   [GOLD] Sunlight (Charge)   •   [PURPLE] Shadow (Eclipse)   •   [CYAN] Ground Link (Upload)",
                 13,
                 FontStyle.Bold,
-                new Color(0.82f, 0.90f, 1.0f, 0.92f),
+                UITheme.TextSecondary,
                 TextAnchor.MiddleCenter,
                 builtinFont);
 
@@ -1305,15 +1335,17 @@ namespace AstraLink.UI.Flight
                     new Color(0.55f, 0.78f, 1.0f, 0.85f));
             }
 
-            // 5. Center Planet Disc
+            // 5. Center Planet Sprite
             if (planetImage == null)
             {
+                Sprite defaultPlanet = UITheme.GetPlanetSprite("earth");
                 planetImage = FindOrCreateCenteredImage(
                     radarViewportRect,
                     "PlanetDisc",
-                    new Vector2(120f, 120f),
-                    RadarProceduralSprites.GetDiscSprite(),
-                    new Color(0.18f, 0.56f, 0.94f, 1.0f));
+                    new Vector2(132f, 132f),
+                    defaultPlanet != null ? defaultPlanet : RadarProceduralSprites.GetDiscSprite(),
+                    Color.white);
+                planetImage.preserveAspect = true;
             }
 
             if (planetNameLabel == null && planetImage != null)
@@ -1329,6 +1361,9 @@ namespace AstraLink.UI.Flight
                     Color.white,
                     TextAnchor.MiddleCenter,
                     builtinFont);
+                Shadow sh = planetNameLabel.gameObject.AddComponent<Shadow>();
+                sh.effectColor = new Color(0f, 0f, 0f, 0.92f);
+                sh.effectDistance = new Vector2(1.5f, -1.5f);
             }
 
             // 6. Floating Sector Labels (Sunlight, Shadow, Comm Link)
@@ -1380,15 +1415,17 @@ namespace AstraLink.UI.Flight
                 commLabelRect = commSectorLabel.rectTransform;
             }
 
-            // 7. Satellite Marker Sprite (Triangle Spacecraft)
+            // 7. Spacecraft Pixel-Art Marker Sprite
             if (satelliteImage == null)
             {
+                Sprite defaultSat = ResolveSpacecraftMarkerSprite();
                 satelliteImage = FindOrCreateCenteredImage(
                     radarViewportRect,
                     "SatelliteMarker",
-                    new Vector2(34f, 34f),
-                    RadarProceduralSprites.GetSatelliteTriangleSprite(),
-                    new Color(0.20f, 1.0f, 0.82f, 1.0f));
+                    new Vector2(42f, 42f),
+                    defaultSat != null ? defaultSat : RadarProceduralSprites.GetSatelliteTriangleSprite(),
+                    Color.white);
+                satelliteImage.preserveAspect = true;
                 satelliteRect = satelliteImage.rectTransform;
                 satelliteRect.anchoredPosition = new Vector2(0f, orbitRadiusPx);
             }
@@ -1417,19 +1454,22 @@ namespace AstraLink.UI.Flight
                     brt.offsetMax = Vector2.zero;
 
                     zoneBadgeBackground = badgeObj.GetComponent<Image>();
-                    zoneBadgeBackground.color = new Color(0.06f, 0.44f, 0.38f, 0.96f);
+                    UITheme.ApplyNameTab(zoneBadgeBackground, new Color(0.56f, 1.0f, 0.88f, 1.0f));
 
                     zoneBadgeLabel = FindOrCreateText(
                         brt,
                         "ZoneBadgeLabel",
                         Vector2.zero,
                         Vector2.one,
-                        "ZONE: COMM WINDOW + SUNLIGHT (OrbitProgress 0.00 < 0.25)",
-                        15,
+                        "ZONE: COMM WINDOW + SUNLIGHT",
+                        14,
                         FontStyle.Bold,
                         Color.white,
                         TextAnchor.MiddleCenter,
                         builtinFont);
+                    Shadow badgeShadow = zoneBadgeLabel.gameObject.AddComponent<Shadow>();
+                    badgeShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
+                    badgeShadow.effectDistance = new Vector2(1f, -1f);
                 }
             }
 
@@ -1488,16 +1528,23 @@ namespace AstraLink.UI.Flight
             vRt.sizeDelta = new Vector2(1.5f, 400f);
             vLine.GetComponent<Image>().color = new Color(0.25f, 0.42f, 0.65f, 0.28f);
 
-            // Top Start Marker (u = 0.0)
+            // Top Start Marker (Orbit Start) + Sun Beacon Indicator
             RectTransform dummy;
             FindOrCreateFloatingLabel(
                 viewport,
                 "OriginMarkerLabel",
                 new Vector2(0f, 204f),
-                "▼ u = 0.0 (ORBIT START)",
+                "▼ ORBIT START (0%)",
                 new Color(0.75f, 0.92f, 1.0f, 0.92f),
                 font,
                 out dummy);
+
+            if (UITheme.Assets != null && UITheme.Assets.planetSun != null)
+            {
+                var sunImg = FindOrCreateCenteredImage(viewport, "SunBeaconIcon", new Vector2(36f, 36f), UITheme.Assets.planetSun, Color.white);
+                sunImg.preserveAspect = true;
+                sunImg.rectTransform.anchoredPosition = new Vector2(182f, 182f);
+            }
         }
 
         private void EnsureControlButtons(RectTransform rootRt, Font font)
@@ -1527,7 +1574,7 @@ namespace AstraLink.UI.Flight
                     "Start Flight Test",
                     new Vector2(0.0f, 0.0f),
                     new Vector2(0.52f, 1.0f),
-                    new Color(0.12f, 0.58f, 0.36f, 1.0f),
+                    UITheme.ButtonTintSuccess,
                     font,
                     out startTestFlightButtonLabel);
             }
@@ -1541,7 +1588,7 @@ namespace AstraLink.UI.Flight
                     "1x",
                     new Vector2(0.54f, 0.0f),
                     new Vector2(0.68f, 1.0f),
-                    new Color(0.14f, 0.62f, 0.88f, 1.0f),
+                    new Color(0.56f, 0.92f, 1.0f, 1.0f),
                     font,
                     out dummy);
             }
@@ -1564,7 +1611,7 @@ namespace AstraLink.UI.Flight
                     "5x",
                     new Vector2(0.70f, 0.0f),
                     new Vector2(0.84f, 1.0f),
-                    new Color(0.13f, 0.20f, 0.32f, 1.0f),
+                    UITheme.ButtonTintMuted,
                     font,
                     out dummy);
             }
@@ -1578,7 +1625,7 @@ namespace AstraLink.UI.Flight
                     "10x",
                     new Vector2(0.86f, 0.0f),
                     new Vector2(1.0f, 1.0f),
-                    new Color(0.13f, 0.20f, 0.32f, 1.0f),
+                    UITheme.ButtonTintMuted,
                     font,
                     out dummy);
             }
@@ -1718,10 +1765,9 @@ namespace AstraLink.UI.Flight
             rt.offsetMax = Vector2.zero;
 
             var img = btnObj.GetComponent<Image>();
-            img.color = bgColor;
-
             var btn = btnObj.GetComponent<Button>();
-            btn.targetGraphic = img;
+            Color tint = name.Contains("Start") ? UITheme.ButtonTintSuccess : bgColor;
+            UITheme.ApplyButtonStyle(btn, img, tint);
 
             buttonLabel = FindOrCreateText(
                 rt,

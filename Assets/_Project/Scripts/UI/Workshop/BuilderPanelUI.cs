@@ -80,6 +80,7 @@ namespace AstraLink.UI.Workshop
 
         // UI Widgets
         private Text _activeContractBannerText;
+        private Image _contractPlanetIconImage;
         private GameObject _launchErrorBannerObj;
         private Text _launchErrorBannerText;
         private Text _autopilotButtonText;
@@ -453,6 +454,14 @@ namespace AstraLink.UI.Workshop
             RocketOption rocket = GetSelectedRocket();
             List<SatelliteComponent> selectedList = GetSelectedComponentsList();
 
+            if (_contractPlanetIconImage != null && activeGoal != null)
+            {
+                Sprite planetSprite = UITheme.GetPlanetSprite(activeGoal.OrbitId);
+                _contractPlanetIconImage.sprite = planetSprite;
+                _contractPlanetIconImage.color = Color.white;
+                _contractPlanetIconImage.gameObject.SetActive(planetSprite != null);
+            }
+
             if (_activeContractBannerText != null && activeGoal != null)
             {
                 string reqSensor = string.IsNullOrEmpty(activeGoal.RequiredSensorTag) ? "Any" : activeGoal.RequiredSensorTag;
@@ -460,14 +469,14 @@ namespace AstraLink.UI.Workshop
                 float delaySec = activeOrbit != null ? activeOrbit.SignalDelaySeconds : 1.0f;
 
                 _activeContractBannerText.text = string.Format(
-                    "CONTRACT: <b>{0}</b>  |  Orbit: <b>{1}</b> ({2:0.0}s)  |  Budget: <b>${3:0}k</b>  |  Target: <b>{4:0} Sci</b> ({5})",
+                    "<b>{0}</b>  •  Orbit: <b>{1}</b> ({2:0.#}s delay)  •  Budget: <b>${3:0}k</b>  •  Target: <b>{4:0} Sci</b> ({5})",
                     activeGoal.Title, orbitName, delaySec, activeGoal.BudgetLimitThousands, activeGoal.TargetSciencePoints, reqSensor);
             }
 
             if (_autopilotButtonText != null)
             {
                 int unlocked = Mathf.Clamp(_agencyState.AutopilotSlotsUnlocked, 2, 6);
-                _autopilotButtonText.text = string.Format("⚙ Autopilot ({0}/6)", unlocked);
+                _autopilotButtonText.text = string.Format("Autopilot ({0}/6)", unlocked);
             }
 
             if (_agencyCapitalButtonText != null)
@@ -717,56 +726,53 @@ namespace AstraLink.UI.Workshop
             rootLayout.childForceExpandWidth = true;
             rootLayout.childForceExpandHeight = false;
 
-            // 1. TOP KSP-STYLE ACTIVE CONTRACT BAR + 3 MODAL BUTTONS (Autopilot, A.S.T.R.A./DryRun, R&D)
+            // 1. CLEAN CONTRACT HEADER STRIP
             GameObject contractBar = CreateUIObject("ActiveContractBar", rootObj.transform);
             Image barBg = contractBar.AddComponent<Image>();
             UITheme.ApplyPanelFrame(barBg, useDialogueBox: true);
             LayoutElement barLe = contractBar.AddComponent<LayoutElement>();
-            barLe.minHeight = 60f;
-            barLe.preferredHeight = 60f;
+            barLe.minHeight = 56f;
+            barLe.preferredHeight = 56f;
 
             HorizontalLayoutGroup barLayout = contractBar.AddComponent<HorizontalLayoutGroup>();
-            barLayout.padding = new RectOffset(16, 16, 8, 8);
-            barLayout.spacing = 10f;
+            barLayout.padding = new RectOffset(14, 14, 8, 8);
+            barLayout.spacing = 12f;
             barLayout.childAlignment = TextAnchor.MiddleLeft;
             barLayout.childControlWidth = true;
             barLayout.childControlHeight = true;
             barLayout.childForceExpandWidth = false;
             barLayout.childForceExpandHeight = true;
 
+            GameObject planetBadgeObj = CreateUIObject("ContractPlanetIcon", contractBar.transform);
+            LayoutElement planetBadgeLe = planetBadgeObj.AddComponent<LayoutElement>();
+            planetBadgeLe.minWidth = 38f;
+            planetBadgeLe.preferredWidth = 38f;
+            planetBadgeLe.minHeight = 38f;
+            planetBadgeLe.preferredHeight = 38f;
+            _contractPlanetIconImage = planetBadgeObj.AddComponent<Image>();
+            _contractPlanetIconImage.preserveAspect = true;
+            _contractPlanetIconImage.sprite = UITheme.Assets != null ? UITheme.Assets.planetEarth : null;
+            _contractPlanetIconImage.color = Color.white;
+
             _activeContractBannerText = CreateText("ContractBannerText", contractBar.transform, font,
-                "CONTRACT: 1. LEO Weather CubeSat", 15, FontStyle.Normal,
-                new Color(0.92f, 0.96f, 1f, 1f), TextAnchor.MiddleLeft);
+                "<b>1. LEO Weather CubeSat</b>", 15, FontStyle.Normal,
+                UITheme.TextPrimary, TextAnchor.MiddleLeft);
             _activeContractBannerText.supportRichText = true;
             LayoutElement bannerLe = _activeContractBannerText.gameObject.AddComponent<LayoutElement>();
             bannerLe.flexibleWidth = 1f;
 
-            CreateButton(contractBar.transform, "Btn_ResetTemplate", "Reset M1",
-                new Color(0.20f, 0.34f, 0.52f, 1f), 115f, 44f, font, ApplyMission1StarterTemplate);
-
-            Button apBtn = CreateButton(contractBar.transform, "Btn_OpenAutopilot", "⚙ Autopilot (2/6)",
-                new Color(0.18f, 0.42f, 0.65f, 1f), 185f, 44f, font, OpenAutopilotOverlay);
-            _autopilotButtonText = apBtn.GetComponentInChildren<Text>();
-
-            Button drBtn = CreateButton(contractBar.transform, "Btn_OpenDryRun", "▶ A.S.T.R.A. & Dry Run",
-                new Color(0.14f, 0.50f, 0.34f, 1f), 235f, 44f, font, OpenDryRunOverlay);
-            _dryRunButtonText = drBtn.GetComponentInChildren<Text>();
-
-            Button rndBtn = CreateButton(contractBar.transform, "Btn_OpenRnD", "R&D Tree ($50k)",
-                new Color(0.55f, 0.36f, 0.10f, 1f), 175f, 44f, font, OpenRnDOverlay);
-            _agencyCapitalButtonText = rndBtn.GetComponentInChildren<Text>();
-
-            CreateButton(contractBar.transform, "Btn_LaunchMission", "LAUNCH >>",
-                new Color(0.14f, 0.62f, 0.28f, 1f), 165f, 44f, font, TriggerLaunchMission);
+            Button resetTopBtn = CreateButton(contractBar.transform, "Btn_ResetTemplate", "Reset M1",
+                UITheme.ButtonTintMuted, 118f, 38f, font, ApplyMission1StarterTemplate);
+            AddButtonLeadingIcon(resetTopBtn, UITheme.Assets != null ? UITheme.Assets.iconRepairWrench : null, 18f);
 
             // Launch validation banner (shown only when pre-launch validation fails)
             _launchErrorBannerObj = CreateUIObject("LaunchValidationBanner", rootObj.transform);
             Image errImg = _launchErrorBannerObj.AddComponent<Image>();
-            errImg.color = new Color(0.42f, 0.10f, 0.12f, 0.96f);
+            UITheme.ApplyPanelFrame(errImg, useDialogueBox: true, tint: new Color(1.0f, 0.56f, 0.56f, 0.98f));
             LayoutElement errLe = _launchErrorBannerObj.AddComponent<LayoutElement>();
-            errLe.preferredHeight = 36f;
+            errLe.preferredHeight = 38f;
             _launchErrorBannerText = CreateText("ErrorText", _launchErrorBannerObj.transform, font,
-                string.Empty, 15, FontStyle.Bold, new Color(1f, 0.88f, 0.88f, 1f), TextAnchor.MiddleCenter);
+                string.Empty, 15, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
             StretchFull(_launchErrorBannerText.GetComponent<RectTransform>());
             _launchErrorBannerObj.SetActive(false);
 
@@ -827,6 +833,50 @@ namespace AstraLink.UI.Workshop
             resourceGaugesUI = rightCol.AddComponent<ResourceGaugesUI>();
             resourceGaugesUI.EnsureGaugesUIHierarchy();
 
+            // BOTTOM ACTION DOCK: Spacious pixel-art command bar for Autopilot, A.S.T.R.A., R&D, and Launch
+            GameObject actionDock = CreateUIObject("ActionDock", rootObj.transform);
+            Image dockBg = actionDock.AddComponent<Image>();
+            UITheme.ApplyPanelFrame(dockBg, useDialogueBox: true);
+            LayoutElement dockLe = actionDock.AddComponent<LayoutElement>();
+            dockLe.minHeight = 62f;
+            dockLe.preferredHeight = 62f;
+
+            HorizontalLayoutGroup dockLayout = actionDock.AddComponent<HorizontalLayoutGroup>();
+            dockLayout.padding = new RectOffset(14, 14, 8, 8);
+            dockLayout.spacing = 12f;
+            dockLayout.childAlignment = TextAnchor.MiddleLeft;
+            dockLayout.childControlWidth = true;
+            dockLayout.childControlHeight = true;
+            dockLayout.childForceExpandWidth = false;
+            dockLayout.childForceExpandHeight = true;
+
+            UIThemeAssets dockAssets = UITheme.Assets;
+            UITheme.CreateFramedPortrait(actionDock.transform, "DockAstraAvatar", dockAssets != null ? dockAssets.astraNormal : null, 44f);
+
+            Text dockHint = CreateText("DockHintText", actionDock.transform, font,
+                "MISSION PREP  •  Configure autopilot, preview with A.S.T.R.A., unlock parts, or launch!", 14, FontStyle.Normal,
+                UITheme.TextSecondary, TextAnchor.MiddleLeft);
+            dockHint.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
+
+            Button apBtn = CreateButton(actionDock.transform, "Btn_OpenAutopilot", "Autopilot (2/6)",
+                UITheme.ButtonTintPrimary, 195f, 44f, font, OpenAutopilotOverlay);
+            AddButtonLeadingIcon(apBtn, dockAssets != null ? dockAssets.iconControlPanel : null, 20f);
+            _autopilotButtonText = apBtn.GetComponentInChildren<Text>();
+
+            Button drBtn = CreateButton(actionDock.transform, "Btn_OpenDryRun", "A.S.T.R.A. & Dry Run",
+                UITheme.ButtonTintSuccess, 230f, 44f, font, OpenDryRunOverlay);
+            AddButtonLeadingIcon(drBtn, dockAssets != null ? dockAssets.iconStarChart : null, 20f);
+            _dryRunButtonText = drBtn.GetComponentInChildren<Text>();
+
+            Button rndBtn = CreateButton(actionDock.transform, "Btn_OpenRnD", "R&D Tree ($50k)",
+                UITheme.ButtonTintGold, 190f, 44f, font, OpenRnDOverlay);
+            AddButtonLeadingIcon(rndBtn, dockAssets != null ? dockAssets.spaceCreditsCoin : null, 20f);
+            _agencyCapitalButtonText = rndBtn.GetComponentInChildren<Text>();
+
+            Button launchDockBtn = CreateButton(actionDock.transform, "Btn_LaunchMission", "LAUNCH MISSION  ▶",
+                UITheme.ButtonTintSuccess, 215f, 44f, font, TriggerLaunchMission);
+            AddButtonLeadingIcon(launchDockBtn, dockAssets != null ? dockAssets.rocketFlame : null, 20f);
+
             // 3. MODAL #1: CONSTRUCT-STYLE AUTOPILOT RULE EDITOR OVERLAY
             GameObject apOverlay = CreateUIObject("AutopilotModalOverlay", workshopRoot);
             StretchFull(apOverlay.GetComponent<RectTransform>());
@@ -860,15 +910,18 @@ namespace AstraLink.UI.Workshop
         private void BindExistingHierarchy(Transform root, Transform workshopRoot)
         {
             _activeContractBannerText = FindChild<Text>(root, "ActiveContractBar/ContractBannerText");
+            _contractPlanetIconImage = FindChild<Image>(root, "ActiveContractBar/ContractPlanetIcon");
 
-            Button resetBtn = FindChild<Button>(root, "ActiveContractBar/Btn_ResetTemplate");
+            Button resetBtn = FindChild<Button>(root, "ActiveContractBar/Btn_ResetTemplate")
+                              ?? FindChild<Button>(root, "ActionDock/Btn_ResetTemplate");
             if (resetBtn != null)
             {
                 resetBtn.onClick.RemoveAllListeners();
                 resetBtn.onClick.AddListener(ApplyMission1StarterTemplate);
             }
 
-            Button apBtn = FindChild<Button>(root, "ActiveContractBar/Btn_OpenAutopilot");
+            Button apBtn = FindChild<Button>(root, "ActionDock/Btn_OpenAutopilot")
+                           ?? FindChild<Button>(root, "ActiveContractBar/Btn_OpenAutopilot");
             if (apBtn != null)
             {
                 apBtn.onClick.RemoveAllListeners();
@@ -876,7 +929,8 @@ namespace AstraLink.UI.Workshop
                 _autopilotButtonText = apBtn.GetComponentInChildren<Text>();
             }
 
-            Button drBtn = FindChild<Button>(root, "ActiveContractBar/Btn_OpenDryRun");
+            Button drBtn = FindChild<Button>(root, "ActionDock/Btn_OpenDryRun")
+                           ?? FindChild<Button>(root, "ActiveContractBar/Btn_OpenDryRun");
             if (drBtn != null)
             {
                 drBtn.onClick.RemoveAllListeners();
@@ -884,7 +938,8 @@ namespace AstraLink.UI.Workshop
                 _dryRunButtonText = drBtn.GetComponentInChildren<Text>();
             }
 
-            Button rndBtn = FindChild<Button>(root, "ActiveContractBar/Btn_OpenRnD");
+            Button rndBtn = FindChild<Button>(root, "ActionDock/Btn_OpenRnD")
+                            ?? FindChild<Button>(root, "ActiveContractBar/Btn_OpenRnD");
             if (rndBtn != null)
             {
                 rndBtn.onClick.RemoveAllListeners();
@@ -892,7 +947,8 @@ namespace AstraLink.UI.Workshop
                 _agencyCapitalButtonText = rndBtn.GetComponentInChildren<Text>();
             }
 
-            Button launchBtn = FindChild<Button>(root, "ActiveContractBar/Btn_LaunchMission");
+            Button launchBtn = FindChild<Button>(root, "ActionDock/Btn_LaunchMission")
+                               ?? FindChild<Button>(root, "ActiveContractBar/Btn_LaunchMission");
             if (launchBtn != null)
             {
                 launchBtn.onClick.RemoveAllListeners();
@@ -1290,6 +1346,32 @@ namespace AstraLink.UI.Workshop
             Text txt = CreateText("Text", btnObj.transform, font, label, 14, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
             StretchFull(txt.GetComponent<RectTransform>());
             return btn;
+        }
+
+        private static void AddButtonLeadingIcon(Button btn, Sprite iconSprite, float iconSize)
+        {
+            if (btn == null || iconSprite == null) return;
+
+            GameObject iconObj = CreateUIObject("LeadingIcon", btn.transform);
+            RectTransform rt = iconObj.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0f, 0.5f);
+            rt.anchorMax = new Vector2(0f, 0.5f);
+            rt.pivot = new Vector2(0f, 0.5f);
+            rt.anchoredPosition = new Vector2(10f, 0f);
+            rt.sizeDelta = new Vector2(iconSize, iconSize);
+
+            Image iconImg = iconObj.AddComponent<Image>();
+            iconImg.sprite = iconSprite;
+            iconImg.preserveAspect = true;
+            iconImg.raycastTarget = false;
+
+            Text label = btn.GetComponentInChildren<Text>();
+            if (label != null)
+            {
+                RectTransform labelRt = label.GetComponent<RectTransform>();
+                labelRt.offsetMin = new Vector2(iconSize + 12f, 0f);
+                labelRt.offsetMax = new Vector2(-8f, 0f);
+            }
         }
     }
 }

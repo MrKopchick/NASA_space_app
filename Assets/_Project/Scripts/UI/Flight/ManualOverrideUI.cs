@@ -40,6 +40,7 @@ namespace AstraLink.UI.Flight
         [SerializeField] private Text signalDelayHeaderText;
         [SerializeField] private Text signalDelayDetailText;
         [SerializeField] private Text commandQueueLogText;
+        private Image _signalDelayLedImage;
 
         /// <summary>
         /// Active list of manual commands issued during the current flight, passed into <see cref="IMissionSimulator.SimulateFullMission"/>.
@@ -378,12 +379,16 @@ namespace AstraLink.UI.Flight
             if (signalDelayFillImage != null)
             {
                 signalDelayFillImage.fillAmount = progress;
-                signalDelayFillImage.color = new Color(1.0f, 0.76f, 0.20f, 1.0f);
+                signalDelayFillImage.color = new Color(1.0f, 0.76f, 0.20f, 0.20f);
+            }
+            if (_signalDelayLedImage != null)
+            {
+                _signalDelayLedImage.sprite = UITheme.GetLedBarSprite(LedSheetKind.Brown, progress);
             }
 
             if (signalDelayBannerBg != null)
             {
-                signalDelayBannerBg.color = new Color(0.36f, 0.24f, 0.06f, 0.98f);
+                signalDelayBannerBg.color = new Color(1.0f, 0.88f, 0.58f, 0.98f);
             }
 
             if (signalDelayHeaderText != null && _latestPendingCommand != null)
@@ -417,12 +422,16 @@ namespace AstraLink.UI.Flight
             if (signalDelayFillImage != null)
             {
                 signalDelayFillImage.fillAmount = 1.0f;
-                signalDelayFillImage.color = new Color(0.20f, 0.88f, 0.48f, 1.0f);
+                signalDelayFillImage.color = new Color(0.20f, 0.88f, 0.48f, 0.20f);
+            }
+            if (_signalDelayLedImage != null)
+            {
+                _signalDelayLedImage.sprite = UITheme.GetLedBarSprite(LedSheetKind.Cyan, 1.0f);
             }
 
             if (signalDelayBannerBg != null)
             {
-                signalDelayBannerBg.color = new Color(0.08f, 0.32f, 0.20f, 0.98f);
+                signalDelayBannerBg.color = UITheme.ButtonTintSuccess;
             }
 
             if (signalDelayHeaderText != null && _latestPendingCommand != null)
@@ -457,9 +466,13 @@ namespace AstraLink.UI.Flight
             {
                 signalDelayFillImage.fillAmount = 0f;
             }
+            if (_signalDelayLedImage != null)
+            {
+                _signalDelayLedImage.sprite = UITheme.GetLedBarSprite(LedSheetKind.Blue, 0f);
+            }
             if (signalDelayBannerBg != null)
             {
-                signalDelayBannerBg.color = new Color(0.08f, 0.13f, 0.22f, 0.96f);
+                signalDelayBannerBg.color = Color.white;
             }
             if (signalDelayHeaderText != null)
             {
@@ -550,8 +563,8 @@ namespace AstraLink.UI.Flight
                 if (img != null)
                 {
                     img.color = safeOn
-                        ? new Color(0.16f, 0.56f, 0.34f, 1.0f)
-                        : new Color(0.68f, 0.22f, 0.16f, 1.0f);
+                        ? UITheme.ButtonTintSuccess
+                        : UITheme.ButtonTintDanger;
                 }
             }
         }
@@ -617,10 +630,14 @@ namespace AstraLink.UI.Flight
             if (bg == null)
             {
                 bg = gameObject.AddComponent<Image>();
-                bg.color = new Color(0.05f, 0.09f, 0.16f, 0.96f);
+            }
+            if (bg.sprite == null)
+            {
+                UITheme.ApplyPanelFrame(bg, useDialogueBox: false);
             }
 
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            UIThemeAssets assets = UITheme.Assets;
 
             GameObject contentRoot = CreateUIObject("ManualOverrideRoot", rootRt);
             StretchFull(contentRoot.GetComponent<RectTransform>());
@@ -637,10 +654,10 @@ namespace AstraLink.UI.Flight
                 "ManualHeader",
                 contentRoot.transform,
                 font,
-                "MANUAL GROUND OVERRIDE COMMANDS (Signal-Delayed Uplink)",
+                "MANUAL GROUND OVERRIDE COMMANDS",
                 15,
                 FontStyle.Bold,
-                new Color(1.0f, 0.88f, 0.42f, 1.0f),
+                UITheme.TextGold,
                 TextAnchor.MiddleLeft);
             header.gameObject.AddComponent<LayoutElement>().preferredHeight = 20f;
 
@@ -648,7 +665,7 @@ namespace AstraLink.UI.Flight
             GameObject delayBox = CreateUIObject("SignalDelayTimerBox", contentRoot.transform);
             signalDelayBannerBg = delayBox.AddComponent<Image>();
             UITheme.ApplyPanelFrame(signalDelayBannerBg, useDialogueBox: true);
-            delayBox.AddComponent<LayoutElement>().preferredHeight = 58f;
+            delayBox.AddComponent<LayoutElement>().preferredHeight = 62f;
 
             VerticalLayoutGroup delayLayout = delayBox.AddComponent<VerticalLayoutGroup>();
             delayLayout.padding = new RectOffset(10, 10, 6, 6);
@@ -665,14 +682,14 @@ namespace AstraLink.UI.Flight
                 "GROUND UPLINK DELAY: 1.0s (1 tick latency on LEO 400 km)",
                 12,
                 FontStyle.Bold,
-                new Color(0.66f, 0.86f, 1.0f, 1.0f),
+                UITheme.AccentCyan,
                 TextAnchor.MiddleLeft);
             signalDelayHeaderText.gameObject.AddComponent<LayoutElement>().preferredHeight = 16f;
 
             GameObject trackObj = CreateUIObject("DelaySliderTrack", delayBox.transform);
             Image trackBg = trackObj.AddComponent<Image>();
-            UITheme.ApplyNameTab(trackBg, new Color(0.16f, 0.22f, 0.34f, 1.0f));
-            trackObj.AddComponent<LayoutElement>().preferredHeight = 10f;
+            UITheme.ApplyNameTab(trackBg, new Color(0.55f, 0.65f, 0.82f, 1.0f));
+            trackObj.AddComponent<LayoutElement>().preferredHeight = 14f;
 
             GameObject fillObj = CreateUIObject("Fill", trackObj.transform);
             StretchFull(fillObj.GetComponent<RectTransform>());
@@ -682,7 +699,15 @@ namespace AstraLink.UI.Flight
             signalDelayFillImage.fillMethod = Image.FillMethod.Horizontal;
             signalDelayFillImage.fillOrigin = (int)Image.OriginHorizontal.Left;
             signalDelayFillImage.fillAmount = 0f;
-            signalDelayFillImage.color = new Color(1.0f, 0.76f, 0.20f, 1.0f);
+            signalDelayFillImage.color = new Color(1.0f, 0.76f, 0.20f, 0.20f);
+
+            GameObject ledObj = CreateUIObject("LedDelayOverlay", trackObj.transform);
+            StretchFull(ledObj.GetComponent<RectTransform>());
+            _signalDelayLedImage = ledObj.AddComponent<Image>();
+            _signalDelayLedImage.sprite = UITheme.GetLedBarSprite(LedSheetKind.Blue, 0f);
+            _signalDelayLedImage.type = Image.Type.Sliced;
+            _signalDelayLedImage.color = Color.white;
+            _signalDelayLedImage.raycastTarget = false;
 
             signalDelaySlider = trackObj.AddComponent<Slider>();
             signalDelaySlider.interactable = false;
@@ -698,7 +723,7 @@ namespace AstraLink.UI.Flight
                 "Click any manual override button below to transmit a signal-delayed command and recalculate the flight.",
                 11,
                 FontStyle.Normal,
-                new Color(0.76f, 0.86f, 0.96f, 0.95f),
+                UITheme.TextSecondary,
                 TextAnchor.MiddleLeft);
             signalDelayDetailText.gameObject.AddComponent<LayoutElement>().preferredHeight = 15f;
 
@@ -707,7 +732,8 @@ namespace AstraLink.UI.Flight
                 contentRoot.transform,
                 "Btn_ToggleInstruments",
                 "1. TOGGLE INSTRUMENTS: TURN OFF (Currently ON)",
-                new Color(0.16f, 0.38f, 0.62f, 1.0f),
+                UITheme.ButtonTintPrimary,
+                assets != null ? assets.iconStarChart : null,
                 font,
                 out toggleInstrumentsButtonText);
 
@@ -715,7 +741,8 @@ namespace AstraLink.UI.Flight
                 contentRoot.transform,
                 "Btn_ToggleComms",
                 "2. TOGGLE COMMS LINK: TURN OFF (Currently ON)",
-                new Color(0.12f, 0.46f, 0.48f, 1.0f),
+                new Color(0.76f, 0.96f, 1.0f, 1.0f),
+                assets != null ? assets.iconHoloProjector : null,
                 font,
                 out toggleCommsButtonText);
 
@@ -723,7 +750,8 @@ namespace AstraLink.UI.Flight
                 contentRoot.transform,
                 "Btn_EnableSafeMode",
                 "3. ENABLE SAFE MODE (EMERGENCY SHIELD)",
-                new Color(0.68f, 0.22f, 0.16f, 1.0f),
+                UITheme.ButtonTintDanger,
+                assets != null ? assets.iconShield : null,
                 font,
                 out enableSafeModeButtonText);
 
@@ -734,7 +762,7 @@ namespace AstraLink.UI.Flight
                 "Active Manual Commands (0): None queued. Spacecraft running on onboard autopilot rules.",
                 11,
                 FontStyle.Italic,
-                new Color(0.70f, 0.82f, 0.94f, 0.95f),
+                UITheme.TextSecondary,
                 TextAnchor.MiddleLeft);
             commandQueueLogText.gameObject.AddComponent<LayoutElement>().preferredHeight = 18f;
         }
@@ -744,19 +772,41 @@ namespace AstraLink.UI.Flight
             string name,
             string label,
             Color bgColor,
+            Sprite leadingIcon,
             Font font,
             out Text labelText)
         {
             GameObject btnObj = CreateUIObject(name, parent);
             Image img = btnObj.AddComponent<Image>();
             Button btn = btnObj.AddComponent<Button>();
-            UITheme.ApplyButtonStyle(btn, img, Color.white);
+            UITheme.ApplyButtonStyle(btn, img, bgColor);
 
             LayoutElement le = btnObj.AddComponent<LayoutElement>();
-            le.preferredHeight = 36f;
+            le.preferredHeight = 38f;
+
+            if (leadingIcon != null)
+            {
+                GameObject iconObj = CreateUIObject("LeadingIcon", btnObj.transform);
+                RectTransform iconRt = iconObj.GetComponent<RectTransform>();
+                iconRt.anchorMin = new Vector2(0f, 0.5f);
+                iconRt.anchorMax = new Vector2(0f, 0.5f);
+                iconRt.pivot = new Vector2(0f, 0.5f);
+                iconRt.anchoredPosition = new Vector2(12f, 0f);
+                iconRt.sizeDelta = new Vector2(20f, 20f);
+                Image iconImg = iconObj.AddComponent<Image>();
+                iconImg.sprite = leadingIcon;
+                iconImg.preserveAspect = true;
+                iconImg.raycastTarget = false;
+            }
 
             labelText = CreateText("Label", btnObj.transform, font, label, 13, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
-            StretchFull(labelText.GetComponent<RectTransform>());
+            RectTransform lrt = labelText.GetComponent<RectTransform>();
+            StretchFull(lrt);
+            if (leadingIcon != null)
+            {
+                lrt.offsetMin = new Vector2(36f, 0f);
+                lrt.offsetMax = new Vector2(-10f, 0f);
+            }
             return btn;
         }
 

@@ -72,6 +72,12 @@ namespace AstraLink.UI.Flight
         private readonly List<Text> _ruleBadgeTexts = new List<Text>();
         private readonly List<Text> _ruleFormulaTexts = new List<Text>();
 
+        private Image _batteryLedBar;
+        private Image _ssdLedBar;
+        private Image _healthLedBar;
+        private Image _scienceLedBar;
+        private Image _radiationLedBar;
+
         private List<AutopilotRule> _activeRules = new List<AutopilotRule>();
         private bool _hasExplicitRules;
         private ResourceSummary _activeResources;
@@ -188,7 +194,7 @@ namespace AstraLink.UI.Flight
                 ? new Color(0.95f, 0.28f, 0.28f, 1f)
                 : (batPct <= 35.0f ? new Color(0.96f, 0.72f, 0.20f, 1f) : new Color(0.22f, 0.86f, 0.48f, 1f));
 
-            UpdateGauge(batterySlider, batteryFillImage, batNormalized, batColor);
+            UpdateGauge(batterySlider, batteryFillImage, _batteryLedBar, batPct <= 35.0f ? LedSheetKind.Brown : LedSheetKind.Cyan, batNormalized, batColor);
             if (batteryValueText != null)
             {
                 batteryValueText.text = string.Format(
@@ -217,7 +223,7 @@ namespace AstraLink.UI.Flight
                 ? new Color(0.95f, 0.30f, 0.28f, 1f)
                 : (ssdPct >= 75.0f ? new Color(0.96f, 0.74f, 0.22f, 1f) : new Color(0.24f, 0.76f, 0.98f, 1f));
 
-            UpdateGauge(ssdSlider, ssdFillImage, ssdNormalized, ssdColor);
+            UpdateGauge(ssdSlider, ssdFillImage, _ssdLedBar, ssdPct >= 75.0f ? LedSheetKind.Brown : LedSheetKind.Blue, ssdNormalized, ssdColor);
             if (ssdValueText != null)
             {
                 ssdValueText.text = string.Format(
@@ -242,7 +248,7 @@ namespace AstraLink.UI.Flight
                 ? new Color(0.95f, 0.26f, 0.26f, 1f)
                 : (healthPct < 80.0f ? new Color(0.96f, 0.72f, 0.20f, 1f) : new Color(0.24f, 0.88f, 0.56f, 1f));
 
-            UpdateGauge(healthSlider, healthFillImage, healthNormalized, healthColor);
+            UpdateGauge(healthSlider, healthFillImage, _healthLedBar, healthPct < 80.0f ? LedSheetKind.Pink : LedSheetKind.Cyan, healthNormalized, healthColor);
             if (healthValueText != null)
             {
                 healthValueText.text = string.Format(CultureInfo.InvariantCulture, "{0:0.0}%", healthPct);
@@ -264,7 +270,7 @@ namespace AstraLink.UI.Flight
                 ? new Color(0.26f, 0.92f, 0.54f, 1f)
                 : new Color(0.38f, 0.82f, 1.0f, 1f);
 
-            UpdateGauge(scienceSlider, scienceFillImage, sciRatio, sciColor);
+            UpdateGauge(scienceSlider, scienceFillImage, _scienceLedBar, sciMet ? LedSheetKind.Cyan : LedSheetKind.Blue, sciRatio, sciColor);
             if (scienceValueText != null)
             {
                 scienceValueText.text = string.Format(
@@ -290,7 +296,7 @@ namespace AstraLink.UI.Flight
                 ? new Color(0.96f, 0.24f, 0.26f, 1f)
                 : (radLevel > 25.0f ? new Color(0.96f, 0.72f, 0.20f, 1f) : new Color(0.32f, 0.86f, 0.76f, 1f));
 
-            UpdateGauge(radiationSlider, radiationFillImage, radNormalized, radColor);
+            UpdateGauge(radiationSlider, radiationFillImage, _radiationLedBar, radHigh ? LedSheetKind.Pink : LedSheetKind.Purple, radNormalized, radColor);
             if (radiationValueText != null)
             {
                 radiationValueText.text = string.Format(
@@ -327,49 +333,43 @@ namespace AstraLink.UI.Flight
             if (eclipseIndicatorBg != null)
             {
                 eclipseIndicatorBg.color = snapshot.IsInEclipse
-                    ? new Color(0.30f, 0.20f, 0.62f, 0.98f)
-                    : new Color(0.54f, 0.40f, 0.08f, 0.98f);
+                    ? new Color(0.72f, 0.58f, 1.0f, 1f)
+                    : new Color(1.0f, 0.88f, 0.50f, 1f);
             }
             if (eclipseIndicatorText != null)
             {
                 eclipseIndicatorText.text = snapshot.IsInEclipse
                     ? "ECLIPSE: IN SHADOW"
                     : "SOLAR: IN SUNLIGHT";
-                eclipseIndicatorText.color = snapshot.IsInEclipse
-                    ? new Color(0.86f, 0.80f, 1.0f, 1f)
-                    : new Color(1.0f, 0.92f, 0.46f, 1f);
+                eclipseIndicatorText.color = Color.white;
             }
 
             if (commWindowIndicatorBg != null)
             {
                 commWindowIndicatorBg.color = snapshot.IsInCommWindow
-                    ? new Color(0.08f, 0.50f, 0.42f, 0.98f)
-                    : new Color(0.14f, 0.20f, 0.30f, 0.95f);
+                    ? UITheme.ButtonTintSuccess
+                    : UITheme.ButtonTintMuted;
             }
             if (commWindowIndicatorText != null)
             {
                 commWindowIndicatorText.text = snapshot.IsInCommWindow
                     ? "COMM WINDOW: ACTIVE"
                     : "COMM WINDOW: CLOSED";
-                commWindowIndicatorText.color = snapshot.IsInCommWindow
-                    ? new Color(0.46f, 1.0f, 0.88f, 1f)
-                    : new Color(0.68f, 0.76f, 0.88f, 1f);
+                commWindowIndicatorText.color = Color.white;
             }
 
             if (safeModeIndicatorBg != null)
             {
                 safeModeIndicatorBg.color = snapshot.SafeModeActive
-                    ? new Color(0.66f, 0.24f, 0.12f, 0.98f)
-                    : new Color(0.12f, 0.32f, 0.24f, 0.95f);
+                    ? new Color(1.0f, 0.62f, 0.50f, 1f)
+                    : new Color(0.64f, 0.98f, 0.76f, 1f);
             }
             if (safeModeIndicatorText != null)
             {
                 safeModeIndicatorText.text = snapshot.SafeModeActive
                     ? "SAFE MODE: ENGAGED"
                     : "SAFE MODE: OFF (NOMINAL)";
-                safeModeIndicatorText.color = snapshot.SafeModeActive
-                    ? new Color(1.0f, 0.86f, 0.52f, 1f)
-                    : new Color(0.68f, 0.94f, 0.78f, 1f);
+                safeModeIndicatorText.color = Color.white;
             }
 
             if (subsystemStatusText != null)
@@ -408,30 +408,28 @@ namespace AstraLink.UI.Flight
                 if (_ruleRowBackgrounds[i] != null)
                 {
                     _ruleRowBackgrounds[i].color = isTriggered
-                        ? new Color(0.10f, 0.48f, 0.24f, 0.98f) // Green highlight when rule triggers
-                        : new Color(0.08f, 0.13f, 0.22f, 0.94f);
+                        ? UITheme.ButtonTintSuccess
+                        : Color.white;
                 }
 
                 if (i < _ruleBadgeBackgrounds.Count && _ruleBadgeBackgrounds[i] != null)
                 {
                     _ruleBadgeBackgrounds[i].color = isTriggered
-                        ? new Color(0.18f, 0.78f, 0.38f, 1.0f)
-                        : new Color(0.16f, 0.24f, 0.36f, 1.0f);
+                        ? UITheme.ButtonTintSuccess
+                        : UITheme.ButtonTintMuted;
                 }
 
                 if (i < _ruleBadgeTexts.Count && _ruleBadgeTexts[i] != null)
                 {
                     _ruleBadgeTexts[i].text = isTriggered ? "ACTIVE (THEN)" : "STANDBY (ELSE)";
-                    _ruleBadgeTexts[i].color = isTriggered
-                        ? Color.white
-                        : new Color(0.70f, 0.80f, 0.92f, 1.0f);
+                    _ruleBadgeTexts[i].color = Color.white;
                 }
 
                 if (i < _ruleFormulaTexts.Count && _ruleFormulaTexts[i] != null)
                 {
                     _ruleFormulaTexts[i].color = isTriggered
                         ? new Color(0.78f, 1.0f, 0.84f, 1.0f)
-                        : new Color(0.84f, 0.90f, 0.98f, 1.0f);
+                        : UITheme.TextPrimary;
                 }
             }
         }
@@ -505,7 +503,7 @@ namespace AstraLink.UI.Flight
             }
         }
 
-        private static void UpdateGauge(Slider slider, Image fillImage, float normalizedValue, Color fillColor)
+        private static void UpdateGauge(Slider slider, Image fillImage, Image ledBarImage, LedSheetKind ledKind, float normalizedValue, Color fillColor)
         {
             float clamped = Mathf.Clamp01(normalizedValue);
             if (slider != null)
@@ -517,7 +515,16 @@ namespace AstraLink.UI.Flight
             if (fillImage != null)
             {
                 fillImage.fillAmount = clamped;
-                fillImage.color = fillColor;
+                fillImage.color = new Color(fillColor.r, fillColor.g, fillColor.b, 0.18f);
+            }
+            if (ledBarImage != null)
+            {
+                Sprite ledSprite = UITheme.GetLedBarSprite(ledKind, clamped);
+                if (ledSprite != null)
+                {
+                    ledBarImage.sprite = ledSprite;
+                    ledBarImage.color = Color.white;
+                }
             }
         }
 
@@ -588,10 +595,14 @@ namespace AstraLink.UI.Flight
             if (bg == null)
             {
                 bg = gameObject.AddComponent<Image>();
-                bg.color = new Color(0.05f, 0.09f, 0.16f, 0.96f);
+            }
+            if (bg.sprite == null)
+            {
+                UITheme.ApplyPanelFrame(bg, useDialogueBox: false);
             }
 
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            UIThemeAssets assets = UITheme.Assets;
 
             GameObject contentRoot = CreateUIObject("TelemetryHUDRoot", rootRt);
             StretchFull(contentRoot.GetComponent<RectTransform>());
@@ -608,10 +619,10 @@ namespace AstraLink.UI.Flight
                 "TelemetryHeader",
                 contentRoot.transform,
                 font,
-                "LIVE SPACECRAFT TELEMETRY & PHASE INDICATORS (S2-04)",
+                "LIVE SPACECRAFT TELEMETRY & AUTOPILOT",
                 16,
                 FontStyle.Bold,
-                new Color(1.0f, 0.88f, 0.42f, 1.0f),
+                UITheme.TextGold,
                 TextAnchor.MiddleLeft);
             header.gameObject.AddComponent<LayoutElement>().preferredHeight = 22f;
 
@@ -625,9 +636,9 @@ namespace AstraLink.UI.Flight
             phasesLayout.childForceExpandWidth = true;
             phasesLayout.childForceExpandHeight = true;
 
-            CreatePhaseBadge(phasesRow.transform, "EclipseBadge", "SOLAR: IN SUNLIGHT", new Color(0.54f, 0.40f, 0.08f, 0.98f), font, out eclipseIndicatorBg, out eclipseIndicatorText);
-            CreatePhaseBadge(phasesRow.transform, "CommWindowBadge", "COMM WINDOW: ACTIVE", new Color(0.08f, 0.50f, 0.42f, 0.98f), font, out commWindowIndicatorBg, out commWindowIndicatorText);
-            CreatePhaseBadge(phasesRow.transform, "SafeModeBadge", "SAFE MODE: OFF", new Color(0.12f, 0.32f, 0.24f, 0.95f), font, out safeModeIndicatorBg, out safeModeIndicatorText);
+            CreatePhaseBadge(phasesRow.transform, "EclipseBadge", "SOLAR: IN SUNLIGHT", new Color(1.0f, 0.88f, 0.50f, 1f), font, out eclipseIndicatorBg, out eclipseIndicatorText);
+            CreatePhaseBadge(phasesRow.transform, "CommWindowBadge", "COMM WINDOW: ACTIVE", UITheme.ButtonTintSuccess, font, out commWindowIndicatorBg, out commWindowIndicatorText);
+            CreatePhaseBadge(phasesRow.transform, "SafeModeBadge", "SAFE MODE: OFF", new Color(0.64f, 0.98f, 0.76f, 1f), font, out safeModeIndicatorBg, out safeModeIndicatorText);
 
             subsystemStatusText = CreateText(
                 "SubsystemStatusText",
@@ -636,74 +647,89 @@ namespace AstraLink.UI.Flight
                 "Subsystems:   Instruments (Science): <b><color=#58F287>ON</color></b>   •   Transmitter (Comms): <b><color=#58F287>ON</color></b>",
                 13,
                 FontStyle.Normal,
-                new Color(0.84f, 0.92f, 1.0f, 1.0f),
+                UITheme.TextPrimary,
                 TextAnchor.MiddleLeft);
             subsystemStatusText.supportRichText = true;
             subsystemStatusText.gameObject.AddComponent<LayoutElement>().preferredHeight = 20f;
 
-            // 5 Live Telemetry Gauges (Slider + Image.fillAmount + Text Counters)
+            // 5 Live Telemetry Gauges (Slider + Image.fillAmount + Segmented Pixel-Art LEDs + Category Icons)
             BuildTelemetryGaugeCard(
                 contentRoot.transform,
                 "Gauge_Battery",
-                "1. BATTERY CHARGE (BatteryPercent / BatteryWh)",
+                "BATTERY CHARGE",
                 "100.0% (45.0 / 45.0 Wh)",
                 "Solar Gen: +45.0 W   •   Load Draw: -26.0 W",
                 new Color(0.22f, 0.86f, 0.48f, 1f),
+                assets != null ? assets.iconEnergyCell : null,
+                LedSheetKind.Cyan,
                 font,
                 out batterySlider,
                 out batteryFillImage,
+                out _batteryLedBar,
                 out batteryValueText,
                 out batteryDetailText);
 
             BuildTelemetryGaugeCard(
                 contentRoot.transform,
                 "Gauge_SSD",
-                "2. ONBOARD SSD BUFFER (SsdUsedPercent / SsdUsedGb)",
+                "ONBOARD SSD BUFFER",
                 "5.0% (0.80 / 16.0 Gb)",
                 "RECORDING: Science payload writing telemetry to SSD",
                 new Color(0.24f, 0.76f, 0.98f, 1f),
+                assets != null ? assets.iconDataChip : null,
+                LedSheetKind.Blue,
                 font,
                 out ssdSlider,
                 out ssdFillImage,
+                out _ssdLedBar,
                 out ssdValueText,
                 out ssdDetailText);
 
             BuildTelemetryGaugeCard(
                 contentRoot.transform,
                 "Gauge_Health",
-                "3. ELECTRONICS HEALTH (HealthPercent)",
+                "ELECTRONICS HEALTH",
                 "100.0%",
                 "Shielding Rating: 15.0 rads   •   Bonus Threshold: >= 80.0%",
                 new Color(0.24f, 0.88f, 0.56f, 1f),
+                assets != null ? assets.iconShield : null,
+                LedSheetKind.Cyan,
                 font,
                 out healthSlider,
                 out healthFillImage,
+                out _healthLedBar,
                 out healthValueText,
                 out healthDetailText);
 
             BuildTelemetryGaugeCard(
                 contentRoot.transform,
                 "Gauge_Science",
-                "4. DELIVERED SCIENCE (DeliveredScience / TargetSciencePoints)",
+                "DELIVERED SCIENCE",
                 "0.0 / 100.0 pts (0%)",
                 "Remaining Science Quota: 100.0 pts",
                 new Color(0.38f, 0.82f, 1.0f, 1f),
+                assets != null ? assets.iconStarChart : null,
+                LedSheetKind.Blue,
                 font,
                 out scienceSlider,
                 out scienceFillImage,
+                out _scienceLedBar,
                 out scienceValueText,
                 out scienceDetailText);
 
             BuildTelemetryGaugeCard(
                 contentRoot.transform,
                 "Gauge_Radiation",
-                "5. RADIATION ENVIRONMENT (RadiationLevel)",
+                "RADIATION ENVIRONMENT",
                 "5.0 rads (NOMINAL)",
                 "Radiation within safe operating envelope (<= 50.0 rads)",
                 new Color(0.32f, 0.86f, 0.76f, 1f),
+                assets != null ? assets.celestialSupernova : null,
+                LedSheetKind.Purple,
                 font,
                 out radiationSlider,
                 out radiationFillImage,
+                out _radiationLedBar,
                 out radiationValueText,
                 out radiationDetailText);
 
@@ -849,9 +875,12 @@ namespace AstraLink.UI.Flight
             string initialValue,
             string initialDetail,
             Color barColor,
+            Sprite iconSprite,
+            LedSheetKind ledKind,
             Font font,
             out Slider slider,
             out Image fillImage,
+            out Image ledBarImage,
             out Text valueText,
             out Text detailText)
         {
@@ -859,17 +888,47 @@ namespace AstraLink.UI.Flight
             Image cardBg = cardObj.AddComponent<Image>();
             UITheme.ApplyPanelFrame(cardBg, useDialogueBox: true);
             LayoutElement cardLe = cardObj.AddComponent<LayoutElement>();
-            cardLe.preferredHeight = 62f;
+            cardLe.preferredHeight = 64f;
 
-            VerticalLayoutGroup vLayout = cardObj.AddComponent<VerticalLayoutGroup>();
-            vLayout.padding = new RectOffset(10, 10, 5, 5);
+            HorizontalLayoutGroup cardRow = cardObj.AddComponent<HorizontalLayoutGroup>();
+            cardRow.padding = new RectOffset(10, 10, 6, 6);
+            cardRow.spacing = 10f;
+            cardRow.childAlignment = TextAnchor.MiddleLeft;
+            cardRow.childControlWidth = true;
+            cardRow.childControlHeight = true;
+            cardRow.childForceExpandWidth = false;
+            cardRow.childForceExpandHeight = true;
+
+            GameObject iconFrame = CreateUIObject("IconFrame", cardObj.transform);
+            UITheme.ApplySlotFrame(iconFrame.AddComponent<Image>(), selected: false);
+            LayoutElement iconLe = iconFrame.AddComponent<LayoutElement>();
+            iconLe.minWidth = 42f;
+            iconLe.preferredWidth = 42f;
+            if (iconSprite != null)
+            {
+                GameObject iconObj = CreateUIObject("IconSprite", iconFrame.transform);
+                RectTransform iconRt = iconObj.GetComponent<RectTransform>();
+                iconRt.anchorMin = new Vector2(0.12f, 0.12f);
+                iconRt.anchorMax = new Vector2(0.88f, 0.88f);
+                iconRt.offsetMin = Vector2.zero;
+                iconRt.offsetMax = Vector2.zero;
+                Image iconImg = iconObj.AddComponent<Image>();
+                iconImg.sprite = iconSprite;
+                iconImg.preserveAspect = true;
+                iconImg.raycastTarget = false;
+            }
+
+            GameObject contentCol = CreateUIObject("GaugeContent", cardObj.transform);
+            contentCol.AddComponent<LayoutElement>().flexibleWidth = 1f;
+
+            VerticalLayoutGroup vLayout = contentCol.AddComponent<VerticalLayoutGroup>();
             vLayout.spacing = 3f;
             vLayout.childControlWidth = true;
             vLayout.childControlHeight = true;
             vLayout.childForceExpandWidth = true;
             vLayout.childForceExpandHeight = false;
 
-            GameObject topRow = CreateUIObject("TopRow", cardObj.transform);
+            GameObject topRow = CreateUIObject("TopRow", contentCol.transform);
             topRow.AddComponent<LayoutElement>().preferredHeight = 18f;
             HorizontalLayoutGroup topLayout = topRow.AddComponent<HorizontalLayoutGroup>();
             topLayout.childControlWidth = true;
@@ -877,18 +936,18 @@ namespace AstraLink.UI.Flight
             topLayout.childForceExpandWidth = false;
 
             Text titleTxt = CreateText("Title", topRow.transform, font, title, 12, FontStyle.Bold,
-                new Color(0.66f, 0.84f, 1.0f, 1.0f), TextAnchor.MiddleLeft);
+                UITheme.TextPrimary, TextAnchor.MiddleLeft);
             titleTxt.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
 
             valueText = CreateText("ValueText", topRow.transform, font, initialValue, 13, FontStyle.Bold,
                 barColor, TextAnchor.MiddleRight);
             valueText.gameObject.AddComponent<LayoutElement>().preferredWidth = 220f;
 
-            // Progress Bar Track with both Slider and Image.fillAmount
-            GameObject trackObj = CreateUIObject("SliderTrack", cardObj.transform);
+            // Progress Bar Track with Slider, Image.fillAmount, and segmented Pixel-Art LED Overlay
+            GameObject trackObj = CreateUIObject("SliderTrack", contentCol.transform);
             Image trackBg = trackObj.AddComponent<Image>();
-            UITheme.ApplyNameTab(trackBg, new Color(0.16f, 0.22f, 0.34f, 1.0f));
-            trackObj.AddComponent<LayoutElement>().preferredHeight = 12f;
+            UITheme.ApplyNameTab(trackBg, new Color(0.55f, 0.65f, 0.82f, 1.0f));
+            trackObj.AddComponent<LayoutElement>().preferredHeight = 15f;
 
             GameObject fillObj = CreateUIObject("Fill", trackObj.transform);
             RectTransform fillRt = fillObj.GetComponent<RectTransform>();
@@ -899,7 +958,15 @@ namespace AstraLink.UI.Flight
             fillImage.fillMethod = Image.FillMethod.Horizontal;
             fillImage.fillOrigin = (int)Image.OriginHorizontal.Left;
             fillImage.fillAmount = 1.0f;
-            fillImage.color = barColor;
+            fillImage.color = new Color(barColor.r, barColor.g, barColor.b, 0.18f);
+
+            GameObject ledObj = CreateUIObject("LedBarOverlay", trackObj.transform);
+            StretchFull(ledObj.GetComponent<RectTransform>());
+            ledBarImage = ledObj.AddComponent<Image>();
+            ledBarImage.sprite = UITheme.GetLedBarSprite(ledKind, 1.0f);
+            ledBarImage.type = Image.Type.Sliced;
+            ledBarImage.color = Color.white;
+            ledBarImage.raycastTarget = false;
 
             slider = trackObj.AddComponent<Slider>();
             slider.interactable = false;
@@ -908,8 +975,8 @@ namespace AstraLink.UI.Flight
             slider.maxValue = 1f;
             slider.value = 1f;
 
-            detailText = CreateText("DetailText", cardObj.transform, font, initialDetail, 11, FontStyle.Normal,
-                new Color(0.74f, 0.84f, 0.94f, 0.95f), TextAnchor.MiddleLeft);
+            detailText = CreateText("DetailText", contentCol.transform, font, initialDetail, 11, FontStyle.Normal,
+                UITheme.TextSecondary, TextAnchor.MiddleLeft);
             detailText.gameObject.AddComponent<LayoutElement>().preferredHeight = 15f;
         }
 
