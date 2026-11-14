@@ -56,5 +56,5 @@
         "temp/": true,
         "Temp/": true
     },
-    "dotnet.defaultSolution": "NASA_SPACE_APP.sln"
+    "dotnet.defaultSolution": "NASA_space_app.sln"
 }
