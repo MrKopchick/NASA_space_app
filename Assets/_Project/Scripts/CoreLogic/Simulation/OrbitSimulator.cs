@@ -47,6 +47,12 @@ namespace AstraLink.Core
 
         private readonly ResourceCalculator _resourceCalculator = new ResourceCalculator();
         private readonly AutopilotEvaluator _autopilotEvaluator = new AutopilotEvaluator();
+        private readonly List<SpaceEventDefinition> _defaultEvents;
+
+        public OrbitSimulator(List<SpaceEventDefinition> defaultEvents = null)
+        {
+            _defaultEvents = defaultEvents;
+        }
 
         public ResourceSummary CalculateResources(List<SatelliteComponent> components, RocketOption rocket, OrbitDefinition orbit, MissionGoal goal)
         {
@@ -66,7 +72,7 @@ namespace AstraLink.Core
 
         public MissionReport RunOrbitTicks(List<SatelliteComponent> components, RocketOption rocket, OrbitDefinition orbit, MissionGoal goal)
         {
-            return SimulateFullMission(components, rocket, orbit, goal, null, null, null);
+            return SimulateInternal(components, rocket, orbit, goal, null, null, null, goal != null ? goal.RequiredOrbits : 0, false);
         }
 
         public MissionReport RunDryRun(List<SatelliteComponent> components, RocketOption rocket, OrbitDefinition orbit, MissionGoal goal, List<AutopilotRule> rules)
@@ -77,7 +83,8 @@ namespace AstraLink.Core
         public MissionReport SimulateFullMission(List<SatelliteComponent> components, RocketOption rocket, OrbitDefinition orbit, MissionGoal goal, List<AutopilotRule> rules, List<ManualCommandRequest> manualCommands = null, List<SpaceEventDefinition> overrideEvents = null)
         {
             int orbits = goal != null ? goal.RequiredOrbits : 0;
-            return SimulateInternal(components, rocket, orbit, goal, rules, manualCommands, overrideEvents, orbits, false);
+            List<SpaceEventDefinition> eventsToUse = overrideEvents ?? _defaultEvents;
+            return SimulateInternal(components, rocket, orbit, goal, rules, manualCommands, eventsToUse, orbits, false);
         }
 
         private MissionReport SimulateInternal(List<SatelliteComponent> components, RocketOption rocket, OrbitDefinition orbit, MissionGoal goal, List<AutopilotRule> rules, List<ManualCommandRequest> manualCommands, List<SpaceEventDefinition> events, int orbitsToSimulate, bool isDryRun)
@@ -246,12 +253,16 @@ namespace AstraLink.Core
 
         private static void ApplyEventModifiers(SpaceEventDefinition ev, ref float radiationBoost, ref float solarMultiplier, ref float downlinkMultiplier)
         {
-            bool hasCustomValues = Math.Abs(ev.RadiationBoost) > 0.0001f || (ev.SolarMultiplier > 0f && Math.Abs(ev.SolarMultiplier - 1f) > 0.0001f) || (ev.DownlinkMultiplier > 0f && Math.Abs(ev.DownlinkMultiplier - 1f) > 0.0001f);
-            if (hasCustomValues)
+            bool isPresetWithDefaults = ev.Type != SpaceEventType.Custom
+                                        && Math.Abs(ev.RadiationBoost) < 0.0001f
+                                        && Math.Abs(ev.SolarMultiplier - 1f) < 0.0001f
+                                        && Math.Abs(ev.DownlinkMultiplier - 1f) < 0.0001f;
+
+            if (!isPresetWithDefaults)
             {
                 radiationBoost += ev.RadiationBoost;
-                if (ev.SolarMultiplier > 0f) solarMultiplier *= ev.SolarMultiplier;
-                if (ev.DownlinkMultiplier > 0f) downlinkMultiplier *= ev.DownlinkMultiplier;
+                solarMultiplier *= Math.Max(0f, ev.SolarMultiplier);
+                downlinkMultiplier *= Math.Max(0f, ev.DownlinkMultiplier);
                 return;
             }
 
