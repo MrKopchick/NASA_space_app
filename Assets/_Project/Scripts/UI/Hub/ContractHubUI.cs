@@ -62,7 +62,7 @@ namespace AstraLink.UI.Hub
         /// </summary>
         public void Initialize(IGameDataRepository repository, AgencyState agencyState)
         {
-            _repository = repository;
+            _repository = repository ?? AstraLink.UI.Workshop.BuilderPanelUI.TryLoadJsonRepositoryFromResources();
             _agencyState = agencyState ?? (GameManager.Instance != null
                 ? GameManager.Instance.CurrentAgencyState
                 : new AgencyState());
