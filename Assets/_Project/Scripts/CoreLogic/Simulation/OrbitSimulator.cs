@@ -6,7 +6,6 @@ namespace AstraLink.Core
 {
     public enum OrbitLogType
     {
-<<<<<<< Updated upstream
         None,
         InvalidMissionConfiguration,
         MissingInputs,
@@ -20,21 +19,6 @@ namespace AstraLink.Core
         FailureLocation,
         InsufficientScienceData,
         InsufficientScienceDetails,
-=======
-        None, 
-        InvalidMissionConfiguration, 
-        MissingInputs, 
-        InvalidLaunchConfiguration,
-        BudgetExceeded, 
-        MassExceeded, 
-        MissingRequiredResources, 
-        InvalidResourceValues,
-        BatteryDepleted, 
-        ElectronicsFailure, 
-        FailureLocation, 
-        InsufficientScienceData,
-        InsufficientScienceDetails, 
->>>>>>> Stashed changes
         TickTelemetry
     }
 
@@ -78,26 +62,12 @@ namespace AstraLink.Core
         private readonly ResourceCalculator _resourceCalculator = new ResourceCalculator();
         private readonly AutopilotEvaluator _autopilotEvaluator = new AutopilotEvaluator();
         private readonly List<SpaceEventDefinition> _defaultEvents;
-            if (!MissionValidator.Validate(components, rocket, orbit, goal, out errorMessage))
-            {
-                return false;
-            }
+        private readonly Random _random;
 
-            if (!MissionValidator.Validate(components, rocket, orbit, goal, out errorMessage))
-            {
-                return false;
-            }
-
-            ResourceSummary resources = _resourceCalculator.CalculateResources(components, rocket, orbit, goal);
-            if (!resources.IsBudgetValid)
-            {
-                errorMessage = GetLogMessage(OrbitLogType.BudgetExceeded);
-                return false;
-            }
-
-        public OrbitSimulator(List<SpaceEventDefinition> defaultEvents = null)
+        public OrbitSimulator(List<SpaceEventDefinition> defaultEvents = null, int? randomSeed = null)
         {
             _defaultEvents = defaultEvents;
+            _random = randomSeed.HasValue ? new Random(randomSeed.Value) : new Random();
         }
 
         public ResourceSummary CalculateResources(List<SatelliteComponent> components, RocketOption rocket, OrbitDefinition orbit, MissionGoal goal)
@@ -129,7 +99,33 @@ namespace AstraLink.Core
         public MissionReport SimulateFullMission(List<SatelliteComponent> components, RocketOption rocket, OrbitDefinition orbit, MissionGoal goal, List<AutopilotRule> rules, List<ManualCommandRequest> manualCommands = null, List<SpaceEventDefinition> overrideEvents = null)
         {
             int orbits = goal != null ? goal.RequiredOrbits : 0;
-            List<SpaceEventDefinition> eventsToUse = overrideEvents ?? _defaultEvents;
+            List<SpaceEventDefinition> eventsToUse;
+
+            if (overrideEvents != null)
+            {
+                eventsToUse = overrideEvents;
+            }
+            else if (goal == null || string.IsNullOrEmpty(goal.EventId))
+            {
+                eventsToUse = new List<SpaceEventDefinition>();
+            }
+            else
+            {
+                eventsToUse = new List<SpaceEventDefinition>();
+                if (_defaultEvents != null)
+                {
+                    for (int i = 0; i < _defaultEvents.Count; i++)
+                    {
+                        var ev = _defaultEvents[i];
+                        if (ev != null && ev.Id == goal.EventId)
+                        {
+                            eventsToUse.Add(ev);
+                            break;
+                        }
+                    }
+                }
+            }
+
             return SimulateInternal(components, rocket, orbit, goal, rules, manualCommands, eventsToUse, orbits, false);
         }
 
@@ -138,9 +134,9 @@ namespace AstraLink.Core
             var report = new MissionReport { Status = MissionStatus.NotStarted, Ticks = new List<SimulationTickSnapshot>() };
             if (components == null || rocket == null || orbit == null || goal == null)
             {
-                report.Status = MissionStatus.Failed; 
-                report.FailureTitle = GetLogMessage(OrbitLogType.InvalidMissionConfiguration); 
-                report.FailureCause = GetLogMessage(OrbitLogType.MissingInputs); 
+                report.Status = MissionStatus.Failed;
+                report.FailureTitle = GetLogMessage(OrbitLogType.InvalidMissionConfiguration);
+                report.FailureCause = GetLogMessage(OrbitLogType.MissingInputs);
                 return report;
             }
 
@@ -148,7 +144,7 @@ namespace AstraLink.Core
             report.BudgetSpentThousands = resources.TotalCostThousands;
             if (!resources.IsBudgetValid || !resources.IsMassValid)
             {
-                report.Status = MissionStatus.Failed; 
+                report.Status = MissionStatus.Failed;
                 report.FailureTitle = GetLogMessage(OrbitLogType.InvalidLaunchConfiguration);
                 if (!resources.IsBudgetValid) report.FailureCause = GetLogMessage(OrbitLogType.BudgetExceeded);
                 else report.FailureCause = GetLogMessage(OrbitLogType.MassExceeded);
@@ -157,31 +153,15 @@ namespace AstraLink.Core
 
             if (resources.MaxBatteryWh <= 0f || resources.MaxSsdGb <= 0f || orbitsToSimulate <= 0)
             {
-                report.Status = MissionStatus.Failed; 
-                report.FailureTitle = GetLogMessage(OrbitLogType.MissingRequiredResources); 
-                report.FailureCause = GetLogMessage(OrbitLogType.InvalidResourceValues); 
-                return report;
-            }
-
-            if (!isDryRun && !MissionValidator.Validate(components, rocket, orbit, goal, out string validationError))
-            {
                 report.Status = MissionStatus.Failed;
-                report.FailureTitle = GetLogMessage(OrbitLogType.InvalidLaunchConfiguration);
-                report.FailureCause = validationError;
-                return report;
-            }
-
-            if (!isDryRun && !MissionValidator.Validate(components, rocket, orbit, goal, out string validationError))
-            {
-                report.Status = MissionStatus.Failed;
-                report.FailureTitle = GetLogMessage(OrbitLogType.InvalidLaunchConfiguration);
-                report.FailureCause = validationError;
+                report.FailureTitle = GetLogMessage(OrbitLogType.MissingRequiredResources);
+                report.FailureCause = GetLogMessage(OrbitLogType.InvalidResourceValues);
                 return report;
             }
 
             float baseDraw = 0f;
-            float scienceDraw = 0f;
-            float commsDraw = 0f;
+            float sciencePowerDraw = 0f;
+            float commsPowerDraw = 0f;
             float dataPerTick = 0f;
             float sciencePerTick = 0f;
 
@@ -190,12 +170,13 @@ namespace AstraLink.Core
                 SatelliteComponent component = components[i];
                 if (component == null) continue;
                 baseDraw += component.BasePowerDrawWatts;
-                if (component.Category == ComponentCategory.SciencePayload) { 
-                    scienceDraw += component.ActivePowerDrawWatts; 
-                    dataPerTick += component.DataGenGbPerTick; 
-                    sciencePerTick += component.SciencePointsPerTick; 
+                if (component.Category == ComponentCategory.SciencePayload)
+                {
+                    sciencePowerDraw += component.ActivePowerDrawWatts;
+                    dataPerTick += component.DataGenGbPerTick;
+                    sciencePerTick += component.SciencePointsPerTick;
                 }
-                else if (component.Category == ComponentCategory.CommsAndStorage) { commsDraw += component.ActivePowerDrawWatts; }
+                else if (component.Category == ComponentCategory.CommsAndStorage) { commsPowerDraw += component.ActivePowerDrawWatts; }
             }
 
             float batteryWh = resources.MaxBatteryWh, ssdUsedGb = 0f, pendingScience = 0f, deliveredScience = 0f, lostDataGb = 0f, health = 100f, minBatteryPercent = 100f;
@@ -233,10 +214,10 @@ namespace AstraLink.Core
             {
                 int orbitNumber = tick / TicksPerOrbit + 1;
                 float position = (tick % TicksPerOrbit) / (float)TicksPerOrbit;
-                bool eclipse = false; // ПОКРАЩИТИ ПОТІМ
+                bool eclipse = false;
                 if (position >= 1f - orbit.EclipseFraction) eclipse = true;
                 else eclipse = false;
-                bool inCommWindow = position < orbit.CommWindowFraction; // можливо потім покращити
+                bool inCommWindow = position < orbit.CommWindowFraction;
 
                 float eventRadiationBoost = 0f, eventSolarMultiplier = 1f, eventDownlinkMultiplier = 1f;
                 string activeEventTitle = string.Empty;
@@ -260,7 +241,6 @@ namespace AstraLink.Core
                     }
                 }
 
-
                 if (!isDryRun && manualCommands != null && manualCommands.Count > 0)
                 {
                     _autopilotEvaluator.ApplyManualCommandsForTick(tick, manualCommands, ref scienceActive, ref commsActive, ref safeModeActive);
@@ -280,7 +260,7 @@ namespace AstraLink.Core
                 AutopilotEvaluator.ResolveEffectiveSubsystems(scienceActive, commsActive, safeModeActive, out bool effectiveScience, out bool effectiveComms);
 
                 float generation = solarGenBeforeRules + resources.RtgWatts;
-                float draw = safeModeActive ? baseDraw * 0.5f : baseDraw + (effectiveScience ? scienceDraw : 0f) + (effectiveComms && inCommWindow ? commsDraw : 0f);
+                float draw = safeModeActive ? baseDraw * 0.5f : baseDraw + (effectiveScience ? sciencePowerDraw : 0f) + (effectiveComms && inCommWindow ? commsPowerDraw : 0f);
 
                 batteryWh = Clamp(batteryWh + (generation - draw) * tickHours, 0f, resources.MaxBatteryWh);
                 float batteryPercent = 100f * batteryWh / resources.MaxBatteryWh;
