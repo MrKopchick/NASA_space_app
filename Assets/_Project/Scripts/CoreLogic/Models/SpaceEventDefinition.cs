@@ -13,5 +13,13 @@ namespace AstraLink.Core
         public float RadiationBoost;
         public float SolarMultiplier = 1.0f;
         public float DownlinkMultiplier = 1.0f;
+        public SpaceEventType Type { get; set; } = SpaceEventType.Custom;
+    }
+    public enum SpaceEventType
+    {
+        Custom = 0,
+        CoronalMassEjection = 1,
+        TransmitterOverheat = 2,
+        MicrometeoroidNoise = 3
     }
 }
