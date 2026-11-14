@@ -6,6 +6,7 @@ namespace AstraLink.Core
 {
     public enum OrbitLogType
     {
+<<<<<<< Updated upstream
         None,
         InvalidMissionConfiguration,
         MissingInputs,
@@ -19,6 +20,21 @@ namespace AstraLink.Core
         FailureLocation,
         InsufficientScienceData,
         InsufficientScienceDetails,
+=======
+        None, 
+        InvalidMissionConfiguration, 
+        MissingInputs, 
+        InvalidLaunchConfiguration,
+        BudgetExceeded, 
+        MassExceeded, 
+        MissingRequiredResources, 
+        InvalidResourceValues,
+        BatteryDepleted, 
+        ElectronicsFailure, 
+        FailureLocation, 
+        InsufficientScienceData,
+        InsufficientScienceDetails, 
+>>>>>>> Stashed changes
         TickTelemetry
     }
 
