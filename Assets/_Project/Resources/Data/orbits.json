@@ -1,0 +1,48 @@
+{
+  "orbits": [
+    {
+      "Id": "orbit_leo",
+      "Name": "Low Earth Orbit (400 km)",
+      "Type": "LowEarth",
+      "OrbitPeriodHours": 1.5,
+      "EclipseFraction": 0.35,
+      "CommWindowFraction": 0.25,
+      "SolarFluxFactor": 1.0,
+      "SignalDelaySeconds": 1.0,
+      "BaseRadiation": 5.0
+    },
+    {
+      "Id": "orbit_lunar",
+      "Name": "Lunar Orbit (100 km)",
+      "Type": "Lunar",
+      "OrbitPeriodHours": 2.0,
+      "EclipseFraction": 0.45,
+      "CommWindowFraction": 0.15,
+      "SolarFluxFactor": 1.0,
+      "SignalDelaySeconds": 3.0,
+      "BaseRadiation": 15.0
+    },
+    {
+      "Id": "orbit_mars",
+      "Name": "Mars Orbit (350 km)",
+      "Type": "Mars",
+      "OrbitPeriodHours": 2.0,
+      "EclipseFraction": 0.35,
+      "CommWindowFraction": 0.15,
+      "SolarFluxFactor": 0.43,
+      "SignalDelaySeconds": 10.0,
+      "BaseRadiation": 20.0
+    },
+    {
+      "Id": "orbit_venus",
+      "Name": "Venus Orbit (300 km, Sandbox)",
+      "Type": "DeepSpace",
+      "OrbitPeriodHours": 1.6,
+      "EclipseFraction": 0.40,
+      "CommWindowFraction": 0.15,
+      "SolarFluxFactor": 1.9,
+      "SignalDelaySeconds": 12.0,
+      "BaseRadiation": 35.0
+    }
+  ]
+}

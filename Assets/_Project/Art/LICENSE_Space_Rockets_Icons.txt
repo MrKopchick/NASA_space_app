@@ -1,0 +1,24 @@
+Space & Rockets Icons - License
+Copyright (c) 2026 Kenny C. All rights reserved except as granted below.
+
+YOU MAY:
+- Use these assets in personal and commercial games and interactive projects
+  (released for free or for sale), on any platform.
+- Modify, recolor, crop, scale, and combine the assets for use in your projects.
+- Use the assets in trailers, screenshots, store pages and other promotion for
+  a project that uses them.
+
+YOU MAY NOT:
+- Resell, redistribute, sublicense or share the assets on their own, whether
+  as-is or modified (for example as part of another asset pack, icon set,
+  sprite collection, template, or free download).
+- Use the assets, in whole or in part, to train, fine-tune or evaluate
+  machine-learning / AI models, or include them in AI training datasets.
+- Claim the assets as your own original work.
+
+CREDIT:
+Credit is appreciated but not required. If you would like to credit:
+"Space & Rockets Icons by Kenny C".
+
+This license applies to everything in the pack (icons, UI pieces, spritesheets).
+The assets are provided "as is", without warranty of any kind.
