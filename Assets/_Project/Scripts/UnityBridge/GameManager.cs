@@ -248,11 +248,14 @@ namespace AstraLink.Core
 
             if (LastMissionReport == null)
             {
-                bool simulated = TryLaunchActiveMission(transitionToFlight: false, stayInWorkshopOnInvalid: true);
-                if (!simulated)
-                {
-                    return;
-                }
+                Debug.Log("[GameManager] Debrief is locked until a mission flight finishes.");
+                return;
+            }
+
+            if (missionReportUI != null && !missionReportUI.IsFlightPlaybackCompleted)
+            {
+                Debug.Log("[GameManager] Debrief is locked until live flight playback completes.");
+                return;
             }
 
             ShowScreen(GameScreen.Debrief);
@@ -814,17 +817,31 @@ namespace AstraLink.Core
         {
             if (_topNavBar == null) return;
 
+            bool debriefUnlocked = LastMissionReport != null && (missionReportUI == null || missionReportUI.IsFlightPlaybackCompleted);
             string[] btnNames = { "Btn_Hub", "Btn_Workshop", "Btn_Flight", "Btn_Debrief" };
             for (int i = 0; i < btnNames.Length; i++)
             {
                 Transform btnTransform = _topNavBar.transform.Find(btnNames[i]);
                 if (btnTransform == null) continue;
+                bool isDebriefBtn = (i == (int)GameScreen.Debrief);
+                Button btn = btnTransform.GetComponent<Button>();
+                if (btn != null)
+                {
+                    btn.interactable = !isDebriefBtn || debriefUnlocked;
+                }
                 Image img = btnTransform.GetComponent<Image>();
                 if (img != null)
                 {
-                    img.color = ((int)activeScreen == i)
-                        ? new Color(0.20f, 0.52f, 0.78f, 1f)
-                        : new Color(0.16f, 0.27f, 0.44f, 1f);
+                    if (isDebriefBtn && !debriefUnlocked)
+                    {
+                        img.color = new Color(0.11f, 0.14f, 0.22f, 0.72f);
+                    }
+                    else
+                    {
+                        img.color = ((int)activeScreen == i)
+                            ? new Color(0.20f, 0.52f, 0.78f, 1f)
+                            : new Color(0.16f, 0.27f, 0.44f, 1f);
+                    }
                 }
             }
         }

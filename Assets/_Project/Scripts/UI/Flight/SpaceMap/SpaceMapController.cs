@@ -187,6 +187,7 @@ namespace AstraLink.UI.Flight
         private static Sprite _procDotSprite;
         private static Sprite _procReticleSprite;
         private static Sprite _procDiscSprite;
+        private static Sprite _smoothDiscSprite;
 
         public event Action OnLaunchSequenceCompleted;
         public event Action<SolarSystemBodyCatalog.BodyDefinition> OnCelestialBodySelected;
@@ -1043,8 +1044,8 @@ namespace AstraLink.UI.Flight
             float sunAngleDeg = toSun.sqrMagnitude > 0.01f ? Mathf.Atan2(toSun.y, toSun.x) * Mathf.Rad2Deg : 180f;
             float sectorDiam = orbitRadius * 2.55f;
 
-            float eclipseFrac = Mathf.Clamp(_currentOrbit != null ? _currentOrbit.EclipseFraction : 0.35f, 0.05f, 0.48f);
-            float commFrac = Mathf.Clamp(_currentOrbit != null ? _currentOrbit.CommWindowFraction : 0.25f, 0.05f, 0.45f);
+            float eclipseFrac = Mathf.Clamp(_currentOrbit != null ? _currentOrbit.EclipseFraction : 0.35f, 0.20f, 0.48f);
+            float sunlightFrac = 1.0f - eclipseFrac; // Seamless 360-degree coverage with zero gap
 
             // Align spacecraft orbital angle with the anti-solar Eclipse sector [1 - eclipseFrac, 1.0)
             // and immediate post-eclipse Comms sector [0, commFrac)
@@ -1054,8 +1055,9 @@ namespace AstraLink.UI.Flight
             {
                 _sunlightSectorRect.anchoredPosition = targetPos;
                 _sunlightSectorRect.sizeDelta = new Vector2(sectorDiam, sectorDiam);
-                _sunlightSectorImg.fillAmount = 0.50f;
-                _sunlightSectorRect.localEulerAngles = new Vector3(0f, 0f, sunAngleDeg);
+                _sunlightSectorImg.fillAmount = sunlightFrac;
+                // Origin360.Top midpoint in local space is (90 - fillAmount * 180)
+                _sunlightSectorRect.localEulerAngles = new Vector3(0f, 0f, sunAngleDeg - 90f + sunlightFrac * 180f);
             }
 
             if (_eclipseSectorRect != null && _eclipseSectorImg != null)
@@ -1068,14 +1070,27 @@ namespace AstraLink.UI.Flight
 
             if (_commsSectorRect != null && _commsSectorImg != null)
             {
-                float commDiam = orbitRadius * 2.25f;
+                float commFrac = Mathf.Clamp(_currentOrbit != null ? _currentOrbit.CommWindowFraction : 0.25f, 0.16f, 0.40f);
+                float commDiam = orbitRadius * 2.22f;
+                float commCenterDeg = sunAngleDeg + 90f - eclipseFrac * 180f;
+                if (!string.Equals(_targetPlanetBodyId, "earth", StringComparison.Ordinal)
+                    && _bodyMap.TryGetValue("earth", out CelestialRuntimeNode earthCommNode)
+                    && earthCommNode != null)
+                {
+                    Vector2 toEarth = earthCommNode.CurrentStagePos - targetPos;
+                    if (toEarth.sqrMagnitude > 0.01f)
+                    {
+                        commCenterDeg = Mathf.Atan2(toEarth.y, toEarth.x) * Mathf.Rad2Deg;
+                    }
+                }
+
                 _commsSectorRect.anchoredPosition = targetPos;
                 _commsSectorRect.sizeDelta = new Vector2(commDiam, commDiam);
                 _commsSectorImg.fillAmount = commFrac;
                 _commsSectorImg.color = _spacecraftCommsOn
-                    ? new Color(0.22f, 0.96f, 0.72f, _spacecraftInComm ? 0.32f : 0.18f)
+                    ? new Color(0.22f, 0.96f, 0.72f, _spacecraftInComm ? 0.34f : 0.20f)
                     : new Color(0.45f, 0.55f, 0.65f, 0.10f);
-                _commsSectorRect.localEulerAngles = new Vector3(0f, 0f, sunAngleDeg + 90f - eclipseFrac * 180f);
+                _commsSectorRect.localEulerAngles = new Vector3(0f, 0f, commCenterDeg - 90f + commFrac * 180f);
             }
 
             if (_missionOrbitHaloRect != null)
@@ -1489,15 +1504,39 @@ namespace AstraLink.UI.Flight
                 tex.Apply();
                 _procDiscSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
             }
+            if (_smoothDiscSprite == null)
+            {
+                const int size = 256;
+                Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+                tex.filterMode = FilterMode.Bilinear;
+                tex.wrapMode = TextureWrapMode.Clamp;
+                Color[] px = new Color[size * size];
+                float half = size * 0.5f;
+                float edgeSoftness = 2.0f / half;
+                for (int y = 0; y < size; y++)
+                {
+                    for (int x = 0; x < size; x++)
+                    {
+                        float dx = (x + 0.5f - half) / half;
+                        float dy = (y + 0.5f - half) / half;
+                        float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                        float alpha = Mathf.Clamp01((1.0f - dist) / edgeSoftness);
+                        px[y * size + x] = new Color(1f, 1f, 1f, alpha);
+                    }
+                }
+                tex.SetPixels(px);
+                tex.Apply();
+                _smoothDiscSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+            }
         }
 
         private static Image CreateRadialSector(string name, Transform parent, Color tint, float fillAmount, out RectTransform rt)
         {
             GameObject obj = CreateUIObject(name, parent);
             rt = obj.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(64f, 64f);
+            rt.sizeDelta = new Vector2(256f, 256f);
             Image img = obj.AddComponent<Image>();
-            img.sprite = _procDiscSprite;
+            img.sprite = _smoothDiscSprite != null ? _smoothDiscSprite : _procDiscSprite;
             img.type = Image.Type.Filled;
             img.fillMethod = Image.FillMethod.Radial360;
             img.fillOrigin = (int)Image.Origin360.Top;

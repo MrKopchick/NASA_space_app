@@ -8,14 +8,17 @@ using AstraLink.Core;
 namespace AstraLink.UI.Flight.SpaceMap
 {
     /// <summary>
-    /// Collapsible (- / +) pixel-art Command HUD for the Solar System flight tab,
-    /// paired with a separate bottom-left Planet Info card so both remain spacious,
-    /// legible, and harmonious with uniform button sizing.
+    /// Modular, collapsible (- / +) Command HUD for the Solar System flight tab:
+    /// 1) Compact Default Control Panel (Top-Right) with large readable labels, core telemetry,
+    ///    playback controls, manual overrides, and popup toggles.
+    /// 2) Toggleable Charts &amp; Detailed Telemetry Popup (live multi-line chart + 5 bars + phase pills).
+    /// 3) Toggleable Systems &amp; Audio Popup (signal delay, autopilot rules monitor, music/SFX controls).
+    /// 4) Separate Planet Info Panel (Bottom-Left) with animated preview and &lt; / &gt; navigation.
     /// </summary>
     public class SolarSystemHUDPanel : MonoBehaviour
     {
-        private const int ChartWidth = 240;
-        private const int ChartHeight = 82;
+        private const int ChartWidth = 360;
+        private const int ChartHeight = 136;
 
         private SolarSystemArtBank _artBank;
         private SpaceMapController _spaceMap;
@@ -26,6 +29,16 @@ namespace AstraLink.UI.Flight.SpaceMap
         private Button _minimizeButton;
         private Button _expandButton;
         private Text _minimizedBadgeText;
+
+        // Toggleable Popups (Left of Main Panel)
+        private GameObject _chartsPopupRoot;
+        private GameObject _systemsPopupRoot;
+        private Button _chartsToggleBtn;
+        private Text _chartsToggleLabel;
+        private Button _systemsToggleBtn;
+        private Text _systemsToggleLabel;
+        private bool _isChartsPopupOpen;
+        private bool _isSystemsPopupOpen;
 
         // Separate Planet Info Panel (Bottom-Left)
         private GameObject _planetInfoRoot;
@@ -59,7 +72,13 @@ namespace AstraLink.UI.Flight.SpaceMap
         private Image _statusBannerBg;
         private Text _statusAlertText;
 
-        // 5 Live Telemetry Bars + Values
+        // Base 4 Telemetry Summary Readouts (Always visible on default panel)
+        private Text _baseBatteryText;
+        private Text _baseHealthText;
+        private Text _baseScienceText;
+        private Text _baseRadiationText;
+
+        // Detailed 5 Telemetry Bars + Values (Inside Charts Popup)
         private Image _batteryFillImg;
         private Text _batteryValueText;
         private Image _ssdFillImg;
@@ -72,7 +91,7 @@ namespace AstraLink.UI.Flight.SpaceMap
         private Text _radiationValueText;
         private Text _powerNetText;
 
-        // Live Pixel-Art Telemetry Chart
+        // Live Pixel-Art Telemetry Chart (Inside Charts Popup)
         private RawImage _telemetryChartRaw;
         private Texture2D _telemetryChartTex;
         private Color32[] _chartPixels;
@@ -80,7 +99,7 @@ namespace AstraLink.UI.Flight.SpaceMap
         private MissionGoal _historyGoal;
         private int _lastRenderedTickIdx = -1;
 
-        // Phase Badges
+        // Phase Badges (Inside Charts Popup)
         private Image _eclipseBadgeBg;
         private Text _eclipseBadgeText;
         private Image _commBadgeBg;
@@ -88,24 +107,24 @@ namespace AstraLink.UI.Flight.SpaceMap
         private Image _safeBadgeBg;
         private Text _safeBadgeText;
 
-        // Manual Overrides + Signal Delay Timer
+        // Manual Overrides (Always visible on default panel)
         private Image _sciSlotBg;
         private Text _sciValueText;
         private Image _commsSlotBg;
         private Text _commsValueText;
         private Image _safeSlotBg;
         private Text _safeSlotValueText;
+
+        // Signal Delay & Autopilot Rules (Inside Systems Popup)
         private Image _signalDelayFillImg;
         private Text _signalDelayText;
         private Text _commandLogText;
-
-        // Autopilot Rules Monitor
         private Transform _rulesListContainer;
         private readonly List<AutopilotRule> _boundRules = new List<AutopilotRule>();
         private readonly List<Image> _ruleRowBgs = new List<Image>();
         private readonly List<Text> _ruleRowTexts = new List<Text>();
 
-        // Audio channel & controls
+        // Audio channel & controls (Inside Systems Popup)
         private AudioSource _musicSource;
         private AudioSource _ambienceSource;
         private AudioSource _sfxSource;
@@ -117,6 +136,9 @@ namespace AstraLink.UI.Flight.SpaceMap
         private Button _sfxToggleBtn;
         private Text _sfxToggleLabel;
         private Text _volumeLabelText;
+        private Button _debriefBtn;
+        private Text _debriefLabel;
+        private bool _debriefUnlocked;
         private bool _wasStormOrAlarmActive;
         private bool _isCollapsed;
         private bool _built;
@@ -155,6 +177,27 @@ namespace AstraLink.UI.Flight.SpaceMap
             if (!visible && _devSafeMode)
             {
                 SetDevSafeModeVisual(false);
+            }
+        }
+
+        public void SetDebriefUnlocked(bool unlocked)
+        {
+            _debriefUnlocked = unlocked;
+            if (_debriefBtn != null)
+            {
+                _debriefBtn.interactable = unlocked;
+                Image img = _debriefBtn.GetComponent<Image>();
+                if (img != null)
+                {
+                    img.color = unlocked
+                        ? new Color(0.84f, 1f, 0.90f, 1f)
+                        : new Color(0.42f, 0.48f, 0.56f, 0.72f);
+                }
+            }
+            if (_debriefLabel != null)
+            {
+                _debriefLabel.text = unlocked ? "POST-FLIGHT DEBRIEF >>" : "DEBRIEF (FINISH FLIGHT)";
+                _debriefLabel.color = unlocked ? Color.white : new Color(0.76f, 0.82f, 0.90f, 0.85f);
             }
         }
 
@@ -225,7 +268,63 @@ namespace AstraLink.UI.Flight.SpaceMap
             _isCollapsed = collapsed;
             if (_expandedRoot != null) _expandedRoot.SetActive(!collapsed);
             if (_minimizedRoot != null) _minimizedRoot.SetActive(collapsed);
+            if (collapsed)
+            {
+                SetChartsPopupOpen(false, playSound: false);
+                SetSystemsPopupOpen(false, playSound: false);
+            }
             if (playSound) PlaySfx(_artBank != null ? _artBank.uiToggle : null, 0.7f);
+        }
+
+        public void SetChartsPopupOpen(bool open, bool playSound = false)
+        {
+            _isChartsPopupOpen = open;
+            if (open && _isSystemsPopupOpen)
+            {
+                _isSystemsPopupOpen = false;
+                if (_systemsPopupRoot != null) _systemsPopupRoot.SetActive(false);
+                RefreshPopupToggleVisuals();
+            }
+            if (_chartsPopupRoot != null) _chartsPopupRoot.SetActive(open);
+            RefreshPopupToggleVisuals();
+            if (open) RedrawTelemetryChart(_lastRenderedTickIdx >= 0 ? _lastRenderedTickIdx : 0);
+            if (playSound) PlaySfx(_artBank != null ? _artBank.uiToggle : null, 0.65f);
+        }
+
+        public void SetSystemsPopupOpen(bool open, bool playSound = false)
+        {
+            _isSystemsPopupOpen = open;
+            if (open && _isChartsPopupOpen)
+            {
+                _isChartsPopupOpen = false;
+                if (_chartsPopupRoot != null) _chartsPopupRoot.SetActive(false);
+                RefreshPopupToggleVisuals();
+            }
+            if (_systemsPopupRoot != null) _systemsPopupRoot.SetActive(open);
+            RefreshPopupToggleVisuals();
+            if (playSound) PlaySfx(_artBank != null ? _artBank.uiToggle : null, 0.65f);
+        }
+
+        private void RefreshPopupToggleVisuals()
+        {
+            if (_chartsToggleLabel != null)
+            {
+                _chartsToggleLabel.text = _isChartsPopupOpen ? "CHARTS -" : "CHARTS +";
+            }
+            if (_chartsToggleBtn != null)
+            {
+                Image img = _chartsToggleBtn.GetComponent<Image>();
+                if (img != null) img.color = _isChartsPopupOpen ? new Color(0.60f, 0.96f, 1f, 1f) : Color.white;
+            }
+            if (_systemsToggleLabel != null)
+            {
+                _systemsToggleLabel.text = _isSystemsPopupOpen ? "SYSTEMS -" : "SYSTEMS +";
+            }
+            if (_systemsToggleBtn != null)
+            {
+                Image img = _systemsToggleBtn.GetComponent<Image>();
+                if (img != null) img.color = _isSystemsPopupOpen ? new Color(1f, 0.90f, 0.60f, 1f) : Color.white;
+            }
         }
 
         public void SetDevSafeModeVisual(bool active)
@@ -234,14 +333,14 @@ namespace AstraLink.UI.Flight.SpaceMap
             if (_devSafeLabel != null)
             {
                 _devSafeLabel.text = active ? "DEV:ON" : "DEV:OFF";
-                _devSafeLabel.color = active ? new Color(0.55f, 1f, 0.72f, 1f) : new Color(0.90f, 0.94f, 1f, 1f);
+                _devSafeLabel.color = active ? new Color(0.55f, 1f, 0.72f, 1f) : new Color(0.92f, 0.96f, 1f, 1f);
             }
             if (_devSafeBtn != null)
             {
                 Image img = _devSafeBtn.GetComponent<Image>();
                 if (img != null)
                 {
-                    img.color = active ? new Color(0.45f, 0.96f, 0.65f, 1f) : new Color(0.80f, 0.85f, 0.95f, 0.92f);
+                    img.color = active ? new Color(0.45f, 0.96f, 0.65f, 1f) : new Color(0.84f, 0.88f, 0.96f, 0.95f);
                 }
             }
         }
@@ -273,8 +372,8 @@ namespace AstraLink.UI.Flight.SpaceMap
 
             if (rules == null || rules.Count == 0)
             {
-                Text empty = CreateText("EmptyRules", _rulesListContainer, font, "No autopilot rules configured.", 10, FontStyle.Italic, new Color(0.66f, 0.76f, 0.90f, 1f), TextAnchor.MiddleLeft);
-                empty.gameObject.AddComponent<LayoutElement>().preferredHeight = 20f;
+                Text empty = CreateText("EmptyRules", _rulesListContainer, font, "No autopilot rules configured.", 11, FontStyle.Italic, new Color(0.68f, 0.78f, 0.92f, 1f), TextAnchor.MiddleLeft);
+                empty.gameObject.AddComponent<LayoutElement>().preferredHeight = 22f;
                 return;
             }
 
@@ -285,7 +384,7 @@ namespace AstraLink.UI.Flight.SpaceMap
                 _boundRules.Add(rule);
 
                 GameObject row = CreateUIObject("RuleRow_" + i, _rulesListContainer);
-                row.AddComponent<LayoutElement>().preferredHeight = 22f;
+                row.AddComponent<LayoutElement>().preferredHeight = 24f;
                 Image bg = row.AddComponent<Image>();
                 bg.color = new Color(0.10f, 0.14f, 0.24f, 0.86f);
                 _ruleRowBgs.Add(bg);
@@ -296,7 +395,7 @@ namespace AstraLink.UI.Flight.SpaceMap
                     rule.Threshold,
                     rule.ThenAction);
 
-                Text txt = CreateText("RuleText", row.transform, font, label, 10, FontStyle.Bold, new Color(0.84f, 0.90f, 0.98f, 1f), TextAnchor.MiddleLeft);
+                Text txt = CreateText("RuleText", row.transform, font, label, 11, FontStyle.Bold, new Color(0.86f, 0.92f, 0.98f, 1f), TextAnchor.MiddleLeft);
                 RectTransform trt = txt.GetComponent<RectTransform>();
                 trt.anchorMin = Vector2.zero;
                 trt.anchorMax = Vector2.one;
@@ -373,7 +472,7 @@ namespace AstraLink.UI.Flight.SpaceMap
             string orbitShort = orbit != null && !string.IsNullOrEmpty(orbit.Name) ? orbit.Name : "Orbit";
             if (_tickStatusText != null)
             {
-                _tickStatusText.text = string.Format("T {0:00}/{1:00}  |  {2}", dispTick, Mathf.Max(1, totalTicks), missionName);
+                _tickStatusText.text = string.Format("TICK {0:00}/{1:00}  •  {2}", dispTick, Mathf.Max(1, totalTicks), missionName);
             }
             if (_minimizedBadgeText != null)
             {
@@ -383,7 +482,10 @@ namespace AstraLink.UI.Flight.SpaceMap
             if (_lastRenderedTickIdx != tickIndex)
             {
                 _lastRenderedTickIdx = tickIndex;
-                RedrawTelemetryChart(tickIndex);
+                if (_isChartsPopupOpen)
+                {
+                    RedrawTelemetryChart(tickIndex);
+                }
             }
         }
 
@@ -392,51 +494,53 @@ namespace AstraLink.UI.Flight.SpaceMap
             EnsureBuilt();
             if (snap == null) return;
 
+            float targetSci = goal != null ? Mathf.Max(1f, goal.TargetSciencePoints) : 100f;
+
+            // Base 4 Telemetry Readouts (Always visible, large font)
+            if (_baseBatteryText != null)
+            {
+                _baseBatteryText.text = string.Format("BAT: {0:0}%", snap.BatteryPercent);
+                _baseBatteryText.color = snap.BatteryPercent < 20f ? new Color(1f, 0.45f, 0.40f, 1f) : new Color(0.98f, 0.84f, 0.34f, 1f);
+            }
+            if (_baseHealthText != null)
+            {
+                _baseHealthText.text = string.Format("HLT: {0:0}%", snap.HealthPercent);
+                _baseHealthText.color = snap.HealthPercent < 55f ? new Color(1f, 0.45f, 0.40f, 1f) : new Color(0.45f, 0.96f, 0.65f, 1f);
+            }
+            if (_baseScienceText != null)
+            {
+                _baseScienceText.text = string.Format("SCI: {0:0}/{1:0}", snap.DeliveredScience, targetSci);
+            }
+            if (_baseRadiationText != null)
+            {
+                _baseRadiationText.text = string.Format("RAD: {0:0} mSv", snap.RadiationLevel);
+                _baseRadiationText.color = snap.RadiationLevel >= 50f ? new Color(1f, 0.42f, 0.58f, 1f) : new Color(0.82f, 0.66f, 1f, 1f);
+            }
+
+            // Detailed Bars (Inside Charts Popup)
             if (_batteryFillImg != null)
             {
                 _batteryFillImg.fillAmount = Mathf.Clamp01(snap.BatteryPercent / 100f);
-                _batteryFillImg.color = snap.BatteryPercent < 20f
-                    ? new Color(1f, 0.38f, 0.34f, 1f)
-                    : new Color(0.96f, 0.78f, 0.24f, 1f);
+                _batteryFillImg.color = snap.BatteryPercent < 20f ? new Color(1f, 0.38f, 0.34f, 1f) : new Color(0.96f, 0.78f, 0.24f, 1f);
             }
-            if (_batteryValueText != null)
-            {
-                _batteryValueText.text = string.Format("{0:0}% ({1:0}Wh)", snap.BatteryPercent, snap.BatteryWh);
-            }
+            if (_batteryValueText != null) _batteryValueText.text = string.Format("{0:0}% ({1:0}Wh)", snap.BatteryPercent, snap.BatteryWh);
 
             if (_ssdFillImg != null)
             {
                 _ssdFillImg.fillAmount = Mathf.Clamp01(snap.SsdUsedPercent / 100f);
-                _ssdFillImg.color = snap.SsdUsedPercent > 85f
-                    ? new Color(1f, 0.56f, 0.26f, 1f)
-                    : new Color(0.45f, 0.78f, 1f, 1f);
+                _ssdFillImg.color = snap.SsdUsedPercent > 85f ? new Color(1f, 0.56f, 0.26f, 1f) : new Color(0.45f, 0.78f, 1f, 1f);
             }
-            if (_ssdValueText != null)
-            {
-                _ssdValueText.text = string.Format("{0:0}% ({1:0.0}GB)", snap.SsdUsedPercent, snap.SsdUsedGb);
-            }
+            if (_ssdValueText != null) _ssdValueText.text = string.Format("{0:0}% ({1:0.0}GB)", snap.SsdUsedPercent, snap.SsdUsedGb);
 
             if (_healthFillImg != null)
             {
                 _healthFillImg.fillAmount = Mathf.Clamp01(snap.HealthPercent / 100f);
-                _healthFillImg.color = snap.HealthPercent < 55f
-                    ? new Color(1f, 0.42f, 0.36f, 1f)
-                    : new Color(0.42f, 0.94f, 0.62f, 1f);
+                _healthFillImg.color = snap.HealthPercent < 55f ? new Color(1f, 0.42f, 0.36f, 1f) : new Color(0.42f, 0.94f, 0.62f, 1f);
             }
-            if (_healthValueText != null)
-            {
-                _healthValueText.text = string.Format("{0:0}%", snap.HealthPercent);
-            }
+            if (_healthValueText != null) _healthValueText.text = string.Format("{0:0}%", snap.HealthPercent);
 
-            float targetSci = goal != null ? Mathf.Max(1f, goal.TargetSciencePoints) : 100f;
-            if (_scienceFillImg != null)
-            {
-                _scienceFillImg.fillAmount = Mathf.Clamp01(snap.DeliveredScience / targetSci);
-            }
-            if (_scienceValueText != null)
-            {
-                _scienceValueText.text = string.Format("{0:0}/{1:0}", snap.DeliveredScience, targetSci);
-            }
+            if (_scienceFillImg != null) _scienceFillImg.fillAmount = Mathf.Clamp01(snap.DeliveredScience / targetSci);
+            if (_scienceValueText != null) _scienceValueText.text = string.Format("{0:0}/{1:0}", snap.DeliveredScience, targetSci);
 
             if (_radiationFillImg != null)
             {
@@ -448,24 +552,14 @@ namespace AstraLink.UI.Flight.SpaceMap
             if (_radiationValueText != null)
             {
                 _radiationValueText.text = snap.RadiationLevel > 50f
-                    ? string.Format("{0:0} rads (!)", snap.RadiationLevel)
-                    : string.Format("{0:0} rads", snap.RadiationLevel);
+                    ? string.Format("{0:0} mSv (!)", snap.RadiationLevel)
+                    : string.Format("{0:0} mSv", snap.RadiationLevel);
                 _radiationValueText.color = snap.RadiationLevel > 50f
                     ? new Color(1f, 0.48f, 0.52f, 1f)
                     : Color.white;
             }
-            if (_powerNetText != null)
-            {
-                float netWatts = snap.SolarGenWatts - snap.PowerDrawWatts;
-                _powerNetText.text = string.Format("SOLAR +{0:0.0}W  |  LOAD -{1:0.0}W  |  NET {2:+0.0;-0.0;0.0}W",
-                    snap.SolarGenWatts,
-                    snap.PowerDrawWatts,
-                    netWatts);
-                _powerNetText.color = netWatts >= 0f
-                    ? new Color(0.58f, 0.95f, 0.72f, 1f)
-                    : new Color(1f, 0.76f, 0.44f, 1f);
-            }
 
+            // Phase Badges
             UpdatePhasePill(_eclipseBadgeBg, _eclipseBadgeText, snap.IsInEclipse, "ECLIPSE", "SUNLIGHT",
                 new Color(0.22f, 0.30f, 0.56f, 0.95f), new Color(0.50f, 0.40f, 0.14f, 0.92f));
             UpdatePhasePill(_commBadgeBg, _commBadgeText, snap.IsInCommWindow, "DSN LINK", "NO COMM",
@@ -473,27 +567,24 @@ namespace AstraLink.UI.Flight.SpaceMap
             UpdatePhasePill(_safeBadgeBg, _safeBadgeText, snap.SafeModeActive, "SAFE MODE", "NOMINAL",
                 new Color(0.58f, 0.42f, 0.12f, 0.95f), new Color(0.14f, 0.26f, 0.38f, 0.90f));
 
+            // Manual Override Chips
             if (_commsValueText != null)
             {
                 bool linkUp = snap.CommsActive && snap.IsInCommWindow;
                 _commsValueText.text = snap.CommsActive ? (linkUp ? "LINK" : "ON") : "OFF";
                 _commsValueText.color = !snap.CommsActive
-                    ? new Color(0.82f, 0.55f, 0.55f, 1f)
+                    ? new Color(0.85f, 0.58f, 0.58f, 1f)
                     : (linkUp ? new Color(0.45f, 0.98f, 0.68f, 1f) : new Color(0.95f, 0.85f, 0.45f, 1f));
             }
             if (_sciValueText != null)
             {
                 _sciValueText.text = snap.ScienceActive ? "ON" : "OFF";
-                _sciValueText.color = snap.ScienceActive
-                    ? new Color(0.52f, 0.92f, 1f, 1f)
-                    : new Color(0.82f, 0.55f, 0.55f, 1f);
+                _sciValueText.color = snap.ScienceActive ? new Color(0.52f, 0.92f, 1f, 1f) : new Color(0.85f, 0.58f, 0.58f, 1f);
             }
             if (_safeSlotValueText != null)
             {
                 _safeSlotValueText.text = snap.SafeModeActive ? "ON" : "OFF";
-                _safeSlotValueText.color = snap.SafeModeActive
-                    ? new Color(1f, 0.86f, 0.36f, 1f)
-                    : new Color(0.84f, 0.92f, 1f, 1f);
+                _safeSlotValueText.color = snap.SafeModeActive ? new Color(1f, 0.86f, 0.36f, 1f) : new Color(0.86f, 0.94f, 1f, 1f);
             }
 
             if (_safeSlotBg != null && _artBank != null)
@@ -509,17 +600,15 @@ namespace AstraLink.UI.Flight.SpaceMap
                 SolarSystemArtBank.ApplyPanelFrame(_sciSlotBg, snap.ScienceActive ? _artBank.itemSlotSelected : _artBank.itemSlot, new Vector4(10f, 10f, 10f, 10f), Color.white);
             }
 
+            // Autopilot Rules
             for (int i = 0; i < _boundRules.Count && i < _ruleRowBgs.Count; i++)
             {
                 bool active = snap.TriggeredRuleIds != null && snap.TriggeredRuleIds.Contains(_boundRules[i].RuleId);
-                _ruleRowBgs[i].color = active
-                    ? new Color(0.14f, 0.46f, 0.24f, 0.96f)
-                    : new Color(0.10f, 0.14f, 0.24f, 0.86f);
-                _ruleRowTexts[i].color = active
-                    ? new Color(0.75f, 1f, 0.82f, 1f)
-                    : new Color(0.84f, 0.90f, 0.98f, 1f);
+                _ruleRowBgs[i].color = active ? new Color(0.14f, 0.46f, 0.24f, 0.96f) : new Color(0.10f, 0.14f, 0.24f, 0.86f);
+                _ruleRowTexts[i].color = active ? new Color(0.75f, 1f, 0.82f, 1f) : new Color(0.86f, 0.92f, 0.98f, 1f);
             }
 
+            // Status Banner
             bool hasAlert = !string.IsNullOrEmpty(snap.ActiveEventTitle) || snap.RadiationLevel >= 50f || snap.SafeModeActive;
             if (_statusAlertText != null && _statusBannerBg != null)
             {
@@ -527,7 +616,7 @@ namespace AstraLink.UI.Flight.SpaceMap
                 {
                     _statusAlertText.text = !string.IsNullOrEmpty(snap.ActiveEventTitle)
                         ? "DEV SAFE: " + snap.ActiveEventTitle.ToUpperInvariant()
-                        : "DEV SAFE MODE: ENDLESS SOLAR TEST";
+                        : "DEV SAFE MODE: ENDLESS TEST";
                     _statusBannerBg.color = new Color(0.14f, 0.40f, 0.28f, 0.92f);
                 }
                 else if (!string.IsNullOrEmpty(snap.ActiveEventTitle))
@@ -542,17 +631,17 @@ namespace AstraLink.UI.Flight.SpaceMap
                 }
                 else if (snap.IsInEclipse)
                 {
-                    _statusAlertText.text = "PHASE: ECLIPSE SHADOW (SOLAR 0W)";
+                    _statusAlertText.text = "PHASE: ECLIPSE SHADOW";
                     _statusBannerBg.color = new Color(0.16f, 0.22f, 0.42f, 0.90f);
                 }
                 else if (snap.IsInCommWindow)
                 {
-                    _statusAlertText.text = "PHASE: DSN COMMS WINDOW ACTIVE";
+                    _statusAlertText.text = "PHASE: DSN COMMS ACTIVE";
                     _statusBannerBg.color = new Color(0.12f, 0.40f, 0.26f, 0.90f);
                 }
                 else
                 {
-                    _statusAlertText.text = "PHASE: SUNLIT ORBITAL CRUISE";
+                    _statusAlertText.text = "PHASE: SUNLIT CRUISE";
                     _statusBannerBg.color = new Color(0.10f, 0.20f, 0.34f, 0.88f);
                 }
             }
@@ -597,12 +686,17 @@ namespace AstraLink.UI.Flight.SpaceMap
 
             BuildSeparatePlanetInfoPanel(font);
             BuildMinimizedChip(font);
-            BuildExpandedPanel(font);
+            BuildDefaultControlPanel(font);
+            BuildChartsPopup(font);
+            BuildSystemsPopup(font);
+
             EnsureAudioSources();
             RefreshAudioUI();
 
             _built = true;
             SetDevSafeModeVisual(_devSafeMode);
+            SetChartsPopupOpen(false, playSound: false);
+            SetSystemsPopupOpen(false, playSound: false);
             SetCollapsed(false, playSound: false);
         }
 
@@ -614,7 +708,7 @@ namespace AstraLink.UI.Flight.SpaceMap
             rt.anchorMax = new Vector2(0f, 0f);
             rt.pivot = new Vector2(0f, 0f);
             rt.anchoredPosition = new Vector2(16f, 16f);
-            rt.sizeDelta = new Vector2(368f, 146f);
+            rt.sizeDelta = new Vector2(376f, 152f);
 
             ContentSizeFitter csf = _planetInfoRoot.AddComponent<ContentSizeFitter>();
             csf.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
@@ -638,9 +732,12 @@ namespace AstraLink.UI.Flight.SpaceMap
             rootVl.childForceExpandWidth = true;
             rootVl.childForceExpandHeight = false;
 
-            // Header bar with uniform buttons
             GameObject header = CreateUIObject("PlanetHeader", _planetInfoRoot.transform);
-            header.AddComponent<LayoutElement>().preferredHeight = 32f;
+            LayoutElement hLe = header.AddComponent<LayoutElement>();
+            hLe.minHeight = 32f;
+            hLe.preferredHeight = 32f;
+            hLe.flexibleHeight = 0f;
+
             HorizontalLayoutGroup hhl = header.AddComponent<HorizontalLayoutGroup>();
             hhl.spacing = 6f;
             hhl.childAlignment = TextAnchor.MiddleCenter;
@@ -660,20 +757,26 @@ namespace AstraLink.UI.Flight.SpaceMap
                 tBg.color = new Color(0.14f, 0.42f, 0.56f, 1f);
             }
 
-            _inspectorTitleText = CreateText("BodyName", titleBar.transform, font, "EARTH", 12, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
-            StretchFull(_inspectorTitleText.GetComponent<RectTransform>());
+            _inspectorTitleText = CreateText("BodyName", titleBar.transform, font, "EARTH", 13, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
+            _inspectorTitleText.resizeTextForBestFit = true;
+            _inspectorTitleText.resizeTextMinSize = 10;
+            _inspectorTitleText.resizeTextMaxSize = 13;
+            RectTransform itRt = _inspectorTitleText.GetComponent<RectTransform>();
+            StretchFull(itRt);
+            itRt.offsetMin = new Vector2(8f, 2f);
+            itRt.offsetMax = new Vector2(-8f, -2f);
 
-            CreatePixelButton(header.transform, "Btn_PrevBody", "<", Color.white, 36f, 32f, 12, font, () =>
+            CreatePixelButton(header.transform, "Btn_PrevBody", "<", Color.white, 36f, 32f, 13, font, () =>
             {
                 PlaySfx(_artBank != null ? _artBank.uiClick : null, 0.55f);
                 if (_spaceMap != null) _spaceMap.SelectNextBody(-1);
             });
-            CreatePixelButton(header.transform, "Btn_NextBody", ">", Color.white, 36f, 32f, 12, font, () =>
+            CreatePixelButton(header.transform, "Btn_NextBody", ">", Color.white, 36f, 32f, 13, font, () =>
             {
                 PlaySfx(_artBank != null ? _artBank.uiClick : null, 0.55f);
                 if (_spaceMap != null) _spaceMap.SelectNextBody(1);
             });
-            _planetCollapseBtn = CreatePixelButton(header.transform, "Btn_CollapsePlanet", "-", new Color(1f, 0.92f, 0.90f, 1f), 36f, 32f, 14, font, () =>
+            _planetCollapseBtn = CreatePixelButton(header.transform, "Btn_CollapsePlanet", "-", new Color(1f, 0.92f, 0.90f, 1f), 36f, 32f, 15, font, () =>
             {
                 _planetCardCollapsed = !_planetCardCollapsed;
                 if (_planetInfoBody != null) _planetInfoBody.SetActive(!_planetCardCollapsed);
@@ -682,8 +785,7 @@ namespace AstraLink.UI.Flight.SpaceMap
             });
             _planetCollapseLabel = _planetCollapseBtn.GetComponentInChildren<Text>();
 
-            // Body card
-            _planetInfoBody = CreateCardBox("PlanetCardBody", _planetInfoRoot.transform, 92f);
+            _planetInfoBody = CreateCardBox("PlanetCardBody", _planetInfoRoot.transform, 96f);
             HorizontalLayoutGroup hl = _planetInfoBody.AddComponent<HorizontalLayoutGroup>();
             hl.padding = new RectOffset(8, 8, 6, 6);
             hl.spacing = 10f;
@@ -694,8 +796,8 @@ namespace AstraLink.UI.Flight.SpaceMap
 
             GameObject slotObj = CreateUIObject("PlanetPreviewSlot", _planetInfoBody.transform);
             LayoutElement slotLe = slotObj.AddComponent<LayoutElement>();
-            slotLe.preferredWidth = 74f;
-            slotLe.preferredHeight = 74f;
+            slotLe.preferredWidth = 76f;
+            slotLe.preferredHeight = 76f;
             Image slotBg = slotObj.AddComponent<Image>();
             if (_artBank != null && _artBank.itemSlotSelected != null)
             {
@@ -725,10 +827,10 @@ namespace AstraLink.UI.Flight.SpaceMap
             vl.childForceExpandWidth = true;
             vl.childForceExpandHeight = false;
 
-            _inspectorMetaText = CreateText("BodyMeta", infoCol.transform, font, "1.00 AU  |  365.25d orbit", 11, FontStyle.Bold, new Color(1f, 0.88f, 0.52f, 1f), TextAnchor.MiddleLeft);
-            _inspectorMetaText.gameObject.AddComponent<LayoutElement>().preferredHeight = 16f;
+            _inspectorMetaText = CreateText("BodyMeta", infoCol.transform, font, "1.00 AU  |  365.25d orbit", 12, FontStyle.Bold, new Color(1f, 0.88f, 0.52f, 1f), TextAnchor.MiddleLeft);
+            _inspectorMetaText.gameObject.AddComponent<LayoutElement>().preferredHeight = 18f;
 
-            _inspectorDescText = CreateText("BodyDesc", infoCol.transform, font, "Click any planet or Asteroid Belt on the map to inspect & follow.", 11, FontStyle.Normal, new Color(0.86f, 0.92f, 0.99f, 1f), TextAnchor.UpperLeft);
+            _inspectorDescText = CreateText("BodyDesc", infoCol.transform, font, "Click any planet or Asteroid Belt on the map to inspect & follow.", 11, FontStyle.Normal, new Color(0.88f, 0.94f, 1f, 1f), TextAnchor.UpperLeft);
             _inspectorDescText.horizontalOverflow = HorizontalWrapMode.Wrap;
             _inspectorDescText.verticalOverflow = VerticalWrapMode.Truncate;
             _inspectorDescText.gameObject.AddComponent<LayoutElement>().flexibleHeight = 1f;
@@ -742,7 +844,7 @@ namespace AstraLink.UI.Flight.SpaceMap
             rt.anchorMax = new Vector2(1f, 1f);
             rt.pivot = new Vector2(1f, 1f);
             rt.anchoredPosition = new Vector2(-16f, -14f);
-            rt.sizeDelta = new Vector2(234f, 46f);
+            rt.sizeDelta = new Vector2(248f, 46f);
 
             Image bg = _minimizedRoot.AddComponent<Image>();
             if (_artBank != null && _artBank.dialogueBox != null)
@@ -772,7 +874,7 @@ namespace AstraLink.UI.Flight.SpaceMap
                 iconImg.raycastTarget = false;
             }
 
-            _minimizedBadgeText = CreateText("MiniStatus", _minimizedRoot.transform, font, "MAP HUD", 12, FontStyle.Bold, new Color(0.90f, 0.96f, 1f, 1f), TextAnchor.MiddleLeft);
+            _minimizedBadgeText = CreateText("MiniStatus", _minimizedRoot.transform, font, "MAP HUD", 12, FontStyle.Bold, new Color(0.92f, 0.97f, 1f, 1f), TextAnchor.MiddleLeft);
             _minimizedBadgeText.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
 
             _expandButton = CreatePixelButton(_minimizedRoot.transform, "Btn_ExpandPanel", "+", new Color(0.95f, 1f, 0.98f, 1f), 36f, 32f, 16, font, () =>
@@ -781,15 +883,19 @@ namespace AstraLink.UI.Flight.SpaceMap
             });
         }
 
-        private void BuildExpandedPanel(Font font)
+        private void BuildDefaultControlPanel(Font font)
         {
             _expandedRoot = CreateUIObject("SinglePanel_Expanded", transform);
             RectTransform rt = _expandedRoot.GetComponent<RectTransform>();
-            rt.anchorMin = new Vector2(1f, 0f);
+            rt.anchorMin = new Vector2(1f, 1f);
             rt.anchorMax = new Vector2(1f, 1f);
             rt.pivot = new Vector2(1f, 1f);
-            rt.offsetMin = new Vector2(-418f, 16f);
-            rt.offsetMax = new Vector2(-16f, -14f);
+            rt.anchoredPosition = new Vector2(-16f, -14f);
+            rt.sizeDelta = new Vector2(368f, 440f);
+
+            ContentSizeFitter csf = _expandedRoot.AddComponent<ContentSizeFitter>();
+            csf.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
             Image frameImg = _expandedRoot.AddComponent<Image>();
             if (_artBank != null && _artBank.inventoryPanel != null)
@@ -801,71 +907,61 @@ namespace AstraLink.UI.Flight.SpaceMap
                 frameImg.color = new Color(0.08f, 0.12f, 0.24f, 0.94f);
             }
 
-            VerticalLayoutGroup outerLayout = _expandedRoot.AddComponent<VerticalLayoutGroup>();
-            outerLayout.padding = new RectOffset(12, 12, 10, 10);
-            outerLayout.spacing = 8f;
-            outerLayout.childControlWidth = true;
-            outerLayout.childControlHeight = true;
-            outerLayout.childForceExpandWidth = true;
-            outerLayout.childForceExpandHeight = false;
+            VerticalLayoutGroup rootLayout = _expandedRoot.AddComponent<VerticalLayoutGroup>();
+            rootLayout.padding = new RectOffset(12, 12, 10, 10);
+            rootLayout.spacing = 8f;
+            rootLayout.childControlWidth = true;
+            rootLayout.childControlHeight = true;
+            rootLayout.childForceExpandWidth = true;
+            rootLayout.childForceExpandHeight = false;
 
+            // 1. Header
             BuildPanelHeader(font, _expandedRoot.transform);
 
-            GameObject scrollObj = CreateUIObject("PanelScroll", _expandedRoot.transform);
-            LayoutElement scrollLe = scrollObj.AddComponent<LayoutElement>();
-            scrollLe.minHeight = 140f;
-            scrollLe.preferredHeight = 720f;
-            scrollLe.flexibleHeight = 1f;
-            ScrollRect sr = scrollObj.AddComponent<ScrollRect>();
-            sr.horizontal = false;
-            sr.vertical = true;
-            sr.movementType = ScrollRect.MovementType.Clamped;
-            sr.scrollSensitivity = 28f;
+            // 2. Playback + Timeline
+            BuildPlaybackStrip(font, _expandedRoot.transform);
 
-            GameObject viewport = CreateUIObject("Viewport", scrollObj.transform);
-            StretchFull(viewport.GetComponent<RectTransform>());
-            viewport.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.01f);
-            viewport.AddComponent<Mask>().showMaskGraphic = false;
+            // 3. Base Telemetry Summary (Big & Clear 2x2)
+            BuildBaseTelemetryCard(font, _expandedRoot.transform);
 
-            GameObject content = CreateUIObject("Content", viewport.transform);
-            RectTransform crt = content.GetComponent<RectTransform>();
-            crt.anchorMin = new Vector2(0f, 1f);
-            crt.anchorMax = new Vector2(1f, 1f);
-            crt.pivot = new Vector2(0.5f, 1f);
-            crt.anchoredPosition = Vector2.zero;
-            crt.sizeDelta = new Vector2(0f, 0f);
+            // 4. Manual Overrides (3 Equal Chips)
+            BuildManualOverrideStrip(font, _expandedRoot.transform);
 
-            ContentSizeFitter csf = content.AddComponent<ContentSizeFitter>();
-            csf.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
-            csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            // 5. Popup Toggles Row (Charts Popup | Systems & Audio Popup)
+            GameObject popupRow = CreateUIObject("PopupTogglesRow", _expandedRoot.transform);
+            popupRow.AddComponent<LayoutElement>().preferredHeight = 32f;
+            HorizontalLayoutGroup prl = popupRow.AddComponent<HorizontalLayoutGroup>();
+            prl.spacing = 6f;
+            prl.childAlignment = TextAnchor.MiddleCenter;
+            prl.childControlWidth = true;
+            prl.childControlHeight = true;
+            prl.childForceExpandWidth = true;
 
-            VerticalLayoutGroup bodyLayout = content.AddComponent<VerticalLayoutGroup>();
-            bodyLayout.padding = new RectOffset(0, 2, 2, 4);
-            bodyLayout.spacing = 8f;
-            bodyLayout.childControlWidth = true;
-            bodyLayout.childControlHeight = true;
-            bodyLayout.childForceExpandWidth = true;
-            bodyLayout.childForceExpandHeight = false;
+            _chartsToggleBtn = CreatePixelButton(popupRow.transform, "Btn_ToggleChartsPopup", "CHARTS +", Color.white, 0f, 32f, 12, font, () =>
+            {
+                SetChartsPopupOpen(!_isChartsPopupOpen, playSound: true);
+            });
+            _chartsToggleLabel = _chartsToggleBtn.GetComponentInChildren<Text>();
 
-            sr.viewport = viewport.GetComponent<RectTransform>();
-            sr.content = crt;
+            _systemsToggleBtn = CreatePixelButton(popupRow.transform, "Btn_ToggleSystemsPopup", "SYSTEMS +", Color.white, 0f, 32f, 12, font, () =>
+            {
+                SetSystemsPopupOpen(!_isSystemsPopupOpen, playSound: true);
+            });
+            _systemsToggleLabel = _systemsToggleBtn.GetComponentInChildren<Text>();
 
-            BuildPlaybackStrip(font, content.transform);
-            BuildTelemetryGaugesAndChartCard(font, content.transform);
-            BuildManualOverrideAndSignalCard(font, content.transform);
-            BuildAutopilotRulesCard(font, content.transform);
-            BuildAudioControlsRow(font, content.transform);
-
-            Button debriefBtn = CreatePixelButton(_expandedRoot.transform, "Btn_OpenDebrief", "POST-FLIGHT DEBRIEF >>", new Color(0.88f, 1f, 0.92f, 1f), 0f, 36f, 12, font, () =>
+            // 6. Debrief CTA
+            _debriefBtn = CreatePixelButton(_expandedRoot.transform, "Btn_OpenDebrief", "POST-FLIGHT DEBRIEF >>", new Color(0.88f, 1f, 0.92f, 1f), 0f, 36f, 12, font, () =>
             {
                 PlaySfx(_artBank != null ? _artBank.uiClick : null, 0.65f);
                 OnOpenDebriefClicked?.Invoke();
             });
-            LayoutElement debriefLe = debriefBtn.GetComponent<LayoutElement>();
-            debriefLe.flexibleWidth = 1f;
-            debriefLe.minHeight = 36f;
-            debriefLe.preferredHeight = 36f;
-            debriefLe.flexibleHeight = 0f;
+            _debriefLabel = _debriefBtn.GetComponentInChildren<Text>();
+            LayoutElement dLe = _debriefBtn.GetComponent<LayoutElement>();
+            dLe.flexibleWidth = 1f;
+            dLe.minHeight = 36f;
+            dLe.preferredHeight = 36f;
+            dLe.flexibleHeight = 0f;
+            SetDebriefUnlocked(_debriefUnlocked);
         }
 
         private void BuildPanelHeader(Font font, Transform parent)
@@ -875,6 +971,446 @@ namespace AstraLink.UI.Flight.SpaceMap
             headerLe.minHeight = 34f;
             headerLe.preferredHeight = 34f;
             headerLe.flexibleHeight = 0f;
+
+            HorizontalLayoutGroup hl = header.AddComponent<HorizontalLayoutGroup>();
+            hl.spacing = 5f;
+            hl.childAlignment = TextAnchor.MiddleCenter;
+            hl.childControlWidth = true;
+            hl.childControlHeight = true;
+            hl.childForceExpandWidth = false;
+
+            GameObject tabBanner = CreateUIObject("TitleBanner", header.transform);
+            tabBanner.AddComponent<LayoutElement>().flexibleWidth = 1f;
+            Image tabBg = tabBanner.AddComponent<Image>();
+            if (_artBank != null && _artBank.nameTab != null)
+            {
+                SolarSystemArtBank.ApplyPanelFrame(tabBg, _artBank.nameTab, new Vector4(8f, 6f, 8f, 6f), Color.white);
+            }
+            else
+            {
+                tabBg.color = new Color(0.14f, 0.42f, 0.56f, 1f);
+            }
+
+            HorizontalLayoutGroup thl = tabBanner.AddComponent<HorizontalLayoutGroup>();
+            thl.padding = new RectOffset(8, 8, 2, 2);
+            thl.spacing = 5f;
+            thl.childAlignment = TextAnchor.MiddleLeft;
+            thl.childControlWidth = true;
+            thl.childControlHeight = true;
+            thl.childForceExpandWidth = false;
+
+            if (_artBank != null && _artBank.starMapTablet != null)
+            {
+                GameObject ic = CreateUIObject("MapTabletIcon", tabBanner.transform);
+                ic.AddComponent<LayoutElement>().preferredWidth = 20f;
+                Image icImg = ic.AddComponent<Image>();
+                icImg.sprite = _artBank.starMapTablet;
+                icImg.preserveAspect = true;
+                icImg.raycastTarget = false;
+            }
+
+            Text title = CreateText("HeaderTitle", tabBanner.transform, font, "FLIGHT HUD", 12, FontStyle.Bold, Color.white, TextAnchor.MiddleLeft);
+            title.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
+
+            _devSafeBtn = CreatePixelButton(header.transform, "Btn_DevSafeMode", "DEV:OFF", Color.white, 72f, 32f, 11, font, () =>
+            {
+                _devSafeMode = !_devSafeMode;
+                SetDevSafeModeVisual(_devSafeMode);
+                PlaySfx(_artBank != null ? _artBank.uiToggle : null, 0.7f);
+                OnDevSafeModeToggled?.Invoke(_devSafeMode);
+            });
+            _devSafeLabel = _devSafeBtn.GetComponentInChildren<Text>();
+
+            CreatePixelButton(header.transform, "Btn_FitSystem", "FIT", new Color(0.95f, 0.98f, 1f, 1f), 46f, 32f, 11, font, () =>
+            {
+                PlaySfx(_artBank != null ? _artBank.uiClick : null, 0.6f);
+                if (_spaceMap != null) _spaceMap.ResetCameraToSystemOverview();
+            });
+
+            _minimizeButton = CreatePixelButton(header.transform, "Btn_MinimizePanel", "-", new Color(1f, 0.90f, 0.88f, 1f), 34f, 32f, 16, font, () =>
+            {
+                SetCollapsed(true, playSound: true);
+            });
+        }
+
+        private void BuildPlaybackStrip(Font font, Transform parent)
+        {
+            GameObject playbackBox = CreateCardBox("PlaybackAndStatusCard", parent, 0f);
+            VerticalLayoutGroup vl = playbackBox.AddComponent<VerticalLayoutGroup>();
+            vl.padding = new RectOffset(10, 10, 8, 8);
+            vl.spacing = 6f;
+            vl.childControlWidth = true;
+            vl.childControlHeight = true;
+            vl.childForceExpandWidth = true;
+            vl.childForceExpandHeight = false;
+
+            GameObject topRow = CreateUIObject("MissionTickRow", playbackBox.transform);
+            topRow.AddComponent<LayoutElement>().preferredHeight = 20f;
+            HorizontalLayoutGroup trl = topRow.AddComponent<HorizontalLayoutGroup>();
+            trl.spacing = 6f;
+            trl.childAlignment = TextAnchor.MiddleLeft;
+            trl.childControlWidth = true;
+            trl.childControlHeight = true;
+            trl.childForceExpandWidth = false;
+
+            if (_artBank != null && _artBank.missionBadge != null)
+            {
+                GameObject bdg = CreateUIObject("BadgeIcon", topRow.transform);
+                bdg.AddComponent<LayoutElement>().preferredWidth = 18f;
+                Image bi = bdg.AddComponent<Image>();
+                bi.sprite = _artBank.missionBadge;
+                bi.preserveAspect = true;
+                bi.raycastTarget = false;
+            }
+
+            _tickStatusText = CreateText("TickStatus", topRow.transform, font, "TICK 01/20  •  LEO Mission", 12, FontStyle.Bold, new Color(0.94f, 0.98f, 1f, 1f), TextAnchor.MiddleLeft);
+            _tickStatusText.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
+
+            // Uniform Row 1: PLAY / STEP +1 / RESTART
+            GameObject actionRow = CreateUIObject("PlaybackActionRow", playbackBox.transform);
+            actionRow.AddComponent<LayoutElement>().preferredHeight = 32f;
+            HorizontalLayoutGroup arl = actionRow.AddComponent<HorizontalLayoutGroup>();
+            arl.spacing = 6f;
+            arl.childAlignment = TextAnchor.MiddleCenter;
+            arl.childControlWidth = true;
+            arl.childControlHeight = true;
+            arl.childForceExpandWidth = true;
+
+            _playPauseBtn = CreatePixelButton(actionRow.transform, "Btn_PlayPause", "PAUSE", new Color(0.84f, 1f, 0.90f, 1f), 0f, 32f, 12, font, () =>
+            {
+                PlaySfx(_artBank != null ? _artBank.uiClick : null, 0.65f);
+                OnPlayPauseClicked?.Invoke();
+            });
+            _playPauseLabel = _playPauseBtn.GetComponentInChildren<Text>();
+
+            CreatePixelButton(actionRow.transform, "Btn_Step", "STEP +1", Color.white, 0f, 32f, 12, font, () =>
+            {
+                PlaySfx(_artBank != null ? _artBank.uiClick : null, 0.55f);
+                OnStepTickClicked?.Invoke();
+            });
+
+            CreatePixelButton(actionRow.transform, "Btn_Restart", "RESTART", new Color(1f, 0.92f, 0.78f, 1f), 0f, 32f, 12, font, () =>
+            {
+                PlaySfx(_artBank != null ? _artBank.uiClick : null, 0.6f);
+                OnRestartFlightClicked?.Invoke();
+            });
+
+            // Uniform Row 2: 1x / 5x / 10x
+            GameObject speedRow = CreateUIObject("SpeedControlsRow", playbackBox.transform);
+            speedRow.AddComponent<LayoutElement>().preferredHeight = 30f;
+            HorizontalLayoutGroup srl = speedRow.AddComponent<HorizontalLayoutGroup>();
+            srl.spacing = 6f;
+            srl.childAlignment = TextAnchor.MiddleCenter;
+            srl.childControlWidth = true;
+            srl.childControlHeight = true;
+            srl.childForceExpandWidth = true;
+
+            _speed1xBtn = CreatePixelButton(speedRow.transform, "Btn_1x", "1x", Color.white, 0f, 30f, 12, font, () =>
+            {
+                PlaySfx(_artBank != null ? _artBank.uiClick : null, 0.55f);
+                OnSpeedSelected?.Invoke(1f);
+            });
+            _speed5xBtn = CreatePixelButton(speedRow.transform, "Btn_5x", "5x", Color.white, 0f, 30f, 12, font, () =>
+            {
+                PlaySfx(_artBank != null ? _artBank.uiClick : null, 0.55f);
+                OnSpeedSelected?.Invoke(5f);
+            });
+            _speed10xBtn = CreatePixelButton(speedRow.transform, "Btn_10x", "10x", Color.white, 0f, 30f, 12, font, () =>
+            {
+                PlaySfx(_artBank != null ? _artBank.uiClick : null, 0.55f);
+                OnSpeedSelected?.Invoke(10f);
+            });
+
+            _timelineScrubber = CreateTimelineScrubber(playbackBox.transform);
+            _timelineScrubber.onValueChanged.AddListener(val =>
+            {
+                if (_suppressScrubberCallback) return;
+                OnScrubTickRequested?.Invoke(Mathf.RoundToInt(val));
+            });
+
+            GameObject alertBanner = CreateUIObject("PhaseBanner", playbackBox.transform);
+            alertBanner.AddComponent<LayoutElement>().preferredHeight = 24f;
+            _statusBannerBg = alertBanner.AddComponent<Image>();
+            _statusBannerBg.color = new Color(0.10f, 0.20f, 0.34f, 0.88f);
+            _statusAlertText = CreateText("AlertText", alertBanner.transform, font, "PHASE: SUNLIT CRUISE", 11, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
+            StretchFull(_statusAlertText.GetComponent<RectTransform>());
+        }
+
+        private void BuildBaseTelemetryCard(Font font, Transform parent)
+        {
+            GameObject card = CreateCardBox("BaseTelemetryCard", parent, 0f);
+            VerticalLayoutGroup vl = card.AddComponent<VerticalLayoutGroup>();
+            vl.padding = new RectOffset(10, 10, 8, 8);
+            vl.spacing = 5f;
+            vl.childControlWidth = true;
+            vl.childControlHeight = true;
+            vl.childForceExpandWidth = true;
+            vl.childForceExpandHeight = false;
+
+            GameObject row1 = CreateUIObject("BaseRow1", card.transform);
+            row1.AddComponent<LayoutElement>().preferredHeight = 22f;
+            HorizontalLayoutGroup hl1 = row1.AddComponent<HorizontalLayoutGroup>();
+            hl1.spacing = 8f;
+            hl1.childControlWidth = true;
+            hl1.childControlHeight = true;
+            hl1.childForceExpandWidth = true;
+
+            _baseBatteryText = CreateText("BaseBat", row1.transform, font, "BAT: 100%", 13, FontStyle.Bold, new Color(0.98f, 0.84f, 0.34f, 1f), TextAnchor.MiddleLeft);
+            _baseScienceText = CreateText("BaseSci", row1.transform, font, "SCI: 0/100", 13, FontStyle.Bold, new Color(0.45f, 0.94f, 0.92f, 1f), TextAnchor.MiddleRight);
+
+            GameObject row2 = CreateUIObject("BaseRow2", card.transform);
+            row2.AddComponent<LayoutElement>().preferredHeight = 22f;
+            HorizontalLayoutGroup hl2 = row2.AddComponent<HorizontalLayoutGroup>();
+            hl2.spacing = 8f;
+            hl2.childControlWidth = true;
+            hl2.childControlHeight = true;
+            hl2.childForceExpandWidth = true;
+
+            _baseHealthText = CreateText("BaseHlt", row2.transform, font, "HLT: 100%", 13, FontStyle.Bold, new Color(0.45f, 0.96f, 0.65f, 1f), TextAnchor.MiddleLeft);
+            _baseRadiationText = CreateText("BaseRad", row2.transform, font, "RAD: 0 mSv", 13, FontStyle.Bold, new Color(0.82f, 0.66f, 1f, 1f), TextAnchor.MiddleRight);
+
+            Text[] baseTelemetry = { _baseBatteryText, _baseScienceText, _baseHealthText, _baseRadiationText };
+            for (int i = 0; i < baseTelemetry.Length; i++)
+            {
+                baseTelemetry[i].horizontalOverflow = HorizontalWrapMode.Overflow;
+                baseTelemetry[i].resizeTextForBestFit = true;
+                baseTelemetry[i].resizeTextMinSize = 10;
+                baseTelemetry[i].resizeTextMaxSize = 13;
+            }
+        }
+
+        private void BuildManualOverrideStrip(Font font, Transform parent)
+        {
+            GameObject card = CreateCardBox("ManualOverrideCard", parent, 0f);
+            VerticalLayoutGroup vl = card.AddComponent<VerticalLayoutGroup>();
+            vl.padding = new RectOffset(8, 8, 7, 7);
+            vl.spacing = 4f;
+            vl.childControlWidth = true;
+            vl.childControlHeight = true;
+            vl.childForceExpandWidth = true;
+            vl.childForceExpandHeight = false;
+
+            GameObject row = CreateUIObject("OverrideButtonsRow", card.transform);
+            row.AddComponent<LayoutElement>().preferredHeight = 66f;
+            HorizontalLayoutGroup hl = row.AddComponent<HorizontalLayoutGroup>();
+            hl.spacing = 6f;
+            hl.childAlignment = TextAnchor.MiddleCenter;
+            hl.childControlWidth = true;
+            hl.childControlHeight = true;
+            hl.childForceExpandWidth = true;
+
+            _sciValueText = CreateTelemetryChip(row.transform, "PayloadChip", _artBank != null ? _artBank.iconSpaceTelescope : null, "INSTR", "ON", font, true, out _sciSlotBg, () =>
+            {
+                PlaySfx(_artBank != null ? _artBank.uiToggle : null, 0.65f);
+                OnToggleInstrumentsClicked?.Invoke();
+            });
+            _commsValueText = CreateTelemetryChip(row.transform, "CommsChip", _artBank != null ? _artBank.iconDishAntenna : null, "COMMS", "LINK", font, true, out _commsSlotBg, () =>
+            {
+                PlaySfx(_artBank != null ? _artBank.uiToggle : null, 0.65f);
+                OnToggleCommsClicked?.Invoke();
+            });
+            _safeSlotValueText = CreateTelemetryChip(row.transform, "SafeChip", _artBank != null ? _artBank.iconShieldGenerator : null, "SAFE", "OFF", font, true, out _safeSlotBg, () =>
+            {
+                PlaySfx(_artBank != null ? _artBank.uiToggle : null, 0.65f);
+                OnToggleSafeModeClicked?.Invoke();
+            });
+        }
+
+        private void BuildChartsPopup(Font font)
+        {
+            _chartsPopupRoot = CreateUIObject("ChartsPopup_Window", transform);
+            RectTransform rt = _chartsPopupRoot.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(1f, 1f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(1f, 1f);
+            rt.anchoredPosition = new Vector2(-396f, -14f);
+            rt.sizeDelta = new Vector2(440f, 390f);
+
+            ContentSizeFitter csf = _chartsPopupRoot.AddComponent<ContentSizeFitter>();
+            csf.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            Image frameImg = _chartsPopupRoot.AddComponent<Image>();
+            if (_artBank != null && _artBank.inventoryPanel != null)
+            {
+                SolarSystemArtBank.ApplyPanelFrame(frameImg, _artBank.inventoryPanel, new Vector4(12f, 12f, 12f, 12f), new Color(0.96f, 0.98f, 1f, 0.97f));
+            }
+            else
+            {
+                frameImg.color = new Color(0.08f, 0.12f, 0.24f, 0.96f);
+            }
+
+            VerticalLayoutGroup vl = _chartsPopupRoot.AddComponent<VerticalLayoutGroup>();
+            vl.padding = new RectOffset(12, 12, 10, 12);
+            vl.spacing = 8f;
+            vl.childControlWidth = true;
+            vl.childControlHeight = true;
+            vl.childForceExpandWidth = true;
+            vl.childForceExpandHeight = false;
+
+            BuildPopupHeader(_chartsPopupRoot.transform, font, "DETAILED TELEMETRY & CHARTS", () => SetChartsPopupOpen(false, playSound: true));
+
+            // Chart Box
+            GameObject chartCard = CreateCardBox("ChartBox", _chartsPopupRoot.transform, 0f);
+            VerticalLayoutGroup cvl = chartCard.AddComponent<VerticalLayoutGroup>();
+            cvl.padding = new RectOffset(8, 8, 8, 8);
+            cvl.spacing = 5f;
+            cvl.childControlWidth = true;
+            cvl.childControlHeight = true;
+            cvl.childForceExpandWidth = true;
+            cvl.childForceExpandHeight = false;
+
+            GameObject chartFrame = CreateUIObject("TelemetryChartFrame", chartCard.transform);
+            chartFrame.AddComponent<LayoutElement>().preferredHeight = 142f;
+            chartFrame.AddComponent<Image>().color = new Color(0.03f, 0.05f, 0.11f, 0.98f);
+
+            GameObject rawObj = CreateUIObject("ChartRaw", chartFrame.transform);
+            RectTransform rrt = rawObj.GetComponent<RectTransform>();
+            rrt.anchorMin = Vector2.zero;
+            rrt.anchorMax = Vector2.one;
+            rrt.offsetMin = new Vector2(3f, 3f);
+            rrt.offsetMax = new Vector2(-3f, -3f);
+            _telemetryChartRaw = rawObj.AddComponent<RawImage>();
+            _telemetryChartRaw.raycastTarget = false;
+
+            _telemetryChartTex = new Texture2D(ChartWidth, ChartHeight, TextureFormat.RGBA32, false);
+            _telemetryChartTex.filterMode = FilterMode.Point;
+            _telemetryChartTex.wrapMode = TextureWrapMode.Clamp;
+            _chartPixels = new Color32[ChartWidth * ChartHeight];
+            _telemetryChartRaw.texture = _telemetryChartTex;
+            RedrawTelemetryChart(0);
+
+            Text legend = CreateText("ChartLegend", chartCard.transform, font, "BAT (YEL)   •   SCI (CYN)   •   HLT (GRN)   •   RAD (MAG)", 11, FontStyle.Bold, new Color(0.82f, 0.90f, 0.98f, 1f), TextAnchor.MiddleCenter);
+            legend.gameObject.AddComponent<LayoutElement>().preferredHeight = 16f;
+
+            // Detailed 5 Progress Bars
+            GameObject barsCard = CreateCardBox("DetailedBarsBox", _chartsPopupRoot.transform, 0f);
+            VerticalLayoutGroup bvl = barsCard.AddComponent<VerticalLayoutGroup>();
+            bvl.padding = new RectOffset(10, 10, 8, 8);
+            bvl.spacing = 6f;
+            bvl.childControlWidth = true;
+            bvl.childControlHeight = true;
+            bvl.childForceExpandWidth = true;
+            bvl.childForceExpandHeight = false;
+
+            CreateGaugeBarRow(barsCard.transform, font, "BAT", new Color(0.96f, 0.78f, 0.24f, 1f), out _batteryFillImg, out _batteryValueText);
+            CreateGaugeBarRow(barsCard.transform, font, "SSD", new Color(0.45f, 0.78f, 1f, 1f), out _ssdFillImg, out _ssdValueText);
+            CreateGaugeBarRow(barsCard.transform, font, "HLT", new Color(0.42f, 0.94f, 0.62f, 1f), out _healthFillImg, out _healthValueText);
+            CreateGaugeBarRow(barsCard.transform, font, "SCI", new Color(0.32f, 0.94f, 0.88f, 1f), out _scienceFillImg, out _scienceValueText);
+            CreateGaugeBarRow(barsCard.transform, font, "RAD", new Color(0.86f, 0.45f, 0.98f, 1f), out _radiationFillImg, out _radiationValueText);
+
+            GameObject phaseRow = CreateUIObject("PhaseIndicatorsRow", _chartsPopupRoot.transform);
+            phaseRow.AddComponent<LayoutElement>().preferredHeight = 26f;
+            HorizontalLayoutGroup phl = phaseRow.AddComponent<HorizontalLayoutGroup>();
+            phl.spacing = 6f;
+            phl.childControlWidth = true;
+            phl.childControlHeight = true;
+            phl.childForceExpandWidth = true;
+
+            CreatePhasePill(phaseRow.transform, font, "SUNLIGHT", out _eclipseBadgeBg, out _eclipseBadgeText);
+            CreatePhasePill(phaseRow.transform, font, "NO COMM", out _commBadgeBg, out _commBadgeText);
+            CreatePhasePill(phaseRow.transform, font, "NOMINAL", out _safeBadgeBg, out _safeBadgeText);
+        }
+
+        private void BuildSystemsPopup(Font font)
+        {
+            _systemsPopupRoot = CreateUIObject("SystemsPopup_Window", transform);
+            RectTransform rt = _systemsPopupRoot.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(1f, 1f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(1f, 1f);
+            rt.anchoredPosition = new Vector2(-396f, -14f);
+            rt.sizeDelta = new Vector2(420f, 320f);
+
+            ContentSizeFitter csf = _systemsPopupRoot.AddComponent<ContentSizeFitter>();
+            csf.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            Image frameImg = _systemsPopupRoot.AddComponent<Image>();
+            if (_artBank != null && _artBank.inventoryPanel != null)
+            {
+                SolarSystemArtBank.ApplyPanelFrame(frameImg, _artBank.inventoryPanel, new Vector4(12f, 12f, 12f, 12f), new Color(0.96f, 0.98f, 1f, 0.97f));
+            }
+            else
+            {
+                frameImg.color = new Color(0.08f, 0.12f, 0.24f, 0.96f);
+            }
+
+            VerticalLayoutGroup vl = _systemsPopupRoot.AddComponent<VerticalLayoutGroup>();
+            vl.padding = new RectOffset(12, 12, 10, 12);
+            vl.spacing = 8f;
+            vl.childControlWidth = true;
+            vl.childControlHeight = true;
+            vl.childForceExpandWidth = true;
+            vl.childForceExpandHeight = false;
+
+            BuildPopupHeader(_systemsPopupRoot.transform, font, "SYSTEMS, AUTOPILOT & AUDIO", () => SetSystemsPopupOpen(false, playSound: true));
+
+            // Signal Delay Card
+            GameObject sigCard = CreateCardBox("SignalDelayCard", _systemsPopupRoot.transform, 0f);
+            VerticalLayoutGroup svl = sigCard.AddComponent<VerticalLayoutGroup>();
+            svl.padding = new RectOffset(10, 10, 8, 8);
+            svl.spacing = 5f;
+            svl.childControlWidth = true;
+            svl.childControlHeight = true;
+            svl.childForceExpandWidth = true;
+            svl.childForceExpandHeight = false;
+
+            Text sigHdr = CreateText("SigHdr", sigCard.transform, font, "GROUND COMMAND SIGNAL DELAY", 11, FontStyle.Bold, new Color(1f, 0.88f, 0.54f, 1f), TextAnchor.MiddleLeft);
+            sigHdr.gameObject.AddComponent<LayoutElement>().preferredHeight = 16f;
+
+            GameObject delayTrack = CreateUIObject("SignalDelayTrack", sigCard.transform);
+            delayTrack.AddComponent<LayoutElement>().preferredHeight = 20f;
+            delayTrack.AddComponent<Image>().color = new Color(0.04f, 0.07f, 0.14f, 0.95f);
+
+            GameObject delayFillObj = CreateUIObject("Fill", delayTrack.transform);
+            StretchFull(delayFillObj.GetComponent<RectTransform>());
+            _signalDelayFillImg = delayFillObj.AddComponent<Image>();
+            _signalDelayFillImg.sprite = CreateSolidWhiteSprite();
+            _signalDelayFillImg.type = Image.Type.Filled;
+            _signalDelayFillImg.fillMethod = Image.FillMethod.Horizontal;
+            _signalDelayFillImg.fillAmount = 1f;
+            _signalDelayFillImg.color = new Color(0.32f, 0.90f, 0.62f, 1f);
+
+            _signalDelayText = CreateText("SignalDelayText", delayTrack.transform, font, "SIGNAL READY (0.0s)", 11, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
+            StretchFull(_signalDelayText.GetComponent<RectTransform>());
+
+            _commandLogText = CreateText("CmdLogText", sigCard.transform, font, "NO MANUAL COMMANDS", 11, FontStyle.Normal, new Color(0.80f, 0.88f, 0.98f, 1f), TextAnchor.MiddleLeft);
+            _commandLogText.gameObject.AddComponent<LayoutElement>().minHeight = 18f;
+
+            // Autopilot Rules Card
+            GameObject rulesCard = CreateCardBox("AutopilotRulesCard", _systemsPopupRoot.transform, 0f);
+            VerticalLayoutGroup rvl = rulesCard.AddComponent<VerticalLayoutGroup>();
+            rvl.padding = new RectOffset(10, 10, 8, 8);
+            rvl.spacing = 4f;
+            rvl.childControlWidth = true;
+            rvl.childControlHeight = true;
+            rvl.childForceExpandWidth = true;
+            rvl.childForceExpandHeight = false;
+
+            Text rHdr = CreateText("RulesHdr", rulesCard.transform, font, "AUTOPILOT RULES (GREEN = TRIGGERED)", 11, FontStyle.Bold, new Color(0.62f, 0.96f, 0.76f, 1f), TextAnchor.MiddleLeft);
+            rHdr.gameObject.AddComponent<LayoutElement>().preferredHeight = 16f;
+
+            GameObject listObj = CreateUIObject("RulesList", rulesCard.transform);
+            VerticalLayoutGroup listVl = listObj.AddComponent<VerticalLayoutGroup>();
+            listVl.spacing = 4f;
+            listVl.childControlWidth = true;
+            listVl.childControlHeight = true;
+            listVl.childForceExpandWidth = true;
+            listVl.childForceExpandHeight = false;
+            _rulesListContainer = listObj.transform;
+
+            // Audio Controls Card
+            BuildAudioControlsRow(font, _systemsPopupRoot.transform);
+        }
+
+        private void BuildPopupHeader(Transform parent, Font font, string titleStr, UnityAction onClose)
+        {
+            GameObject header = CreateUIObject("PopupHeader", parent);
+            LayoutElement le = header.AddComponent<LayoutElement>();
+            le.minHeight = 32f;
+            le.preferredHeight = 32f;
+            le.flexibleHeight = 0f;
 
             HorizontalLayoutGroup hl = header.AddComponent<HorizontalLayoutGroup>();
             hl.spacing = 6f;
@@ -895,297 +1431,16 @@ namespace AstraLink.UI.Flight.SpaceMap
                 tabBg.color = new Color(0.14f, 0.42f, 0.56f, 1f);
             }
 
-            HorizontalLayoutGroup thl = tabBanner.AddComponent<HorizontalLayoutGroup>();
-            thl.padding = new RectOffset(8, 8, 2, 2);
-            thl.spacing = 6f;
-            thl.childAlignment = TextAnchor.MiddleLeft;
-            thl.childControlWidth = true;
-            thl.childControlHeight = true;
-            thl.childForceExpandWidth = false;
+            Text title = CreateText("PopupTitle", tabBanner.transform, font, titleStr, 12, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
+            title.resizeTextForBestFit = true;
+            title.resizeTextMinSize = 9;
+            title.resizeTextMaxSize = 12;
+            RectTransform ptRt = title.GetComponent<RectTransform>();
+            StretchFull(ptRt);
+            ptRt.offsetMin = new Vector2(8f, 2f);
+            ptRt.offsetMax = new Vector2(-8f, -2f);
 
-            if (_artBank != null && _artBank.starMapTablet != null)
-            {
-                GameObject ic = CreateUIObject("MapTabletIcon", tabBanner.transform);
-                ic.AddComponent<LayoutElement>().preferredWidth = 20f;
-                Image icImg = ic.AddComponent<Image>();
-                icImg.sprite = _artBank.starMapTablet;
-                icImg.preserveAspect = true;
-                icImg.raycastTarget = false;
-            }
-
-            Text title = CreateText("HeaderTitle", tabBanner.transform, font, "MISSION CONTROL", 12, FontStyle.Bold, Color.white, TextAnchor.MiddleLeft);
-            title.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
-
-            // Uniform 32px height header buttons
-            _devSafeBtn = CreatePixelButton(header.transform, "Btn_DevSafeMode", "DEV:OFF", Color.white, 72f, 32f, 11, font, () =>
-            {
-                _devSafeMode = !_devSafeMode;
-                SetDevSafeModeVisual(_devSafeMode);
-                PlaySfx(_artBank != null ? _artBank.uiToggle : null, 0.7f);
-                OnDevSafeModeToggled?.Invoke(_devSafeMode);
-            });
-            _devSafeLabel = _devSafeBtn.GetComponentInChildren<Text>();
-
-            CreatePixelButton(header.transform, "Btn_FitSystem", "FIT", new Color(0.95f, 0.98f, 1f, 1f), 48f, 32f, 11, font, () =>
-            {
-                PlaySfx(_artBank != null ? _artBank.uiClick : null, 0.6f);
-                if (_spaceMap != null) _spaceMap.ResetCameraToSystemOverview();
-            });
-
-            _minimizeButton = CreatePixelButton(header.transform, "Btn_MinimizePanel", "-", new Color(1f, 0.90f, 0.88f, 1f), 36f, 32f, 15, font, () =>
-            {
-                SetCollapsed(true, playSound: true);
-            });
-        }
-
-        private void BuildPlaybackStrip(Font font, Transform parent)
-        {
-            GameObject playbackBox = CreateCardBox("PlaybackAndStatusCard", parent, 0f);
-            VerticalLayoutGroup vl = playbackBox.AddComponent<VerticalLayoutGroup>();
-            vl.padding = new RectOffset(10, 10, 8, 8);
-            vl.spacing = 6f;
-            vl.childControlWidth = true;
-            vl.childControlHeight = true;
-            vl.childForceExpandWidth = true;
-            vl.childForceExpandHeight = false;
-
-            // Status line with missionBadge
-            GameObject topRow = CreateUIObject("MissionTickRow", playbackBox.transform);
-            topRow.AddComponent<LayoutElement>().preferredHeight = 20f;
-            HorizontalLayoutGroup trl = topRow.AddComponent<HorizontalLayoutGroup>();
-            trl.spacing = 6f;
-            trl.childAlignment = TextAnchor.MiddleLeft;
-            trl.childControlWidth = true;
-            trl.childControlHeight = true;
-            trl.childForceExpandWidth = false;
-
-            if (_artBank != null && _artBank.missionBadge != null)
-            {
-                GameObject bdg = CreateUIObject("BadgeIcon", topRow.transform);
-                bdg.AddComponent<LayoutElement>().preferredWidth = 18f;
-                Image bi = bdg.AddComponent<Image>();
-                bi.sprite = _artBank.missionBadge;
-                bi.preserveAspect = true;
-                bi.raycastTarget = false;
-            }
-
-            _tickStatusText = CreateText("TickStatus", topRow.transform, font, "T 01/20  |  LEO Mission", 11, FontStyle.Bold, new Color(0.92f, 0.97f, 1f, 1f), TextAnchor.MiddleLeft);
-            _tickStatusText.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
-
-            // Uniform Row 1: 3 Equal Action Buttons (PLAY/PAUSE | STEP +1 | RESTART)
-            GameObject actionRow = CreateUIObject("PlaybackActionRow", playbackBox.transform);
-            actionRow.AddComponent<LayoutElement>().preferredHeight = 32f;
-            HorizontalLayoutGroup arl = actionRow.AddComponent<HorizontalLayoutGroup>();
-            arl.spacing = 6f;
-            arl.childAlignment = TextAnchor.MiddleCenter;
-            arl.childControlWidth = true;
-            arl.childControlHeight = true;
-            arl.childForceExpandWidth = true;
-
-            _playPauseBtn = CreatePixelButton(actionRow.transform, "Btn_PlayPause", "PAUSE", new Color(0.84f, 1f, 0.90f, 1f), 0f, 32f, 11, font, () =>
-            {
-                PlaySfx(_artBank != null ? _artBank.uiClick : null, 0.65f);
-                OnPlayPauseClicked?.Invoke();
-            });
-            _playPauseLabel = _playPauseBtn.GetComponentInChildren<Text>();
-
-            CreatePixelButton(actionRow.transform, "Btn_Step", "STEP +1", Color.white, 0f, 32f, 11, font, () =>
-            {
-                PlaySfx(_artBank != null ? _artBank.uiClick : null, 0.55f);
-                OnStepTickClicked?.Invoke();
-            });
-
-            CreatePixelButton(actionRow.transform, "Btn_Restart", "RESTART", new Color(1f, 0.92f, 0.78f, 1f), 0f, 32f, 11, font, () =>
-            {
-                PlaySfx(_artBank != null ? _artBank.uiClick : null, 0.6f);
-                OnRestartFlightClicked?.Invoke();
-            });
-
-            // Uniform Row 2: 3 Equal Speed Buttons (1x | 5x | 10x)
-            GameObject speedRow = CreateUIObject("SpeedControlsRow", playbackBox.transform);
-            speedRow.AddComponent<LayoutElement>().preferredHeight = 30f;
-            HorizontalLayoutGroup srl = speedRow.AddComponent<HorizontalLayoutGroup>();
-            srl.spacing = 6f;
-            srl.childAlignment = TextAnchor.MiddleCenter;
-            srl.childControlWidth = true;
-            srl.childControlHeight = true;
-            srl.childForceExpandWidth = true;
-
-            _speed1xBtn = CreatePixelButton(speedRow.transform, "Btn_1x", "1x SPEED", Color.white, 0f, 30f, 11, font, () =>
-            {
-                PlaySfx(_artBank != null ? _artBank.uiClick : null, 0.55f);
-                OnSpeedSelected?.Invoke(1f);
-            });
-            _speed5xBtn = CreatePixelButton(speedRow.transform, "Btn_5x", "5x SPEED", Color.white, 0f, 30f, 11, font, () =>
-            {
-                PlaySfx(_artBank != null ? _artBank.uiClick : null, 0.55f);
-                OnSpeedSelected?.Invoke(5f);
-            });
-            _speed10xBtn = CreatePixelButton(speedRow.transform, "Btn_10x", "10x SPEED", Color.white, 0f, 30f, 11, font, () =>
-            {
-                PlaySfx(_artBank != null ? _artBank.uiClick : null, 0.55f);
-                OnSpeedSelected?.Invoke(10f);
-            });
-
-            // Timeline Scrubber Slider
-            _timelineScrubber = CreateTimelineScrubber(playbackBox.transform);
-            _timelineScrubber.onValueChanged.AddListener(val =>
-            {
-                if (_suppressScrubberCallback) return;
-                OnScrubTickRequested?.Invoke(Mathf.RoundToInt(val));
-            });
-
-            // Alert phase bar
-            GameObject alertBanner = CreateUIObject("PhaseBanner", playbackBox.transform);
-            alertBanner.AddComponent<LayoutElement>().preferredHeight = 22f;
-            _statusBannerBg = alertBanner.AddComponent<Image>();
-            _statusBannerBg.color = new Color(0.10f, 0.20f, 0.34f, 0.88f);
-            _statusAlertText = CreateText("AlertText", alertBanner.transform, font, "PHASE: SUNLIT ORBITAL CRUISE", 10, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
-            StretchFull(_statusAlertText.GetComponent<RectTransform>());
-        }
-
-        private void BuildTelemetryGaugesAndChartCard(Font font, Transform parent)
-        {
-            GameObject card = CreateCardBox("TelemetryAndChartsCard", parent, 0f);
-            VerticalLayoutGroup vl = card.AddComponent<VerticalLayoutGroup>();
-            vl.padding = new RectOffset(10, 10, 8, 8);
-            vl.spacing = 5f;
-            vl.childControlWidth = true;
-            vl.childControlHeight = true;
-            vl.childForceExpandWidth = true;
-            vl.childForceExpandHeight = false;
-
-            Text hdr = CreateText("TelemetryHdr", card.transform, font, "LIVE TELEMETRY & MISSION CHARTS", 11, FontStyle.Bold, new Color(0.65f, 0.90f, 1f, 1f), TextAnchor.MiddleLeft);
-            hdr.gameObject.AddComponent<LayoutElement>().preferredHeight = 16f;
-
-            CreateGaugeBarRow(card.transform, font, "BAT", new Color(0.96f, 0.78f, 0.24f, 1f), out _batteryFillImg, out _batteryValueText);
-            CreateGaugeBarRow(card.transform, font, "SSD", new Color(0.45f, 0.78f, 1f, 1f), out _ssdFillImg, out _ssdValueText);
-            CreateGaugeBarRow(card.transform, font, "HLT", new Color(0.42f, 0.94f, 0.62f, 1f), out _healthFillImg, out _healthValueText);
-            CreateGaugeBarRow(card.transform, font, "SCI", new Color(0.32f, 0.94f, 0.88f, 1f), out _scienceFillImg, out _scienceValueText);
-            CreateGaugeBarRow(card.transform, font, "RAD", new Color(0.86f, 0.45f, 0.98f, 1f), out _radiationFillImg, out _radiationValueText);
-
-            _powerNetText = CreateText("PowerNetReadout", card.transform, font, "SOLAR +0.0W  |  LOAD -0.0W  |  NET 0.0W", 9, FontStyle.Bold, new Color(0.75f, 0.90f, 1f, 1f), TextAnchor.MiddleCenter);
-            _powerNetText.gameObject.AddComponent<LayoutElement>().preferredHeight = 14f;
-
-            GameObject chartFrame = CreateUIObject("TelemetryChartFrame", card.transform);
-            chartFrame.AddComponent<LayoutElement>().preferredHeight = 84f;
-            Image chartBg = chartFrame.AddComponent<Image>();
-            chartBg.color = new Color(0.03f, 0.05f, 0.11f, 0.96f);
-
-            GameObject rawObj = CreateUIObject("ChartRaw", chartFrame.transform);
-            RectTransform rrt = rawObj.GetComponent<RectTransform>();
-            rrt.anchorMin = Vector2.zero;
-            rrt.anchorMax = Vector2.one;
-            rrt.offsetMin = new Vector2(2f, 2f);
-            rrt.offsetMax = new Vector2(-2f, -2f);
-            _telemetryChartRaw = rawObj.AddComponent<RawImage>();
-            _telemetryChartRaw.raycastTarget = false;
-
-            _telemetryChartTex = new Texture2D(ChartWidth, ChartHeight, TextureFormat.RGBA32, false);
-            _telemetryChartTex.filterMode = FilterMode.Point;
-            _telemetryChartTex.wrapMode = TextureWrapMode.Clamp;
-            _chartPixels = new Color32[ChartWidth * ChartHeight];
-            _telemetryChartRaw.texture = _telemetryChartTex;
-            RedrawTelemetryChart(0);
-
-            Text legend = CreateText("ChartLegend", card.transform, font, "CURVES:  [BAT: YEL]  [SCI: CYN]  [HLT: GRN]  [RAD: MAG]", 9, FontStyle.Bold, new Color(0.76f, 0.86f, 0.96f, 1f), TextAnchor.MiddleCenter);
-            legend.gameObject.AddComponent<LayoutElement>().preferredHeight = 14f;
-
-            GameObject phaseRow = CreateUIObject("PhaseIndicatorsRow", card.transform);
-            phaseRow.AddComponent<LayoutElement>().preferredHeight = 22f;
-            HorizontalLayoutGroup phl = phaseRow.AddComponent<HorizontalLayoutGroup>();
-            phl.spacing = 6f;
-            phl.childControlWidth = true;
-            phl.childControlHeight = true;
-            phl.childForceExpandWidth = true;
-
-            CreatePhasePill(phaseRow.transform, font, "SUNLIGHT", out _eclipseBadgeBg, out _eclipseBadgeText);
-            CreatePhasePill(phaseRow.transform, font, "NO COMM", out _commBadgeBg, out _commBadgeText);
-            CreatePhasePill(phaseRow.transform, font, "NOMINAL", out _safeBadgeBg, out _safeBadgeText);
-        }
-
-        private void BuildManualOverrideAndSignalCard(Font font, Transform parent)
-        {
-            GameObject card = CreateCardBox("ManualOverrideCard", parent, 0f);
-            VerticalLayoutGroup vl = card.AddComponent<VerticalLayoutGroup>();
-            vl.padding = new RectOffset(10, 10, 8, 8);
-            vl.spacing = 6f;
-            vl.childControlWidth = true;
-            vl.childControlHeight = true;
-            vl.childForceExpandWidth = true;
-            vl.childForceExpandHeight = false;
-
-            Text hdr = CreateText("OverrideHdr", card.transform, font, "MANUAL GROUND OVERRIDE & SIGNAL DELAY", 11, FontStyle.Bold, new Color(1f, 0.86f, 0.52f, 1f), TextAnchor.MiddleLeft);
-            hdr.gameObject.AddComponent<LayoutElement>().preferredHeight = 16f;
-
-            GameObject row = CreateUIObject("OverrideButtonsRow", card.transform);
-            row.AddComponent<LayoutElement>().preferredHeight = 68f;
-            HorizontalLayoutGroup hl = row.AddComponent<HorizontalLayoutGroup>();
-            hl.spacing = 6f;
-            hl.childAlignment = TextAnchor.MiddleCenter;
-            hl.childControlWidth = true;
-            hl.childControlHeight = true;
-            hl.childForceExpandWidth = true;
-
-            _sciValueText = CreateTelemetryChip(row.transform, "PayloadChip", _artBank != null ? _artBank.iconSpaceTelescope : null, "INSTRUMENTS", "ON", font, true, out _sciSlotBg, () =>
-            {
-                PlaySfx(_artBank != null ? _artBank.uiToggle : null, 0.65f);
-                OnToggleInstrumentsClicked?.Invoke();
-            });
-            _commsValueText = CreateTelemetryChip(row.transform, "CommsChip", _artBank != null ? _artBank.iconDishAntenna : null, "COMMS", "LINK", font, true, out _commsSlotBg, () =>
-            {
-                PlaySfx(_artBank != null ? _artBank.uiToggle : null, 0.65f);
-                OnToggleCommsClicked?.Invoke();
-            });
-            _safeSlotValueText = CreateTelemetryChip(row.transform, "SafeChip", _artBank != null ? _artBank.iconShieldGenerator : null, "SAFE MODE", "OFF", font, true, out _safeSlotBg, () =>
-            {
-                PlaySfx(_artBank != null ? _artBank.uiToggle : null, 0.65f);
-                OnToggleSafeModeClicked?.Invoke();
-            });
-
-            GameObject delayTrack = CreateUIObject("SignalDelayTrack", card.transform);
-            delayTrack.AddComponent<LayoutElement>().preferredHeight = 18f;
-            Image trackBg = delayTrack.AddComponent<Image>();
-            trackBg.color = new Color(0.04f, 0.07f, 0.14f, 0.95f);
-
-            GameObject delayFillObj = CreateUIObject("Fill", delayTrack.transform);
-            StretchFull(delayFillObj.GetComponent<RectTransform>());
-            _signalDelayFillImg = delayFillObj.AddComponent<Image>();
-            _signalDelayFillImg.sprite = CreateSolidWhiteSprite();
-            _signalDelayFillImg.type = Image.Type.Filled;
-            _signalDelayFillImg.fillMethod = Image.FillMethod.Horizontal;
-            _signalDelayFillImg.fillAmount = 1f;
-            _signalDelayFillImg.color = new Color(0.32f, 0.90f, 0.62f, 1f);
-
-            _signalDelayText = CreateText("SignalDelayText", delayTrack.transform, font, "SIGNAL READY (0.0s)", 10, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
-            StretchFull(_signalDelayText.GetComponent<RectTransform>());
-
-            _commandLogText = CreateText("CmdLogText", card.transform, font, "NO MANUAL COMMANDS", 10, FontStyle.Normal, new Color(0.76f, 0.84f, 0.94f, 1f), TextAnchor.MiddleLeft);
-            _commandLogText.gameObject.AddComponent<LayoutElement>().preferredHeight = 14f;
-        }
-
-        private void BuildAutopilotRulesCard(Font font, Transform parent)
-        {
-            GameObject card = CreateCardBox("AutopilotRulesCard", parent, 0f);
-            VerticalLayoutGroup vl = card.AddComponent<VerticalLayoutGroup>();
-            vl.padding = new RectOffset(10, 10, 8, 8);
-            vl.spacing = 4f;
-            vl.childControlWidth = true;
-            vl.childControlHeight = true;
-            vl.childForceExpandWidth = true;
-            vl.childForceExpandHeight = false;
-
-            Text hdr = CreateText("RulesHdr", card.transform, font, "AUTOPILOT RULES (GREEN = TRIGGERED)", 11, FontStyle.Bold, new Color(0.62f, 0.96f, 0.76f, 1f), TextAnchor.MiddleLeft);
-            hdr.gameObject.AddComponent<LayoutElement>().preferredHeight = 16f;
-
-            GameObject listObj = CreateUIObject("RulesList", card.transform);
-            VerticalLayoutGroup listVl = listObj.AddComponent<VerticalLayoutGroup>();
-            listVl.spacing = 3f;
-            listVl.childControlWidth = true;
-            listVl.childControlHeight = true;
-            listVl.childForceExpandWidth = true;
-            listVl.childForceExpandHeight = false;
-            _rulesListContainer = listObj.transform;
+            CreatePixelButton(header.transform, "Btn_ClosePopup", "X", new Color(1f, 0.85f, 0.85f, 1f), 36f, 32f, 13, font, onClose);
         }
 
         private void BuildAudioControlsRow(Font font, Transform parent)
@@ -1199,7 +1454,7 @@ namespace AstraLink.UI.Flight.SpaceMap
             hl.childControlHeight = true;
             hl.childForceExpandWidth = true;
 
-            _musicToggleBtn = CreatePixelButton(box.transform, "Btn_MusicToggle", "MUSIC: ON", Color.white, 0f, 32f, 10, font, () =>
+            _musicToggleBtn = CreatePixelButton(box.transform, "Btn_MusicToggle", "MUSIC: ON", Color.white, 0f, 32f, 11, font, () =>
             {
                 _musicEnabled = !_musicEnabled;
                 PlaySfx(_artBank != null ? _artBank.uiToggle : null, 0.65f);
@@ -1208,7 +1463,7 @@ namespace AstraLink.UI.Flight.SpaceMap
             });
             _musicToggleLabel = _musicToggleBtn.GetComponentInChildren<Text>();
 
-            _sfxToggleBtn = CreatePixelButton(box.transform, "Btn_SfxToggle", "SFX: ON", Color.white, 0f, 32f, 10, font, () =>
+            _sfxToggleBtn = CreatePixelButton(box.transform, "Btn_SfxToggle", "SFX: ON", Color.white, 0f, 32f, 11, font, () =>
             {
                 _sfxEnabled = !_sfxEnabled;
                 if (_sfxEnabled) PlaySfx(_artBank != null ? _artBank.uiToggle : null, 0.65f);
@@ -1216,7 +1471,7 @@ namespace AstraLink.UI.Flight.SpaceMap
             });
             _sfxToggleLabel = _sfxToggleBtn.GetComponentInChildren<Text>();
 
-            CreatePixelButton(box.transform, "Btn_VolDown", "VOL -", Color.white, 0f, 32f, 10, font, () =>
+            CreatePixelButton(box.transform, "Btn_VolDown", "VOL -", Color.white, 0f, 32f, 11, font, () =>
             {
                 _masterVolume = Mathf.Clamp01(_masterVolume - 0.15f);
                 RefreshAudioPlaybackState();
@@ -1224,12 +1479,12 @@ namespace AstraLink.UI.Flight.SpaceMap
                 PlaySfx(_artBank != null ? _artBank.uiClick : null, 0.55f);
             });
 
-            _volumeLabelText = CreateText("VolReadout", box.transform, font, "70%", 11, FontStyle.Bold, new Color(0.75f, 0.94f, 1f, 1f), TextAnchor.MiddleCenter);
+            _volumeLabelText = CreateText("VolReadout", box.transform, font, "70%", 12, FontStyle.Bold, new Color(0.75f, 0.94f, 1f, 1f), TextAnchor.MiddleCenter);
             LayoutElement vle = _volumeLabelText.gameObject.AddComponent<LayoutElement>();
-            vle.preferredWidth = 42f;
+            vle.preferredWidth = 46f;
             vle.flexibleWidth = 0f;
 
-            CreatePixelButton(box.transform, "Btn_VolUp", "VOL +", Color.white, 0f, 32f, 10, font, () =>
+            CreatePixelButton(box.transform, "Btn_VolUp", "VOL +", Color.white, 0f, 32f, 11, font, () =>
             {
                 _masterVolume = Mathf.Clamp01(_masterVolume + 0.15f);
                 RefreshAudioPlaybackState();
@@ -1260,7 +1515,7 @@ namespace AstraLink.UI.Flight.SpaceMap
         private void CreateGaugeBarRow(Transform parent, Font font, string label, Color barColor, out Image fillImg, out Text valueText)
         {
             GameObject row = CreateUIObject("Gauge_" + label, parent);
-            row.AddComponent<LayoutElement>().preferredHeight = 18f;
+            row.AddComponent<LayoutElement>().preferredHeight = 20f;
             HorizontalLayoutGroup hl = row.AddComponent<HorizontalLayoutGroup>();
             hl.spacing = 6f;
             hl.childAlignment = TextAnchor.MiddleCenter;
@@ -1268,15 +1523,14 @@ namespace AstraLink.UI.Flight.SpaceMap
             hl.childControlHeight = true;
             hl.childForceExpandWidth = false;
 
-            Text lbl = CreateText("Lbl", row.transform, font, label, 10, FontStyle.Bold, new Color(0.78f, 0.88f, 0.98f, 1f), TextAnchor.MiddleLeft);
-            lbl.gameObject.AddComponent<LayoutElement>().preferredWidth = 32f;
+            Text lbl = CreateText("Lbl", row.transform, font, label, 11, FontStyle.Bold, new Color(0.82f, 0.90f, 0.98f, 1f), TextAnchor.MiddleLeft);
+            lbl.gameObject.AddComponent<LayoutElement>().preferredWidth = 36f;
 
             GameObject track = CreateUIObject("Track", row.transform);
             LayoutElement tle = track.AddComponent<LayoutElement>();
             tle.flexibleWidth = 1f;
-            tle.preferredHeight = 12f;
-            Image trackBg = track.AddComponent<Image>();
-            trackBg.color = new Color(0.04f, 0.07f, 0.14f, 0.96f);
+            tle.preferredHeight = 13f;
+            track.AddComponent<Image>().color = new Color(0.04f, 0.07f, 0.14f, 0.96f);
 
             GameObject fillObj = CreateUIObject("Fill", track.transform);
             StretchFull(fillObj.GetComponent<RectTransform>());
@@ -1287,8 +1541,8 @@ namespace AstraLink.UI.Flight.SpaceMap
             fillImg.fillAmount = 1f;
             fillImg.color = barColor;
 
-            valueText = CreateText("Val", row.transform, font, "--", 10, FontStyle.Bold, Color.white, TextAnchor.MiddleRight);
-            valueText.gameObject.AddComponent<LayoutElement>().preferredWidth = 90f;
+            valueText = CreateText("Val", row.transform, font, "--", 11, FontStyle.Bold, Color.white, TextAnchor.MiddleRight);
+            valueText.gameObject.AddComponent<LayoutElement>().preferredWidth = 98f;
         }
 
         private static void CreatePhasePill(Transform parent, Font font, string initialText, out Image bg, out Text txt)
@@ -1296,8 +1550,15 @@ namespace AstraLink.UI.Flight.SpaceMap
             GameObject obj = CreateUIObject("Pill_" + initialText, parent);
             bg = obj.AddComponent<Image>();
             bg.color = new Color(0.14f, 0.24f, 0.36f, 0.90f);
-            txt = CreateText("Txt", obj.transform, font, initialText, 10, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
-            StretchFull(txt.GetComponent<RectTransform>());
+            txt = CreateText("Txt", obj.transform, font, initialText, 11, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
+            txt.horizontalOverflow = HorizontalWrapMode.Overflow;
+            txt.resizeTextForBestFit = true;
+            txt.resizeTextMinSize = 8;
+            txt.resizeTextMaxSize = 11;
+            RectTransform rt = txt.GetComponent<RectTransform>();
+            StretchFull(rt);
+            rt.offsetMin = new Vector2(4f, 1f);
+            rt.offsetMax = new Vector2(-4f, -1f);
         }
 
         private static void UpdatePhasePill(Image bg, Text txt, bool active, string activeLabel, string idleLabel, Color activeCol, Color idleCol)
@@ -1333,8 +1594,7 @@ namespace AstraLink.UI.Flight.SpaceMap
 
             GameObject fillObj = CreateUIObject("Fill", fillArea.transform);
             StretchFull(fillObj.GetComponent<RectTransform>());
-            Image fillImg = fillObj.AddComponent<Image>();
-            fillImg.color = new Color(0.32f, 0.86f, 1f, 0.92f);
+            fillObj.AddComponent<Image>().color = new Color(0.32f, 0.86f, 1f, 0.92f);
 
             GameObject handleArea = CreateUIObject("Handle Slide Area", sliderObj.transform);
             StretchFull(handleArea.GetComponent<RectTransform>());
@@ -1398,11 +1658,11 @@ namespace AstraLink.UI.Flight.SpaceMap
                 icImg.raycastTarget = false;
             }
 
-            Text cap = CreateText("Cap", obj.transform, font, caption, 9, FontStyle.Bold, new Color(0.72f, 0.84f, 0.98f, 1f), TextAnchor.MiddleCenter);
-            cap.gameObject.AddComponent<LayoutElement>().preferredHeight = 13f;
+            Text cap = CreateText("Cap", obj.transform, font, caption, 10, FontStyle.Bold, new Color(0.75f, 0.86f, 0.98f, 1f), TextAnchor.MiddleCenter);
+            cap.gameObject.AddComponent<LayoutElement>().preferredHeight = 14f;
 
-            Text val = CreateText("Val", obj.transform, font, initialVal, 11, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
-            val.gameObject.AddComponent<LayoutElement>().preferredHeight = 15f;
+            Text val = CreateText("Val", obj.transform, font, initialVal, 12, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
+            val.gameObject.AddComponent<LayoutElement>().preferredHeight = 16f;
             return val;
         }
 
@@ -1414,10 +1674,10 @@ namespace AstraLink.UI.Flight.SpaceMap
             Color32 grid = new Color32(26, 38, 66, 255);
             for (int y = 0; y < ChartHeight; y++)
             {
-                bool isGridY = (y == 20 || y == 41 || y == 62);
+                bool isGridY = (y == 34 || y == 68 || y == 102);
                 for (int x = 0; x < ChartWidth; x++)
                 {
-                    bool isGridX = (x % 30 == 0);
+                    bool isGridX = (x % 45 == 0);
                     _chartPixels[y * ChartWidth + x] = (isGridY || isGridX) ? grid : bg;
                 }
             }
@@ -1459,7 +1719,7 @@ namespace AstraLink.UI.Flight.SpaceMap
 
         private static int NormToY(float norm)
         {
-            return Mathf.Clamp(Mathf.RoundToInt(Mathf.Clamp01(norm) * (ChartHeight - 6)) + 3, 1, ChartHeight - 2);
+            return Mathf.Clamp(Mathf.RoundToInt(Mathf.Clamp01(norm) * (ChartHeight - 8)) + 4, 2, ChartHeight - 3);
         }
 
         private void DrawChartSegment(int x0, int y0, int x1, int y1, Color32 col)
@@ -1475,6 +1735,7 @@ namespace AstraLink.UI.Flight.SpaceMap
                 if (x0 >= 0 && x0 < ChartWidth && y0 >= 0 && y0 < ChartHeight)
                 {
                     _chartPixels[y0 * ChartWidth + x0] = col;
+                    if (y0 + 1 < ChartHeight) _chartPixels[(y0 + 1) * ChartWidth + x0] = col;
                 }
                 if (x0 == x1 && y0 == y1) break;
                 int e2 = 2 * err;
@@ -1658,7 +1919,14 @@ namespace AstraLink.UI.Flight.SpaceMap
 
             Text txt = CreateText("Label", obj.transform, font, label, fontSize, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
             txt.raycastTarget = false;
-            StretchFull(txt.GetComponent<RectTransform>());
+            txt.horizontalOverflow = HorizontalWrapMode.Overflow;
+            txt.resizeTextForBestFit = true;
+            txt.resizeTextMinSize = 8;
+            txt.resizeTextMaxSize = fontSize;
+            RectTransform txtRt = txt.GetComponent<RectTransform>();
+            StretchFull(txtRt);
+            txtRt.offsetMin = new Vector2(5f, 2f);
+            txtRt.offsetMax = new Vector2(-5f, -2f);
             return btn;
         }
 
