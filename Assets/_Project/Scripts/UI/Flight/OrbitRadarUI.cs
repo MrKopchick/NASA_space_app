@@ -227,6 +227,7 @@ namespace AstraLink.UI.Flight
         [SerializeField] private Button speed1xButton;
         [SerializeField] private Button speed3xButton;
         [SerializeField] private Button speed5xButton;
+        [SerializeField] private Button speed10xButton;
         [SerializeField] private Text statusHeaderLabel;
         [SerializeField] private Text tickProgressLabel;
         [SerializeField] private Text zoneBadgeLabel;
@@ -295,6 +296,24 @@ namespace AstraLink.UI.Flight
         /// Gets the most recent <see cref="MissionReport"/> produced by the simulator.
         /// </summary>
         public MissionReport LastReport => _activeReport;
+
+        /// <summary>
+        /// Gets the zero-based index of the currently displayed simulation tick.
+        /// </summary>
+        public int CurrentTickIndex => _currentTickIndex;
+
+        /// <summary>
+        /// Gets the total number of ticks in the active <see cref="MissionReport"/>.
+        /// </summary>
+        public int TotalTicks => (_activeReport != null && _activeReport.Ticks != null) ? _activeReport.Ticks.Count : 0;
+
+        /// <summary>
+        /// Gets the currently displayed <see cref="SimulationTickSnapshot"/>, or null if no report is loaded.
+        /// </summary>
+        public SimulationTickSnapshot CurrentTickSnapshot =>
+            (_activeReport != null && _activeReport.Ticks != null && _currentTickIndex >= 0 && _currentTickIndex < _activeReport.Ticks.Count)
+                ? _activeReport.Ticks[_currentTickIndex]
+                : null;
 
         private void Awake()
         {
@@ -478,13 +497,157 @@ namespace AstraLink.UI.Flight
         }
 
         /// <summary>
-        /// Sets the simulation playback speed multiplier (e.g., 1x, 3x, 5x).
+        /// Sets the simulation playback speed multiplier (e.g., 1x, 5x, 10x).
         /// </summary>
         public void SetPlaybackSpeed(float multiplier)
         {
             _speedMultiplier = Mathf.Clamp(multiplier, 0.25f, 20f);
             UpdateSpeedButtonsVisuals();
+            if (_activeReport != null && _activeReport.Ticks != null && _currentTickIndex >= 0 && _currentTickIndex < _activeReport.Ticks.Count)
+            {
+                SimulationTickSnapshot snap = _activeReport.Ticks[_currentTickIndex];
+                if (tickProgressLabel != null)
+                {
+                    tickProgressLabel.text = string.Format(
+                        "Tick: {0:00} / {1:00}   |   OrbitProgress: {2:0.00}   |   Speed: {3:0.#}x",
+                        _currentTickIndex + 1,
+                        _activeReport.Ticks.Count,
+                        snap.OrbitProgress,
+                        _speedMultiplier);
+                }
+            }
             OnSpeedChanged?.Invoke(_speedMultiplier);
+        }
+
+        /// <summary>
+        /// Switches simulation playback speed to 1x.
+        /// </summary>
+        public void SetSpeed1x() => SetPlaybackSpeed(1.0f);
+
+        /// <summary>
+        /// Switches simulation playback speed to 5x.
+        /// </summary>
+        public void SetSpeed5x() => SetPlaybackSpeed(5.0f);
+
+        /// <summary>
+        /// Switches simulation playback speed to 10x.
+        /// </summary>
+        public void SetSpeed10x() => SetPlaybackSpeed(10.0f);
+
+        /// <summary>
+        /// Loads or hot-swaps a <see cref="MissionReport"/> into the radar for step-by-step playback.
+        /// When <paramref name="resetTickIndex"/> is false, preserves the current tick index so mid-flight manual commands recalculate seamlessly.
+        /// </summary>
+        public void LoadMissionReport(
+            MissionReport report,
+            OrbitDefinition orbit = null,
+            bool autoPlay = true,
+            bool resetTickIndex = true)
+        {
+            EnsureRadarHierarchy();
+
+            if (orbit != null)
+            {
+                _currentOrbit = orbit;
+            }
+            else if (_currentOrbit == null)
+            {
+                _currentOrbit = CreateDefaultLeoOrbit();
+            }
+
+            _activeReport = report;
+            RefreshOrbitVisuals();
+
+            if (_activeReport == null || _activeReport.Ticks == null || _activeReport.Ticks.Count == 0)
+            {
+                _isPlaying = false;
+                return;
+            }
+
+            if (resetTickIndex)
+            {
+                _currentTickIndex = 0;
+                _tickElapsedSeconds = 0f;
+            }
+            else
+            {
+                _currentTickIndex = Mathf.Clamp(_currentTickIndex, 0, _activeReport.Ticks.Count - 1);
+            }
+
+            _isPlaying = autoPlay;
+            if (startTestFlightButtonLabel != null)
+            {
+                startTestFlightButtonLabel.text = _isPlaying ? "Restart Flight Test" : "Start Flight Test";
+            }
+
+            SimulationTickSnapshot snap = _activeReport.Ticks[_currentTickIndex];
+            ApplyTickSnapshot(snap, _currentTickIndex, _activeReport.Ticks.Count);
+            SetSatelliteOrbitProgress(snap.OrbitProgress);
+        }
+
+        /// <summary>
+        /// Toggles play/pause state for the step-by-step tick playback.
+        /// </summary>
+        public void TogglePlayPause()
+        {
+            if (_activeReport == null || _activeReport.Ticks == null || _activeReport.Ticks.Count == 0)
+            {
+                StartTestFlight();
+                return;
+            }
+
+            if (!_isPlaying && _currentTickIndex >= _activeReport.Ticks.Count - 1)
+            {
+                _currentTickIndex = 0;
+                _tickElapsedSeconds = 0f;
+                SimulationTickSnapshot firstSnap = _activeReport.Ticks[0];
+                ApplyTickSnapshot(firstSnap, 0, _activeReport.Ticks.Count);
+                SetSatelliteOrbitProgress(firstSnap.OrbitProgress);
+            }
+
+            _isPlaying = !_isPlaying;
+        }
+
+        /// <summary>
+        /// Steps forward or backward by <paramref name="deltaTicks"/> and updates the radar and telemetry listeners immediately.
+        /// </summary>
+        public void StepSingleTick(int deltaTicks = 1)
+        {
+            if (_activeReport == null || _activeReport.Ticks == null || _activeReport.Ticks.Count == 0)
+            {
+                return;
+            }
+
+            _isPlaying = false;
+            _tickElapsedSeconds = 0f;
+            _currentTickIndex = Mathf.Clamp(_currentTickIndex + deltaTicks, 0, _activeReport.Ticks.Count - 1);
+
+            SimulationTickSnapshot snap = _activeReport.Ticks[_currentTickIndex];
+            ApplyTickSnapshot(snap, _currentTickIndex, _activeReport.Ticks.Count);
+            SetSatelliteOrbitProgress(snap.OrbitProgress);
+        }
+
+        /// <summary>
+        /// Jumps directly to a specific tick index in <see cref="MissionReport.Ticks"/>.
+        /// </summary>
+        public void JumpToTick(int tickIndex, bool pausePlayback = false)
+        {
+            if (_activeReport == null || _activeReport.Ticks == null || _activeReport.Ticks.Count == 0)
+            {
+                return;
+            }
+
+            if (pausePlayback)
+            {
+                _isPlaying = false;
+            }
+
+            _tickElapsedSeconds = 0f;
+            _currentTickIndex = Mathf.Clamp(tickIndex, 0, _activeReport.Ticks.Count - 1);
+
+            SimulationTickSnapshot snap = _activeReport.Ticks[_currentTickIndex];
+            ApplyTickSnapshot(snap, _currentTickIndex, _activeReport.Ticks.Count);
+            SetSatelliteOrbitProgress(snap.OrbitProgress);
         }
 
         private void Update()
@@ -927,6 +1090,12 @@ namespace AstraLink.UI.Flight
                 speed5xButton.onClick.RemoveAllListeners();
                 speed5xButton.onClick.AddListener(() => SetPlaybackSpeed(5.0f));
             }
+
+            if (speed10xButton != null)
+            {
+                speed10xButton.onClick.RemoveAllListeners();
+                speed10xButton.onClick.AddListener(() => SetPlaybackSpeed(10.0f));
+            }
         }
 
         private void UpdateSpeedButtonsVisuals()
@@ -934,6 +1103,7 @@ namespace AstraLink.UI.Flight
             HighlightSpeedButton(speed1xButton, Mathf.Approximately(_speedMultiplier, 1.0f));
             HighlightSpeedButton(speed3xButton, Mathf.Approximately(_speedMultiplier, 3.0f));
             HighlightSpeedButton(speed5xButton, Mathf.Approximately(_speedMultiplier, 5.0f));
+            HighlightSpeedButton(speed10xButton, Mathf.Approximately(_speedMultiplier, 10.0f));
         }
 
         private static void HighlightSpeedButton(Button btn, bool active)
@@ -1305,7 +1475,7 @@ namespace AstraLink.UI.Flight
                     "Btn_StartTestFlight",
                     "Start Flight Test",
                     new Vector2(0.0f, 0.0f),
-                    new Vector2(0.60f, 1.0f),
+                    new Vector2(0.52f, 1.0f),
                     new Color(0.12f, 0.58f, 0.36f, 1.0f),
                     font,
                     out startTestFlightButtonLabel);
@@ -1318,8 +1488,8 @@ namespace AstraLink.UI.Flight
                     barRt,
                     "Btn_Speed1x",
                     "1x",
-                    new Vector2(0.62f, 0.0f),
-                    new Vector2(0.74f, 1.0f),
+                    new Vector2(0.54f, 0.0f),
+                    new Vector2(0.68f, 1.0f),
                     new Color(0.14f, 0.62f, 0.88f, 1.0f),
                     font,
                     out dummy);
@@ -1327,16 +1497,11 @@ namespace AstraLink.UI.Flight
 
             if (speed3xButton == null)
             {
-                Text dummy;
-                speed3xButton = CreateButton(
-                    barRt,
-                    "Btn_Speed3x",
-                    "3x",
-                    new Vector2(0.75f, 0.0f),
-                    new Vector2(0.87f, 1.0f),
-                    new Color(0.13f, 0.20f, 0.32f, 1.0f),
-                    font,
-                    out dummy);
+                Transform existing3x = barRt.Find("Btn_Speed3x");
+                if (existing3x != null)
+                {
+                    speed3xButton = existing3x.GetComponent<Button>();
+                }
             }
 
             if (speed5xButton == null)
@@ -1346,7 +1511,21 @@ namespace AstraLink.UI.Flight
                     barRt,
                     "Btn_Speed5x",
                     "5x",
-                    new Vector2(0.88f, 0.0f),
+                    new Vector2(0.70f, 0.0f),
+                    new Vector2(0.84f, 1.0f),
+                    new Color(0.13f, 0.20f, 0.32f, 1.0f),
+                    font,
+                    out dummy);
+            }
+
+            if (speed10xButton == null)
+            {
+                Text dummy;
+                speed10xButton = CreateButton(
+                    barRt,
+                    "Btn_Speed10x",
+                    "10x",
+                    new Vector2(0.86f, 0.0f),
                     new Vector2(1.0f, 1.0f),
                     new Color(0.13f, 0.20f, 0.32f, 1.0f),
                     font,
