@@ -2,8 +2,9 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using AstraLink.Core;
 
-namespace AstraLink.Core
+namespace AstraLink.UI.Flight
 {
     /// <summary>
     /// Combined root controller for the Task S1-08 prefab (<c>RocketOrbitAndRadarScreen.prefab</c>).

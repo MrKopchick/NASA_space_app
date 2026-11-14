@@ -2,8 +2,9 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using AstraLink.Core;
 
-namespace AstraLink.Core
+namespace AstraLink.UI.Flight
 {
     /// <summary>
     /// Rocket &amp; Orbit Selector UI Controller (Task S1-08).

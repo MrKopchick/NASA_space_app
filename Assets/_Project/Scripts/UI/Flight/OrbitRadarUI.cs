@@ -2,16 +2,9 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using AstraLink.Core;
 
 namespace AstraLink.UI.Flight
-{
-    /// <summary>
-    /// Namespace marker allowing both <c>using AstraLink.Core;</c> and <c>using AstraLink.UI.Flight;</c> to compile cleanly.
-    /// </summary>
-    public static class FlightRadarMarker { }
-}
-
-namespace AstraLink.Core
 {
     /// <summary>
     /// Procedural sprite generator for the 2D Orbit Radar (Task S1-08).
