@@ -254,7 +254,8 @@ namespace AstraLink.UI.Debrief
         [ContextMenu("Generate Debrief UI In Scene")]
         public void BuildUIInEditor()
         {
-            Transform existing = transform.Find("DebriefContentRoot");
+            CleanupOldRoots();
+            Transform existing = transform.Find("DebriefContentRoot_v3");
             if (existing != null)
             {
                 DestroyImmediate(existing.gameObject);
@@ -1084,10 +1085,37 @@ namespace AstraLink.UI.Debrief
             }
         }
 
+        private void Update()
+        {
+            if (Input.GetKeyDown(KeyCode.F5)) TriggerSampleSuccessScenario(true);
+            else if (Input.GetKeyDown(KeyCode.F6)) TriggerSampleSuccessScenario(false);
+            else if (Input.GetKeyDown(KeyCode.F7)) TriggerSampleFailureScenario(FailureScenarioType.BatteryDepleted);
+            else if (Input.GetKeyDown(KeyCode.F8)) TriggerSampleFailureScenario(FailureScenarioType.RadiationDamage);
+            else if (Input.GetKeyDown(KeyCode.F9)) TriggerSampleFailureScenario(FailureScenarioType.InsufficientScienceWithSsdLoss);
+            else if (Input.GetKeyDown(KeyCode.F10)) TriggerSampleFailureScenario(FailureScenarioType.InsufficientScienceNoLoss);
+        }
+
+        private void CleanupOldRoots()
+        {
+            Transform oldV1 = transform.Find("DebriefContentRoot");
+            if (oldV1 != null)
+            {
+                DestroyImmediate(oldV1.gameObject);
+            }
+
+            Transform oldV2 = transform.Find("DebriefContentRoot_v2");
+            if (oldV2 != null)
+            {
+                DestroyImmediate(oldV2.gameObject);
+            }
+        }
+
         private void EnsureDebriefUIHierarchy()
         {
-            Transform root = transform.Find("DebriefContentRoot");
-            if (root != null && finalScoreValueText != null && failureTitleText != null)
+            CleanupOldRoots();
+
+            Transform root = transform.Find("DebriefContentRoot_v3");
+            if (root != null && finalScoreValueText != null && failureTitleText != null && returnToWorkshopButton != null)
             {
                 return;
             }
@@ -1117,12 +1145,12 @@ namespace AstraLink.UI.Debrief
             }
             baseBg.color = new Color(0.05f, 0.08f, 0.14f, 1f);
 
-            GameObject contentRoot = CreateUIObject("DebriefContentRoot", transform);
+            GameObject contentRoot = CreateUIObject("DebriefContentRoot_v3", transform);
             StretchFull(contentRoot.GetComponent<RectTransform>());
 
             VerticalLayoutGroup rootLayout = contentRoot.AddComponent<VerticalLayoutGroup>();
-            rootLayout.padding = new RectOffset(28, 28, 20, 20);
-            rootLayout.spacing = 14f;
+            rootLayout.padding = new RectOffset(22, 22, 10, 10);
+            rootLayout.spacing = 8f;
             rootLayout.childControlWidth = true;
             rootLayout.childControlHeight = true;
             rootLayout.childForceExpandWidth = true;
@@ -1131,17 +1159,20 @@ namespace AstraLink.UI.Debrief
             // 1. Top Header Bar
             BuildTopHeaderBar(contentRoot.transform, font);
 
-            // 2. Outcome Headline Banner
+            // 2. Top Verification Switcher Bar (Always visible right below header)
+            BuildVerificationSwitcherBar(contentRoot.transform, font);
+
+            // 3. Outcome Headline Banner
             BuildOutcomeBanner(contentRoot.transform, font);
 
-            // 3. Main Two-Column Content Row
+            // 4. Main Two-Column Content Row
             GameObject mainRow = CreateUIObject("MainContentRow", contentRoot.transform);
             LayoutElement mainRowLe = mainRow.AddComponent<LayoutElement>();
             mainRowLe.flexibleHeight = 1f;
-            mainRowLe.preferredHeight = 640f;
+            mainRowLe.preferredHeight = 470f;
 
             HorizontalLayoutGroup mainRowLayout = mainRow.AddComponent<HorizontalLayoutGroup>();
-            mainRowLayout.spacing = 20f;
+            mainRowLayout.spacing = 16f;
             mainRowLayout.childControlWidth = true;
             mainRowLayout.childControlHeight = true;
             mainRowLayout.childForceExpandWidth = true;
@@ -1149,17 +1180,14 @@ namespace AstraLink.UI.Debrief
 
             BuildTelemetryMetricsColumn(mainRow.transform, font);
             BuildRightStateColumn(mainRow.transform, font);
-
-            // 4. Bottom Verification Switcher Bar
-            BuildVerificationSwitcherBar(contentRoot.transform, font);
         }
 
         private void BuildTopHeaderBar(Transform parent, Font font)
         {
-            GameObject headerBar = CreatePanel("HeaderBar", parent, new Color(0.08f, 0.13f, 0.22f, 0.98f), 74f);
+            GameObject headerBar = CreatePanel("HeaderBar", parent, new Color(0.08f, 0.13f, 0.22f, 0.98f), 54f);
             HorizontalLayoutGroup headerLayout = headerBar.AddComponent<HorizontalLayoutGroup>();
-            headerLayout.padding = new RectOffset(22, 22, 10, 10);
-            headerLayout.spacing = 16f;
+            headerLayout.padding = new RectOffset(18, 18, 6, 6);
+            headerLayout.spacing = 14f;
             headerLayout.childAlignment = TextAnchor.MiddleLeft;
             headerLayout.childControlWidth = true;
             headerLayout.childControlHeight = true;
@@ -1171,7 +1199,7 @@ namespace AstraLink.UI.Debrief
             titleStackLe.flexibleWidth = 1f;
 
             VerticalLayoutGroup titleStackLayout = titleStack.AddComponent<VerticalLayoutGroup>();
-            titleStackLayout.spacing = 2f;
+            titleStackLayout.spacing = 1f;
             titleStackLayout.childControlWidth = true;
             titleStackLayout.childControlHeight = true;
             titleStackLayout.childForceExpandWidth = true;
@@ -1182,7 +1210,7 @@ namespace AstraLink.UI.Debrief
                 titleStack.transform,
                 font,
                 "ASTRA-LINK // POST-FLIGHT MISSION DEBRIEFING & ANALYSIS",
-                22,
+                19,
                 FontStyle.Bold,
                 new Color(0.92f, 0.97f, 1.0f, 1f),
                 TextAnchor.MiddleLeft);
@@ -1192,14 +1220,14 @@ namespace AstraLink.UI.Debrief
                 titleStack.transform,
                 font,
                 "Contract: 1. LEO Weather CubeSat   •   Target Orbit: LEO 400 km (Earth)",
-                14,
+                13,
                 FontStyle.Normal,
                 new Color(0.65f, 0.80f, 0.95f, 1f),
                 TextAnchor.MiddleLeft);
 
-            GameObject badgeObj = CreatePanel("StatusBadge", headerBar.transform, new Color(0.12f, 0.48f, 0.28f, 1f), 48f);
+            GameObject badgeObj = CreatePanel("StatusBadge", headerBar.transform, new Color(0.12f, 0.48f, 0.28f, 1f), 40f);
             LayoutElement badgeLe = badgeObj.GetComponent<LayoutElement>();
-            badgeLe.preferredWidth = 290f;
+            badgeLe.preferredWidth = 270f;
             statusBadgeBackground = badgeObj.GetComponent<Image>();
 
             statusBadgeText = CreateText(
@@ -1207,7 +1235,7 @@ namespace AstraLink.UI.Debrief
                 badgeObj.transform,
                 font,
                 "STATUS: MISSION SUCCESS",
-                16,
+                15,
                 FontStyle.Bold,
                 Color.white,
                 TextAnchor.MiddleCenter);
@@ -1216,12 +1244,12 @@ namespace AstraLink.UI.Debrief
 
         private void BuildOutcomeBanner(Transform parent, Font font)
         {
-            GameObject bannerObj = CreatePanel("OutcomeBanner", parent, new Color(0.08f, 0.26f, 0.18f, 0.96f), 82f);
+            GameObject bannerObj = CreatePanel("OutcomeBanner", parent, new Color(0.08f, 0.26f, 0.18f, 0.96f), 58f);
             outcomeBannerBackground = bannerObj.GetComponent<Image>();
 
             VerticalLayoutGroup bannerLayout = bannerObj.AddComponent<VerticalLayoutGroup>();
-            bannerLayout.padding = new RectOffset(22, 22, 10, 10);
-            bannerLayout.spacing = 4f;
+            bannerLayout.padding = new RectOffset(18, 18, 6, 6);
+            bannerLayout.spacing = 2f;
             bannerLayout.childControlWidth = true;
             bannerLayout.childControlHeight = true;
             bannerLayout.childForceExpandWidth = true;
@@ -1232,7 +1260,7 @@ namespace AstraLink.UI.Debrief
                 bannerObj.transform,
                 font,
                 "MISSION ACCOMPLISHED  •  FINAL SCORE: 162.5 PTS",
-                22,
+                19,
                 FontStyle.Bold,
                 new Color(0.42f, 0.98f, 0.64f, 1f),
                 TextAnchor.MiddleLeft);
@@ -1242,7 +1270,7 @@ namespace AstraLink.UI.Debrief
                 bannerObj.transform,
                 font,
                 "All orbital objectives verified by NASA Ground Control.",
-                14,
+                13,
                 FontStyle.Normal,
                 new Color(0.84f, 0.95f, 0.88f, 1f),
                 TextAnchor.MiddleLeft);
@@ -1256,8 +1284,8 @@ namespace AstraLink.UI.Debrief
             leftLe.preferredWidth = 820f;
 
             VerticalLayoutGroup leftLayout = leftCol.AddComponent<VerticalLayoutGroup>();
-            leftLayout.padding = new RectOffset(20, 20, 18, 18);
-            leftLayout.spacing = 12f;
+            leftLayout.padding = new RectOffset(16, 16, 12, 12);
+            leftLayout.spacing = 7f;
             leftLayout.childControlWidth = true;
             leftLayout.childControlHeight = true;
             leftLayout.childForceExpandWidth = true;
@@ -1268,7 +1296,7 @@ namespace AstraLink.UI.Debrief
                 leftCol.transform,
                 font,
                 "FLIGHT TELEMETRY & NASA RESOURCE SUMMARY",
-                18,
+                16,
                 FontStyle.Bold,
                 new Color(0.55f, 0.84f, 1.0f, 1f),
                 TextAnchor.MiddleLeft);
@@ -1346,10 +1374,10 @@ namespace AstraLink.UI.Debrief
             out Text detailText,
             out Image barFill)
         {
-            GameObject card = CreatePanel(name, parent, new Color(0.04f, 0.07f, 0.13f, 0.95f), 96f);
+            GameObject card = CreatePanel(name, parent, new Color(0.04f, 0.07f, 0.13f, 0.95f), 74f);
             VerticalLayoutGroup cardLayout = card.AddComponent<VerticalLayoutGroup>();
-            cardLayout.padding = new RectOffset(16, 16, 10, 10);
-            cardLayout.spacing = 6f;
+            cardLayout.padding = new RectOffset(14, 14, 6, 6);
+            cardLayout.spacing = 4f;
             cardLayout.childControlWidth = true;
             cardLayout.childControlHeight = true;
             cardLayout.childForceExpandWidth = true;
@@ -1367,7 +1395,7 @@ namespace AstraLink.UI.Debrief
                 topRow.transform,
                 font,
                 label,
-                14,
+                13,
                 FontStyle.Bold,
                 new Color(0.76f, 0.86f, 0.96f, 1f),
                 TextAnchor.MiddleLeft);
@@ -1379,12 +1407,12 @@ namespace AstraLink.UI.Debrief
                 topRow.transform,
                 font,
                 initialValue,
-                18,
+                16,
                 FontStyle.Bold,
                 new Color(0.35f, 0.96f, 0.58f, 1f),
                 TextAnchor.MiddleRight);
 
-            GameObject barTrack = CreatePanel("BarTrack", card.transform, new Color(0.12f, 0.18f, 0.28f, 1f), 12f);
+            GameObject barTrack = CreatePanel("BarTrack", card.transform, new Color(0.12f, 0.18f, 0.28f, 1f), 9f);
             GameObject fillObj = CreateUIObject("BarFill", barTrack.transform);
             StretchFull(fillObj.GetComponent<RectTransform>());
             barFill = fillObj.AddComponent<Image>();
@@ -1400,7 +1428,7 @@ namespace AstraLink.UI.Debrief
                 card.transform,
                 font,
                 initialDetail,
-                13,
+                12,
                 FontStyle.Normal,
                 new Color(0.68f, 0.78f, 0.90f, 1f),
                 TextAnchor.MiddleLeft);
@@ -1423,8 +1451,8 @@ namespace AstraLink.UI.Debrief
             StretchFull(successStateRoot.GetComponent<RectTransform>());
 
             VerticalLayoutGroup layout = successStateRoot.AddComponent<VerticalLayoutGroup>();
-            layout.padding = new RectOffset(22, 22, 18, 18);
-            layout.spacing = 14f;
+            layout.padding = new RectOffset(18, 18, 12, 12);
+            layout.spacing = 9f;
             layout.childControlWidth = true;
             layout.childControlHeight = true;
             layout.childForceExpandWidth = true;
@@ -1435,16 +1463,16 @@ namespace AstraLink.UI.Debrief
                 successStateRoot.transform,
                 font,
                 "MISSION RATING, RELIABILITY BONUS & CONTRACT PAYOUT",
-                18,
+                16,
                 FontStyle.Bold,
                 new Color(0.45f, 0.96f, 0.66f, 1f),
                 TextAnchor.MiddleLeft);
 
             // 1. Score & Rating Card
-            GameObject scoreCard = CreatePanel("ScoreCard", successStateRoot.transform, new Color(0.04f, 0.08f, 0.14f, 0.96f), 156f);
+            GameObject scoreCard = CreatePanel("ScoreCard", successStateRoot.transform, new Color(0.04f, 0.08f, 0.14f, 0.96f), 118f);
             VerticalLayoutGroup scoreLayout = scoreCard.AddComponent<VerticalLayoutGroup>();
-            scoreLayout.padding = new RectOffset(18, 18, 12, 12);
-            scoreLayout.spacing = 8f;
+            scoreLayout.padding = new RectOffset(16, 16, 8, 8);
+            scoreLayout.spacing = 5f;
             scoreLayout.childControlWidth = true;
             scoreLayout.childControlHeight = true;
             scoreLayout.childForceExpandWidth = true;
@@ -1452,7 +1480,7 @@ namespace AstraLink.UI.Debrief
 
             GameObject scoreTopRow = CreateUIObject("ScoreTopRow", scoreCard.transform);
             HorizontalLayoutGroup scoreTopLayout = scoreTopRow.AddComponent<HorizontalLayoutGroup>();
-            scoreTopLayout.spacing = 14f;
+            scoreTopLayout.spacing = 12f;
             scoreTopLayout.childAlignment = TextAnchor.MiddleLeft;
             scoreTopLayout.childControlWidth = true;
             scoreTopLayout.childControlHeight = true;
@@ -1464,7 +1492,7 @@ namespace AstraLink.UI.Debrief
                 scoreTopRow.transform,
                 font,
                 "FINAL MISSION SCORE:",
-                16,
+                15,
                 FontStyle.Bold,
                 new Color(0.78f, 0.88f, 0.98f, 1f),
                 TextAnchor.MiddleLeft);
@@ -1476,14 +1504,14 @@ namespace AstraLink.UI.Debrief
                 scoreTopRow.transform,
                 font,
                 "162.5 PTS",
-                28,
+                24,
                 FontStyle.Bold,
                 new Color(0.38f, 0.98f, 0.62f, 1f),
                 TextAnchor.MiddleRight);
 
-            GameObject gradeBadge = CreatePanel("GradeBadge", scoreTopRow.transform, new Color(0.14f, 0.54f, 0.32f, 1f), 38f);
+            GameObject gradeBadge = CreatePanel("GradeBadge", scoreTopRow.transform, new Color(0.14f, 0.54f, 0.32f, 1f), 32f);
             LayoutElement gradeLe = gradeBadge.GetComponent<LayoutElement>();
-            gradeLe.preferredWidth = 220f;
+            gradeLe.preferredWidth = 210f;
             ratingGradeBadgeBg = gradeBadge.GetComponent<Image>();
 
             ratingGradeBadgeText = CreateText(
@@ -1491,7 +1519,7 @@ namespace AstraLink.UI.Debrief
                 gradeBadge.transform,
                 font,
                 "GRADE S  •  EXEMPLARY",
-                14,
+                13,
                 FontStyle.Bold,
                 Color.white,
                 TextAnchor.MiddleCenter);
@@ -1504,20 +1532,20 @@ namespace AstraLink.UI.Debrief
                 "• Delivered Science Points: <b>+120.0 pts</b>\n" +
                 "• Budget Efficiency Bonus: <b>+15.0 pts</b>\n" +
                 "• Engineering Reliability Margin Bonus: <b>+50.0 pts</b>",
-                14,
+                13,
                 FontStyle.Normal,
                 new Color(0.84f, 0.92f, 0.98f, 1f),
                 TextAnchor.MiddleLeft);
             scoreFormulaBreakdownText.supportRichText = true;
-            scoreFormulaBreakdownText.lineSpacing = 1.2f;
+            scoreFormulaBreakdownText.lineSpacing = 1.12f;
 
             // 2. +50 Reliability Bonus Card
-            GameObject bonusCard = CreatePanel("ReliabilityBonusCard", successStateRoot.transform, new Color(0.09f, 0.30f, 0.20f, 0.95f), 88f);
+            GameObject bonusCard = CreatePanel("ReliabilityBonusCard", successStateRoot.transform, new Color(0.09f, 0.30f, 0.20f, 0.95f), 64f);
             reliabilityBonusCardBg = bonusCard.GetComponent<Image>();
 
             VerticalLayoutGroup bonusLayout = bonusCard.AddComponent<VerticalLayoutGroup>();
-            bonusLayout.padding = new RectOffset(18, 18, 10, 10);
-            bonusLayout.spacing = 4f;
+            bonusLayout.padding = new RectOffset(16, 16, 7, 7);
+            bonusLayout.spacing = 3f;
             bonusLayout.childControlWidth = true;
             bonusLayout.childControlHeight = true;
             bonusLayout.childForceExpandWidth = true;
@@ -1528,7 +1556,7 @@ namespace AstraLink.UI.Debrief
                 bonusCard.transform,
                 font,
                 "RELIABILITY MARGIN BONUS: +50.0 PTS AWARDED",
-                16,
+                15,
                 FontStyle.Bold,
                 new Color(0.42f, 0.98f, 0.64f, 1f),
                 TextAnchor.MiddleLeft);
@@ -1538,16 +1566,16 @@ namespace AstraLink.UI.Debrief
                 bonusCard.transform,
                 font,
                 "Conditions: Min Battery >= 15%  •  Final Health >= 80%  •  Reliability >= 85%",
-                13,
+                12,
                 FontStyle.Normal,
                 new Color(0.85f, 0.95f, 0.90f, 1f),
                 TextAnchor.MiddleLeft);
 
             // 3. Contract Payout & Passive Income Card
-            GameObject payoutCard = CreatePanel("ContractPayoutCard", successStateRoot.transform, new Color(0.04f, 0.08f, 0.14f, 0.96f), 160f);
+            GameObject payoutCard = CreatePanel("ContractPayoutCard", successStateRoot.transform, new Color(0.04f, 0.08f, 0.14f, 0.96f), 122f);
             VerticalLayoutGroup payoutLayout = payoutCard.AddComponent<VerticalLayoutGroup>();
-            payoutLayout.padding = new RectOffset(18, 18, 12, 12);
-            payoutLayout.spacing = 8f;
+            payoutLayout.padding = new RectOffset(16, 16, 8, 8);
+            payoutLayout.spacing = 6f;
             payoutLayout.childControlWidth = true;
             payoutLayout.childControlHeight = true;
             payoutLayout.childForceExpandWidth = true;
@@ -1558,38 +1586,38 @@ namespace AstraLink.UI.Debrief
                 payoutCard.transform,
                 font,
                 "CONTRACT REWARD & PASSIVE INCOME PAYOUT",
-                15,
+                14,
                 FontStyle.Bold,
                 new Color(1.0f, 0.84f, 0.38f, 1f),
                 TextAnchor.MiddleLeft);
 
             GameObject payoutBoxesRow = CreateUIObject("PayoutBoxesRow", payoutCard.transform);
             HorizontalLayoutGroup payoutBoxesLayout = payoutBoxesRow.AddComponent<HorizontalLayoutGroup>();
-            payoutBoxesLayout.spacing = 14f;
+            payoutBoxesLayout.spacing = 12f;
             payoutBoxesLayout.childControlWidth = true;
             payoutBoxesLayout.childControlHeight = true;
             payoutBoxesLayout.childForceExpandWidth = true;
             payoutBoxesLayout.childForceExpandHeight = false;
 
-            GameObject rewardBox = CreatePanel("RewardBox", payoutBoxesRow.transform, new Color(0.08f, 0.16f, 0.26f, 1f), 46f);
+            GameObject rewardBox = CreatePanel("RewardBox", payoutBoxesRow.transform, new Color(0.08f, 0.16f, 0.26f, 1f), 36f);
             contractRewardValueText = CreateText(
                 "ContractRewardValue",
                 rewardBox.transform,
                 font,
                 "+$130k Contract Payout",
-                17,
+                15,
                 FontStyle.Bold,
                 new Color(0.42f, 0.98f, 0.64f, 1f),
                 TextAnchor.MiddleCenter);
             StretchFull(contractRewardValueText.GetComponent<RectTransform>());
 
-            GameObject passiveBox = CreatePanel("PassiveBox", payoutBoxesRow.transform, new Color(0.08f, 0.16f, 0.26f, 1f), 46f);
+            GameObject passiveBox = CreatePanel("PassiveBox", payoutBoxesRow.transform, new Color(0.08f, 0.16f, 0.26f, 1f), 36f);
             passiveIncomeValueText = CreateText(
                 "PassiveIncomeValue",
                 passiveBox.transform,
                 font,
                 "+$20k / Flight Passive Income",
-                17,
+                15,
                 FontStyle.Bold,
                 new Color(0.48f, 0.88f, 1.0f, 1f),
                 TextAnchor.MiddleCenter);
@@ -1600,16 +1628,12 @@ namespace AstraLink.UI.Debrief
                 payoutCard.transform,
                 font,
                 "Total Payout Credited: <b>+$150k</b>\nAgency Balance: <b>$200k</b>   •   Active Passive Income Stream: <b>+$20k / mission</b>",
-                14,
+                13,
                 FontStyle.Normal,
                 new Color(0.84f, 0.92f, 0.98f, 1f),
                 TextAnchor.MiddleLeft);
             agencyCapitalSummaryText.supportRichText = true;
-            agencyCapitalSummaryText.lineSpacing = 1.2f;
-
-            GameObject spacer = CreateUIObject("Spacer", successStateRoot.transform);
-            LayoutElement spacerLe = spacer.AddComponent<LayoutElement>();
-            spacerLe.flexibleHeight = 1f;
+            agencyCapitalSummaryText.lineSpacing = 1.12f;
 
             returnToHubButton = CreateActionButton(
                 successStateRoot.transform,
@@ -1617,7 +1641,7 @@ namespace AstraLink.UI.Debrief
                 "RETURN TO CONTRACT HUB (COLLECT REWARD & NEXT MISSION)",
                 new Color(0.14f, 0.56f, 0.34f, 1f),
                 0f,
-                58f,
+                48f,
                 font,
                 ReturnToHub);
         }
@@ -1628,8 +1652,8 @@ namespace AstraLink.UI.Debrief
             StretchFull(failureStateRoot.GetComponent<RectTransform>());
 
             VerticalLayoutGroup layout = failureStateRoot.AddComponent<VerticalLayoutGroup>();
-            layout.padding = new RectOffset(22, 22, 18, 18);
-            layout.spacing = 14f;
+            layout.padding = new RectOffset(18, 18, 12, 12);
+            layout.spacing = 9f;
             layout.childControlWidth = true;
             layout.childControlHeight = true;
             layout.childForceExpandWidth = true;
@@ -1640,18 +1664,18 @@ namespace AstraLink.UI.Debrief
                 failureStateRoot.transform,
                 font,
                 "WHY DID IT FAIL? — A.S.T.R.A. FAILURE DEBRIEF BUILDER",
-                18,
+                16,
                 FontStyle.Bold,
                 new Color(1.0f, 0.50f, 0.48f, 1f),
                 TextAnchor.MiddleLeft);
 
             // 1. FailureTitle Box
-            GameObject titleBox = CreatePanel("FailureTitleBox", failureStateRoot.transform, new Color(0.42f, 0.11f, 0.14f, 0.98f), 84f);
+            GameObject titleBox = CreatePanel("FailureTitleBox", failureStateRoot.transform, new Color(0.42f, 0.11f, 0.14f, 0.98f), 68f);
             failureTitleBannerBg = titleBox.GetComponent<Image>();
 
             VerticalLayoutGroup titleBoxLayout = titleBox.AddComponent<VerticalLayoutGroup>();
-            titleBoxLayout.padding = new RectOffset(18, 18, 10, 10);
-            titleBoxLayout.spacing = 4f;
+            titleBoxLayout.padding = new RectOffset(16, 16, 7, 7);
+            titleBoxLayout.spacing = 3f;
             titleBoxLayout.childControlWidth = true;
             titleBoxLayout.childControlHeight = true;
             titleBoxLayout.childForceExpandWidth = true;
@@ -1662,7 +1686,7 @@ namespace AstraLink.UI.Debrief
                 titleBox.transform,
                 font,
                 "1. PRIMARY ANOMALY CLASSIFICATION (FailureTitle):",
-                13,
+                12,
                 FontStyle.Bold,
                 new Color(1.0f, 0.78f, 0.78f, 1f),
                 TextAnchor.MiddleLeft);
@@ -1672,16 +1696,16 @@ namespace AstraLink.UI.Debrief
                 titleBox.transform,
                 font,
                 "Critical Battery Depletion (0%)",
-                21,
+                19,
                 FontStyle.Bold,
                 Color.white,
                 TextAnchor.MiddleLeft);
 
             // 2. FailureCause Box
-            GameObject causeBox = CreatePanel("FailureCauseBox", failureStateRoot.transform, new Color(0.06f, 0.08f, 0.14f, 0.96f), 140f);
+            GameObject causeBox = CreatePanel("FailureCauseBox", failureStateRoot.transform, new Color(0.06f, 0.08f, 0.14f, 0.96f), 104f);
             VerticalLayoutGroup causeBoxLayout = causeBox.AddComponent<VerticalLayoutGroup>();
-            causeBoxLayout.padding = new RectOffset(18, 18, 12, 12);
-            causeBoxLayout.spacing = 6f;
+            causeBoxLayout.padding = new RectOffset(16, 16, 8, 8);
+            causeBoxLayout.spacing = 4f;
             causeBoxLayout.childControlWidth = true;
             causeBoxLayout.childControlHeight = true;
             causeBoxLayout.childForceExpandWidth = true;
@@ -1692,7 +1716,7 @@ namespace AstraLink.UI.Debrief
                 causeBox.transform,
                 font,
                 "2. ROOT CAUSE & ORBITAL TELEMETRY ANALYSIS (FailureCause):",
-                14,
+                13,
                 FontStyle.Bold,
                 new Color(1.0f, 0.74f, 0.36f, 1f),
                 TextAnchor.MiddleLeft);
@@ -1702,17 +1726,17 @@ namespace AstraLink.UI.Debrief
                 causeBox.transform,
                 font,
                 "Satellite lost power on orbit 1 (tick 11). Power draw reached 27.0 W against 0.0 W generation, draining battery capacity (45.0 Wh) in eclipse.",
-                16,
+                14,
                 FontStyle.Normal,
                 new Color(0.94f, 0.96f, 1.0f, 1f),
                 TextAnchor.UpperLeft);
-            failureCauseText.lineSpacing = 1.25f;
+            failureCauseText.lineSpacing = 1.15f;
 
             // 3. FailureRecommendation Box
-            GameObject recBox = CreatePanel("FailureRecommendationBox", failureStateRoot.transform, new Color(0.06f, 0.17f, 0.24f, 0.96f), 130f);
+            GameObject recBox = CreatePanel("FailureRecommendationBox", failureStateRoot.transform, new Color(0.06f, 0.17f, 0.24f, 0.96f), 100f);
             VerticalLayoutGroup recBoxLayout = recBox.AddComponent<VerticalLayoutGroup>();
-            recBoxLayout.padding = new RectOffset(18, 18, 12, 12);
-            recBoxLayout.spacing = 6f;
+            recBoxLayout.padding = new RectOffset(16, 16, 8, 8);
+            recBoxLayout.spacing = 4f;
             recBoxLayout.childControlWidth = true;
             recBoxLayout.childControlHeight = true;
             recBoxLayout.childForceExpandWidth = true;
@@ -1723,7 +1747,7 @@ namespace AstraLink.UI.Debrief
                 recBox.transform,
                 font,
                 "3. A.S.T.R.A. CORRECTIVE ENGINEERING ACTION (FailureRecommendation):",
-                14,
+                13,
                 FontStyle.Bold,
                 new Color(0.42f, 0.92f, 1.0f, 1f),
                 TextAnchor.MiddleLeft);
@@ -1733,16 +1757,16 @@ namespace AstraLink.UI.Debrief
                 recBox.transform,
                 font,
                 "Add autopilot rule: IF SolarWatts < 5 THEN ScienceOff ELSE ScienceOn (or use BatteryPercent for RTG), or install a larger battery.",
-                16,
+                14,
                 FontStyle.Bold,
                 new Color(0.86f, 0.98f, 1.0f, 1f),
                 TextAnchor.UpperLeft);
-            failureRecommendationText.lineSpacing = 1.25f;
+            failureRecommendationText.lineSpacing = 1.15f;
 
             // 4. Free Retry Summary Box
-            GameObject noteBox = CreatePanel("FailureTelemetryNoteBox", failureStateRoot.transform, new Color(0.05f, 0.09f, 0.15f, 0.94f), 68f);
+            GameObject noteBox = CreatePanel("FailureTelemetryNoteBox", failureStateRoot.transform, new Color(0.05f, 0.09f, 0.15f, 0.94f), 54f);
             VerticalLayoutGroup noteLayout = noteBox.AddComponent<VerticalLayoutGroup>();
-            noteLayout.padding = new RectOffset(16, 16, 8, 8);
+            noteLayout.padding = new RectOffset(14, 14, 6, 6);
             noteLayout.childControlWidth = true;
             noteLayout.childControlHeight = true;
             noteLayout.childForceExpandWidth = true;
@@ -1753,15 +1777,11 @@ namespace AstraLink.UI.Debrief
                 noteBox.transform,
                 font,
                 "FREE RETRY POLICY: $0k deducted from Agency Capital. Modify your components or autopilot rules in the Hangar at no penalty.",
-                13,
+                12,
                 FontStyle.Normal,
                 new Color(0.82f, 0.90f, 0.96f, 1f),
                 TextAnchor.MiddleLeft);
             failureTelemetryNoteText.supportRichText = true;
-
-            GameObject spacer = CreateUIObject("Spacer", failureStateRoot.transform);
-            LayoutElement spacerLe = spacer.AddComponent<LayoutElement>();
-            spacerLe.flexibleHeight = 1f;
 
             returnToWorkshopButton = CreateActionButton(
                 failureStateRoot.transform,
@@ -1769,17 +1789,17 @@ namespace AstraLink.UI.Debrief
                 "FREE RETURN TO HANGAR (FIX SATELLITE BUILD / AUTOPILOT RULES)",
                 new Color(0.78f, 0.42f, 0.12f, 1f),
                 0f,
-                58f,
+                48f,
                 font,
                 ReturnToWorkshopFree);
         }
 
         private void BuildVerificationSwitcherBar(Transform parent, Font font)
         {
-            verificationBarRoot = CreatePanel("VerificationSwitcherBar", parent, new Color(0.06f, 0.10f, 0.18f, 0.96f), 54f);
+            verificationBarRoot = CreatePanel("VerificationSwitcherBar", parent, new Color(0.09f, 0.15f, 0.26f, 0.98f), 42f);
             HorizontalLayoutGroup barLayout = verificationBarRoot.AddComponent<HorizontalLayoutGroup>();
-            barLayout.padding = new RectOffset(14, 14, 7, 7);
-            barLayout.spacing = 10f;
+            barLayout.padding = new RectOffset(14, 14, 5, 5);
+            barLayout.spacing = 8f;
             barLayout.childAlignment = TextAnchor.MiddleCenter;
             barLayout.childControlWidth = true;
             barLayout.childControlHeight = true;
@@ -1790,8 +1810,8 @@ namespace AstraLink.UI.Debrief
                 "VerifyLabel",
                 verificationBarRoot.transform,
                 font,
-                "DEBRIEF STATE PRESETS (S2-02 / S2-05):",
-                13,
+                "TEST DEBRIEF STATES (CLICK OR F5-F10):",
+                12,
                 FontStyle.Bold,
                 new Color(0.68f, 0.82f, 0.96f, 1f),
                 TextAnchor.MiddleLeft);
@@ -1949,7 +1969,7 @@ namespace AstraLink.UI.Debrief
             Image img = btnObj.AddComponent<Image>();
             img.color = bgColor;
 
-            Button btn = btnObj.GetComponent<Button>();
+            Button btn = btnObj.AddComponent<Button>();
             btn.targetGraphic = img;
             btn.onClick.AddListener(onClick);
 
@@ -1957,7 +1977,7 @@ namespace AstraLink.UI.Debrief
             if (width > 0f) le.preferredWidth = width;
             if (height > 0f) le.preferredHeight = height;
 
-            Text txt = CreateText("Text", btnObj.transform, font, label, 15, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
+            Text txt = CreateText("Text", btnObj.transform, font, label, 13, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
             StretchFull(txt.GetComponent<RectTransform>());
             return btn;
         }
