@@ -1,0 +1,34 @@
+{
+  "events": [
+    {
+      "Id": "evt_cme_storm",
+      "Title": "Сонячний спалах (CME)",
+      "Description": "Потужний викид корональної маси піднімає радіацію на +85 одиниць. Незахищені прилади виходять з ладу без Safe Mode.",
+      "TriggerOrbit": 3,
+      "DurationTicks": 12,
+      "RadiationBoost": 85.0,
+      "SolarMultiplier": 1.0,
+      "DownlinkMultiplier": 1.0
+    },
+    {
+      "Id": "evt_tx_overheat",
+      "Title": "Перегрів передавача",
+      "Description": "Тимчасове перегрівання підсилювача знижує пропускну здатність каналу зв'язку до 45% на 8 кроків.",
+      "TriggerOrbit": 2,
+      "DurationTicks": 8,
+      "RadiationBoost": 0.0,
+      "SolarMultiplier": 1.0,
+      "DownlinkMultiplier": 0.45
+    },
+    {
+      "Id": "evt_micrometeorite",
+      "Title": "Мікрометеоритний шум",
+      "Description": "Потік мікрометеоритів знижує ефективність сонячних панелей до 60% та додає +15 радіаційного фону.",
+      "TriggerOrbit": 3,
+      "DurationTicks": 10,
+      "RadiationBoost": 15.0,
+      "SolarMultiplier": 0.6,
+      "DownlinkMultiplier": 1.0
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "missions": [
+    {
+      "Id": "m1_leo_cubesat",
+      "Title": "1. LEO Метео-Кубсат",
+      "Brief": "Виведіть метеосупутник на орбіту Землі 400 км, зберіть 100 балів науки та переживіть 4 витки. Не забудьте про правило економії енергії в тіні!",
+      "OrbitId": "orbit_leo",
+      "BudgetLimitThousands": 120.0,
+      "TargetSciencePoints": 100.0,
+      "RequiredOrbits": 4,
+      "RewardThousands": 130,
+      "PassiveIncomeThousands": 20,
+      "MinChipSlots": 2,
+      "RequiredSensorTag": "Camera",
+      "EventId": ""
+    },
+    {
+      "Id": "m2_lunar_mapper",
+      "Title": "2. Місячний Картограф",
+      "Brief": "Створіть карту кратерів Місяця за допомогою радара SAR. Тінь сягає 45% витка, а на 2-му витку можливий перегрів передавача.",
+      "OrbitId": "orbit_lunar",
+      "BudgetLimitThousands": 450.0,
+      "TargetSciencePoints": 250.0,
+      "RequiredOrbits": 5,
+      "RewardThousands": 280,
+      "PassiveIncomeThousands": 45,
+      "MinChipSlots": 4,
+      "RequiredSensorTag": "Radar",
+      "EventId": "evt_tx_overheat"
+    },
+    {
+      "Id": "m3_mars_probe",
+      "Title": "3. Марсіанський Зонд",
+      "Brief": "Дослідіть склад атмосфери Марса спектрометром. Сонце дає лише 43% потоку, на 3-му витку очікується сонячний спалах, а затримка сигналу становить 10 секунд.",
+      "OrbitId": "orbit_mars",
+      "BudgetLimitThousands": 900.0,
+      "TargetSciencePoints": 400.0,
+      "RequiredOrbits": 6,
+      "RewardThousands": 300,
+      "PassiveIncomeThousands": 80,
+      "MinChipSlots": 6,
+      "RequiredSensorTag": "Spectrometer",
+      "EventId": "evt_cme_storm"
+    }
+  ]
+}
