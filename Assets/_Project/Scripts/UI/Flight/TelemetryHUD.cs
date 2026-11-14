@@ -72,6 +72,7 @@ namespace AstraLink.UI.Flight
         private readonly List<Text> _ruleFormulaTexts = new List<Text>();
 
         private List<AutopilotRule> _activeRules = new List<AutopilotRule>();
+        private bool _hasExplicitRules;
         private ResourceSummary _activeResources;
         private MissionGoal _activeGoal;
         private OrbitDefinition _activeOrbit;
@@ -139,12 +140,23 @@ namespace AstraLink.UI.Flight
         /// </summary>
         public void SetAutopilotRules(List<AutopilotRule> rules)
         {
+            if (rules != null)
+            {
+                _hasExplicitRules = true;
+                _activeRules = new List<AutopilotRule>(rules);
+            }
+            else if (GameManager.Instance != null && !(GameManager.Instance.Simulator is MockMissionSimulator))
+            {
+                _hasExplicitRules = true;
+                _activeRules = new List<AutopilotRule>();
+            }
+            else
+            {
+                _hasExplicitRules = false;
+                _activeRules = BuildDefaultSampleRules();
+            }
+
             EnsureTelemetryHierarchy();
-
-            _activeRules = (rules != null && rules.Count > 0)
-                ? new List<AutopilotRule>(rules)
-                : BuildDefaultSampleRules();
-
             RebuildAutopilotRuleRows();
         }
 
@@ -719,9 +731,11 @@ namespace AstraLink.UI.Flight
 
             autopilotRulesContainer = rulesBox.transform;
 
-            if (_activeRules == null || _activeRules.Count == 0)
+            if (!_hasExplicitRules && (_activeRules == null || _activeRules.Count == 0))
             {
-                _activeRules = BuildDefaultSampleRules();
+                _activeRules = (GameManager.Instance != null && !(GameManager.Instance.Simulator is MockMissionSimulator))
+                    ? new List<AutopilotRule>()
+                    : BuildDefaultSampleRules();
             }
             RebuildAutopilotRuleRows();
         }
@@ -741,6 +755,26 @@ namespace AstraLink.UI.Flight
             _ruleFormulaTexts.Clear();
 
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
+            if (_activeRules == null || _activeRules.Count == 0)
+            {
+                GameObject emptyObj = CreateUIObject("NoRulesRow", autopilotRulesContainer);
+                Image emptyBg = emptyObj.AddComponent<Image>();
+                emptyBg.color = new Color(0.10f, 0.14f, 0.22f, 0.90f);
+                emptyObj.AddComponent<LayoutElement>().preferredHeight = 32f;
+
+                Text emptyTxt = CreateText(
+                    "EmptyRulesText",
+                    emptyObj.transform,
+                    font,
+                    "No active autopilot rules programmed (Manual / Unregulated power mode).",
+                    13,
+                    FontStyle.Italic,
+                    new Color(0.75f, 0.82f, 0.92f, 1.0f),
+                    TextAnchor.MiddleCenter);
+                StretchFull(emptyTxt.GetComponent<RectTransform>());
+                return;
+            }
 
             for (int i = 0; i < _activeRules.Count; i++)
             {
