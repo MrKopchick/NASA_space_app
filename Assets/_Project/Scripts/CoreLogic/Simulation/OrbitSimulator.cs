@@ -1,8 +1,27 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 
 namespace AstraLink.Core
 {
+    public enum OrbitLogType
+    {
+        None,
+        InvalidMissionConfiguration,
+        MissingInputs,
+        InvalidLaunchConfiguration,
+        BudgetExceeded,
+        MassExceeded,
+        MissingRequiredResources,
+        InvalidResourceValues,
+        BatteryDepleted,
+        ElectronicsFailure,
+        FailureLocation,
+        InsufficientScienceData,
+        InsufficientScienceDetails,
+        TickTelemetry
+    }
+
     /// <summary>
     /// S1-04: deterministic orbital ticks and resource consumption.
     /// No autopilot/manual commands or triggered events here; they belong to S2-01.
@@ -11,6 +30,50 @@ namespace AstraLink.Core
     public class OrbitSimulator
     {
         public const int TicksPerOrbit = 20;
+
+        private static readonly Dictionary<OrbitLogType, string> LogMessages = new Dictionary<OrbitLogType, string>
+        {
+            { OrbitLogType.None, string.Empty },
+            { OrbitLogType.InvalidMissionConfiguration, "Invalid mission configuration" },
+            { OrbitLogType.MissingInputs, "One or more required inputs are missing." },
+            { OrbitLogType.InvalidLaunchConfiguration, "Invalid launch configuration" },
+            { OrbitLogType.BudgetExceeded, "Satellite and rocket cost exceeds the mission budget." },
+            { OrbitLogType.MassExceeded, "Satellite mass exceeds rocket payload capacity for this orbit." },
+            { OrbitLogType.MissingRequiredResources, "Missing required resources" },
+            { OrbitLogType.InvalidResourceValues, "Battery, SSD capacity and mission duration must be positive." },
+            { OrbitLogType.BatteryDepleted, "Battery depleted" },
+            { OrbitLogType.ElectronicsFailure, "Electronics failure" },
+            { OrbitLogType.FailureLocation, "Failure on orbit {0}, tick {1}." },
+            { OrbitLogType.InsufficientScienceData, "Insufficient science data" },
+            { OrbitLogType.InsufficientScienceDetails, "Delivered {0:F1} of {1:F1} required science points." },
+            { OrbitLogType.TickTelemetry, "Orbit {0}, tick {1}: {2}, comms={3}, solar={4:F1} W, draw={5:F1} W, battery={6:F2} Wh, SSD={7:F2} Gb, health={8:F1}%." }
+        };
+
+        public static string GetLogMessage(OrbitLogType logType)
+        {
+            string message;
+            return LogMessages.TryGetValue(logType, out message) ? message : string.Empty;
+        }
+
+        /// <summary>Formats one tick for a plain C# console test; no UnityEngine dependency.</summary>
+        public static string FormatTickLog(SimulationTickSnapshot tick)
+        {
+            if (tick == null)
+                return GetLogMessage(OrbitLogType.None);
+
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                GetLogMessage(OrbitLogType.TickTelemetry),
+                tick.OrbitNumber,
+                tick.TickIndex,
+                tick.IsInEclipse ? "eclipse" : "sunlight",
+                tick.IsInCommWindow,
+                tick.SolarGenWatts,
+                tick.PowerDrawWatts,
+                tick.BatteryWh,
+                tick.SsdUsedGb,
+                tick.HealthPercent);
+        }
 
         private readonly ResourceCalculator _resourceCalculator = new ResourceCalculator();
 
@@ -24,8 +87,8 @@ namespace AstraLink.Core
             if (components == null || rocket == null || orbit == null || goal == null)
             {
                 report.Status = MissionStatus.Failed;
-                report.FailureTitle = "Invalid mission configuration";
-                report.FailureCause = "One or more required inputs are missing.";
+                report.FailureTitle = GetLogMessage(OrbitLogType.InvalidMissionConfiguration);
+                report.FailureCause = GetLogMessage(OrbitLogType.MissingInputs);
                 return report;
             }
 
@@ -34,18 +97,18 @@ namespace AstraLink.Core
             if (!resources.IsBudgetValid || !resources.IsMassValid)
             {
                 report.Status = MissionStatus.Failed;
-                report.FailureTitle = "Invalid launch configuration";
+                report.FailureTitle = GetLogMessage(OrbitLogType.InvalidLaunchConfiguration);
                 report.FailureCause = !resources.IsBudgetValid
-                    ? "Satellite and rocket cost exceeds the mission budget."
-                    : "Satellite mass exceeds rocket payload capacity for this orbit.";
+                    ? GetLogMessage(OrbitLogType.BudgetExceeded)
+                    : GetLogMessage(OrbitLogType.MassExceeded);
                 return report;
             }
 
             if (resources.MaxBatteryWh <= 0f || resources.MaxSsdGb <= 0f || goal.RequiredOrbits <= 0)
             {
                 report.Status = MissionStatus.Failed;
-                report.FailureTitle = "Missing required resources";
-                report.FailureCause = "Battery, SSD capacity and mission duration must be positive.";
+                report.FailureTitle = GetLogMessage(OrbitLogType.MissingRequiredResources);
+                report.FailureCause = GetLogMessage(OrbitLogType.InvalidResourceValues);
                 return report;
             }
 
@@ -157,9 +220,14 @@ namespace AstraLink.Core
                 if (batteryWh <= 0f || health <= 0f)
                 {
                     report.Status = MissionStatus.Failed;
-                    report.FailureTitle = batteryWh <= 0f ? "Battery depleted" : "Electronics failure";
-                    report.FailureCause = "Failure on orbit " + (tick / TicksPerOrbit + 1)
-                        + ", tick " + tick + ".";
+                    report.FailureTitle = batteryWh <= 0f
+                        ? GetLogMessage(OrbitLogType.BatteryDepleted)
+                        : GetLogMessage(OrbitLogType.ElectronicsFailure);
+                    report.FailureCause = string.Format(
+                        CultureInfo.InvariantCulture,
+                        GetLogMessage(OrbitLogType.FailureLocation),
+                        tick / TicksPerOrbit + 1,
+                        tick);
                     break;
                 }
             }
@@ -175,9 +243,12 @@ namespace AstraLink.Core
                     ? MissionStatus.Success : MissionStatus.Failed;
                 if (report.Status == MissionStatus.Failed)
                 {
-                    report.FailureTitle = "Insufficient science data";
-                    report.FailureCause = "Delivered " + deliveredScience.ToString("F1")
-                        + " of " + goal.TargetSciencePoints.ToString("F1") + " required science points.";
+                    report.FailureTitle = GetLogMessage(OrbitLogType.InsufficientScienceData);
+                    report.FailureCause = string.Format(
+                        CultureInfo.InvariantCulture,
+                        GetLogMessage(OrbitLogType.InsufficientScienceDetails),
+                        deliveredScience,
+                        goal.TargetSciencePoints);
                 }
             }
 
