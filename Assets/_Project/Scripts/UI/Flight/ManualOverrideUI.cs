@@ -265,11 +265,13 @@ namespace AstraLink.UI.Flight
                 activeManualCommands,
                 _events);
 
-            // Ensure manual commands also visibly take effect from ExecuteAtTick onward even if MockMissionSimulator is active
-            // or if a baseline autopilot ElseAction would otherwise overwrite a manual toggle.
+            // Ensure manual commands also visibly take effect from ExecuteAtTick onward ONLY when MockMissionSimulator is active
             if (recalculated != null && recalculated.Ticks != null && recalculated.Ticks.Count > 0)
             {
-                ApplyManualOverridesToReportSnapshots(recalculated, activeManualCommands);
+                if (_simulator is MockMissionSimulator)
+                {
+                    ApplyManualOverridesToReportSnapshots(recalculated, activeManualCommands);
+                }
 
                 if (linkedRadarUI != null)
                 {

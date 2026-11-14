@@ -170,7 +170,7 @@ namespace AstraLink.UI.Workshop
                 ? _simulator.RunDryRun(_currentComponents, _currentRocket, _currentOrbit, _currentGoal, _currentRules)
                 : null;
 
-            if (simReport == null || simReport.Ticks == null || simReport.Ticks.Count == 0 || _simulator is MockMissionSimulator)
+            if (_simulator == null || _simulator is MockMissionSimulator)
             {
                 simReport = SimulateDeterministicDryRunOrbit(
                     _currentComponents,
@@ -178,6 +178,15 @@ namespace AstraLink.UI.Workshop
                     _currentOrbit,
                     _currentGoal,
                     _currentRules);
+            }
+            else if (simReport == null)
+            {
+                simReport = new MissionReport
+                {
+                    Status = MissionStatus.Failed,
+                    FailureTitle = "Simulation Unavailable",
+                    FailureCause = "OrbitSimulator returned no report."
+                };
             }
 
             if (_dryRunCoroutine != null)
@@ -279,23 +288,38 @@ namespace AstraLink.UI.Workshop
             MissionGoal goal,
             List<AutopilotRule> rules)
         {
-            MissionReport preview = SimulateDeterministicDryRunOrbit(components, rocket, orbit, goal, rules);
+            if (_simulator == null && GameManager.Instance != null)
+            {
+                _simulator = GameManager.Instance.Simulator;
+            }
+
+            MissionReport preview = (_simulator != null && !(_simulator is MockMissionSimulator))
+                ? _simulator.RunDryRun(components, rocket, orbit, goal, rules)
+                : SimulateDeterministicDryRunOrbit(components, rocket, orbit, goal, rules);
+
             ResetChartBars();
-            if (preview.Ticks != null)
+            if (preview != null && preview.Ticks != null && preview.Ticks.Count > 0)
             {
                 int count = Mathf.Min(DryRunOrbitTicks, preview.Ticks.Count);
                 for (int i = 0; i < count; i++)
                 {
                     ApplyTickToChartColumn(i, preview.Ticks[i], false);
                 }
+
+                if (_dryRunStatusText != null)
+                {
+                    _dryRunStatusText.text = string.Format(
+                        "BENCH READY — Min Battery: <b>{0:0}%</b>  |  Orbit 1 Sci: <b>{1:0.0} pts</b>  (Click Dry Run for 3s animated test)",
+                        preview.MinBatteryPercent, preview.DeliveredScience);
+                }
+            }
+            else if (_dryRunStatusText != null)
+            {
+                string title = preview != null && !string.IsNullOrEmpty(preview.FailureTitle) ? preview.FailureTitle : "Launch Validation Blocked";
+                string cause = preview != null && !string.IsNullOrEmpty(preview.FailureCause) ? preview.FailureCause : "Check configuration in Workshop.";
+                _dryRunStatusText.text = string.Format("<color=#FF5964><b>{0}:</b></color> {1}", title.ToUpperInvariant(), cause);
             }
 
-            if (_dryRunStatusText != null)
-            {
-                _dryRunStatusText.text = string.Format(
-                    "BENCH READY — Min Battery: <b>{0:0}%</b>  |  Orbit 1 Sci: <b>{1:0.0} pts</b>  (Click Dry Run for 3s animated test)",
-                    preview.MinBatteryPercent, preview.DeliveredScience);
-            }
             if (_dryRunTelemetryText != null)
             {
                 _dryRunTelemetryText.text = "Green/Red Bars = Battery Charge % (0–100%)   |   Purple Bars = SSD Fill % (0–100%)   |   Dark Columns = Planet Shadow (Eclipse)";
@@ -306,7 +330,11 @@ namespace AstraLink.UI.Workshop
         {
             if (report == null) return;
 
-            bool survivedOrbit = report.MinBatteryPercent > 0.01f && report.FinalHealthPercent > 0.01f;
+            bool survivedOrbit = report.Status != MissionStatus.Failed &&
+                                 report.Ticks != null &&
+                                 report.Ticks.Count > 0 &&
+                                 report.MinBatteryPercent > 0.01f &&
+                                 report.FinalHealthPercent > 0.01f;
             if (_dryRunStatusText != null)
             {
                 if (survivedOrbit)
