@@ -62,6 +62,17 @@ namespace AstraLink.Core
         private readonly ResourceCalculator _resourceCalculator = new ResourceCalculator();
         private readonly AutopilotEvaluator _autopilotEvaluator = new AutopilotEvaluator();
         private readonly List<SpaceEventDefinition> _defaultEvents;
+            if (!MissionValidator.Validate(components, rocket, orbit, goal, out errorMessage))
+            {
+                return false;
+            }
+
+            ResourceSummary resources = _resourceCalculator.CalculateResources(components, rocket, orbit, goal);
+            if (!resources.IsBudgetValid)
+            {
+                errorMessage = GetLogMessage(OrbitLogType.BudgetExceeded);
+                return false;
+            }
 
         public OrbitSimulator(List<SpaceEventDefinition> defaultEvents = null)
         {
@@ -131,18 +142,31 @@ namespace AstraLink.Core
                 return report;
             }
 
-            float baseDraw = 0f, sciencePowerDraw = 0f, commsPowerDraw = 0f, dataPerTick = 0f, sciencePerTick = 0f;
+            if (!isDryRun && !MissionValidator.Validate(components, rocket, orbit, goal, out string validationError))
+            {
+                report.Status = MissionStatus.Failed;
+                report.FailureTitle = GetLogMessage(OrbitLogType.InvalidLaunchConfiguration);
+                report.FailureCause = validationError;
+                return report;
+            }
+
+            float baseDraw = 0f;
+            float scienceDraw = 0f;
+            float commsDraw = 0f;
+            float dataPerTick = 0f;
+            float sciencePerTick = 0f;
+
             for (int i = 0; i < components.Count; i++)
             {
                 SatelliteComponent component = components[i];
                 if (component == null) continue;
                 baseDraw += component.BasePowerDrawWatts;
                 if (component.Category == ComponentCategory.SciencePayload) { 
-                    sciencePowerDraw += component.ActivePowerDrawWatts; 
+                    scienceDraw += component.ActivePowerDrawWatts; 
                     dataPerTick += component.DataGenGbPerTick; 
                     sciencePerTick += component.SciencePointsPerTick; 
                 }
-                else if (component.Category == ComponentCategory.CommsAndStorage) { commsPowerDraw += component.ActivePowerDrawWatts; }
+                else if (component.Category == ComponentCategory.CommsAndStorage) { commsDraw += component.ActivePowerDrawWatts; }
             }
 
             float batteryWh = resources.MaxBatteryWh, ssdUsedGb = 0f, pendingScience = 0f, deliveredScience = 0f, lostDataGb = 0f, health = 100f, minBatteryPercent = 100f;
@@ -227,7 +251,7 @@ namespace AstraLink.Core
                 AutopilotEvaluator.ResolveEffectiveSubsystems(scienceActive, commsActive, safeModeActive, out bool effectiveScience, out bool effectiveComms);
 
                 float generation = solarGenBeforeRules + resources.RtgWatts;
-                float draw = safeModeActive ? baseDraw * 0.5f : baseDraw + (effectiveScience ? sciencePowerDraw : 0f) + (effectiveComms && inCommWindow ? commsPowerDraw : 0f);
+                float draw = safeModeActive ? baseDraw * 0.5f : baseDraw + (effectiveScience ? scienceDraw : 0f) + (effectiveComms && inCommWindow ? commsDraw : 0f);
 
                 batteryWh = Clamp(batteryWh + (generation - draw) * tickHours, 0f, resources.MaxBatteryWh);
                 float batteryPercent = 100f * batteryWh / resources.MaxBatteryWh;
