@@ -6,28 +6,13 @@ namespace AstraLink.Core
 {
     public enum OrbitLogType
     {
-        None,
-        InvalidMissionConfiguration,
-        MissingInputs,
-        InvalidLaunchConfiguration,
-        BudgetExceeded,
-        MassExceeded,
-        MissingRequiredResources,
-        InvalidResourceValues,
-        BatteryDepleted,
-        ElectronicsFailure,
-        FailureLocation,
-        InsufficientScienceData,
-        InsufficientScienceDetails,
-        TickTelemetry
+        None, InvalidMissionConfiguration, MissingInputs, InvalidLaunchConfiguration,
+        BudgetExceeded, MassExceeded, MissingRequiredResources, InvalidResourceValues,
+        BatteryDepleted, ElectronicsFailure, FailureLocation, InsufficientScienceData,
+        InsufficientScienceDetails, TickTelemetry
     }
 
-    /// <summary>
-    /// S1-04: deterministic orbital ticks and resource consumption.
-    /// No autopilot/manual commands or triggered events here; they belong to S2-01.
-    /// Uses the existing ResourceCalculator and shared Data Contract models.
-    /// </summary>
-    public class OrbitSimulator
+    public class OrbitSimulator : IMissionSimulator
     {
         public const int TicksPerOrbit = 20;
 
@@ -51,160 +36,174 @@ namespace AstraLink.Core
 
         public static string GetLogMessage(OrbitLogType logType)
         {
-            string message;
-            return LogMessages.TryGetValue(logType, out message) ? message : string.Empty;
+            return LogMessages.TryGetValue(logType, out string message) ? message : string.Empty;
         }
 
-        /// <summary>Formats one tick for a plain C# console test; no UnityEngine dependency.</summary>
         public static string FormatTickLog(SimulationTickSnapshot tick)
         {
-            if (tick == null)
-                return GetLogMessage(OrbitLogType.None);
-
-            return string.Format(
-                CultureInfo.InvariantCulture,
-                GetLogMessage(OrbitLogType.TickTelemetry),
-                tick.OrbitNumber,
-                tick.TickIndex,
-                tick.IsInEclipse ? "eclipse" : "sunlight",
-                tick.IsInCommWindow,
-                tick.SolarGenWatts,
-                tick.PowerDrawWatts,
-                tick.BatteryWh,
-                tick.SsdUsedGb,
-                tick.HealthPercent);
+            if (tick == null) return GetLogMessage(OrbitLogType.None);
+            return string.Format(CultureInfo.InvariantCulture, GetLogMessage(OrbitLogType.TickTelemetry), tick.OrbitNumber, tick.TickIndex, tick.IsInEclipse ? "eclipse" : "sunlight", tick.IsInCommWindow, tick.SolarGenWatts, tick.PowerDrawWatts, tick.BatteryWh, tick.SsdUsedGb, tick.HealthPercent);
         }
 
         private readonly ResourceCalculator _resourceCalculator = new ResourceCalculator();
+        private readonly AutopilotEvaluator _autopilotEvaluator = new AutopilotEvaluator();
+        private readonly List<SpaceEventDefinition> _defaultEvents;
 
-        public MissionReport RunOrbitTicks(
-            List<SatelliteComponent> components,
-            RocketOption rocket,
-            OrbitDefinition orbit,
-            MissionGoal goal)
+        public OrbitSimulator(List<SpaceEventDefinition> defaultEvents = null)
         {
-            var report = new MissionReport { Status = MissionStatus.NotStarted };
+            _defaultEvents = defaultEvents;
+        }
+
+        public ResourceSummary CalculateResources(List<SatelliteComponent> components, RocketOption rocket, OrbitDefinition orbit, MissionGoal goal)
+        {
+            return _resourceCalculator.CalculateResources(components, rocket, orbit, goal);
+        }
+
+        public bool ValidateLaunch(List<SatelliteComponent> components, RocketOption rocket, OrbitDefinition orbit, MissionGoal goal, out string errorMessage)
+        {
+            if (components == null || rocket == null || orbit == null || goal == null) { errorMessage = GetLogMessage(OrbitLogType.MissingInputs); return false; }
+            ResourceSummary resources = _resourceCalculator.CalculateResources(components, rocket, orbit, goal);
+            if (!resources.IsBudgetValid) { errorMessage = GetLogMessage(OrbitLogType.BudgetExceeded); return false; }
+            if (!resources.IsMassValid) { errorMessage = GetLogMessage(OrbitLogType.MassExceeded); return false; }
+            if (resources.MaxBatteryWh <= 0f || resources.MaxSsdGb <= 0f || goal.RequiredOrbits <= 0) { errorMessage = GetLogMessage(OrbitLogType.InvalidResourceValues); return false; }
+            errorMessage = string.Empty;
+            return true;
+        }
+
+        public MissionReport RunOrbitTicks(List<SatelliteComponent> components, RocketOption rocket, OrbitDefinition orbit, MissionGoal goal)
+        {
+            return SimulateInternal(components, rocket, orbit, goal, null, null, null, goal != null ? goal.RequiredOrbits : 0, false);
+        }
+
+        public MissionReport RunDryRun(List<SatelliteComponent> components, RocketOption rocket, OrbitDefinition orbit, MissionGoal goal, List<AutopilotRule> rules)
+        {
+            return SimulateInternal(components, rocket, orbit, goal, rules, null, null, 1, true);
+        }
+
+        public MissionReport SimulateFullMission(List<SatelliteComponent> components, RocketOption rocket, OrbitDefinition orbit, MissionGoal goal, List<AutopilotRule> rules, List<ManualCommandRequest> manualCommands = null, List<SpaceEventDefinition> overrideEvents = null)
+        {
+            int orbits = goal != null ? goal.RequiredOrbits : 0;
+            List<SpaceEventDefinition> eventsToUse = overrideEvents ?? _defaultEvents;
+            return SimulateInternal(components, rocket, orbit, goal, rules, manualCommands, eventsToUse, orbits, false);
+        }
+
+        private MissionReport SimulateInternal(List<SatelliteComponent> components, RocketOption rocket, OrbitDefinition orbit, MissionGoal goal, List<AutopilotRule> rules, List<ManualCommandRequest> manualCommands, List<SpaceEventDefinition> events, int orbitsToSimulate, bool isDryRun)
+        {
+            var report = new MissionReport { Status = MissionStatus.NotStarted, Ticks = new List<SimulationTickSnapshot>() };
             if (components == null || rocket == null || orbit == null || goal == null)
             {
-                report.Status = MissionStatus.Failed;
-                report.FailureTitle = GetLogMessage(OrbitLogType.InvalidMissionConfiguration);
-                report.FailureCause = GetLogMessage(OrbitLogType.MissingInputs);
-                return report;
+                report.Status = MissionStatus.Failed; report.FailureTitle = GetLogMessage(OrbitLogType.InvalidMissionConfiguration); report.FailureCause = GetLogMessage(OrbitLogType.MissingInputs); return report;
             }
 
             ResourceSummary resources = _resourceCalculator.CalculateResources(components, rocket, orbit, goal);
             report.BudgetSpentThousands = resources.TotalCostThousands;
             if (!resources.IsBudgetValid || !resources.IsMassValid)
             {
-                report.Status = MissionStatus.Failed;
-                report.FailureTitle = GetLogMessage(OrbitLogType.InvalidLaunchConfiguration);
-                report.FailureCause = !resources.IsBudgetValid
-                    ? GetLogMessage(OrbitLogType.BudgetExceeded)
-                    : GetLogMessage(OrbitLogType.MassExceeded);
-                return report;
+                report.Status = MissionStatus.Failed; report.FailureTitle = GetLogMessage(OrbitLogType.InvalidLaunchConfiguration); report.FailureCause = !resources.IsBudgetValid ? GetLogMessage(OrbitLogType.BudgetExceeded) : GetLogMessage(OrbitLogType.MassExceeded); return report;
             }
 
-            if (resources.MaxBatteryWh <= 0f || resources.MaxSsdGb <= 0f || goal.RequiredOrbits <= 0)
+            if (resources.MaxBatteryWh <= 0f || resources.MaxSsdGb <= 0f || orbitsToSimulate <= 0)
             {
-                report.Status = MissionStatus.Failed;
-                report.FailureTitle = GetLogMessage(OrbitLogType.MissingRequiredResources);
-                report.FailureCause = GetLogMessage(OrbitLogType.InvalidResourceValues);
-                return report;
+                report.Status = MissionStatus.Failed; report.FailureTitle = GetLogMessage(OrbitLogType.MissingRequiredResources); report.FailureCause = GetLogMessage(OrbitLogType.InvalidResourceValues); return report;
             }
 
-            float baseDraw = 0f;
-            float scienceDraw = 0f;
-            float commsDraw = 0f;
-            float dataPerTick = 0f;
-            float sciencePerTick = 0f;
-
-            foreach (SatelliteComponent component in components)
+            float baseDraw = 0f, scienceDraw = 0f, commsDraw = 0f, dataPerTick = 0f, sciencePerTick = 0f;
+            for (int i = 0; i < components.Count; i++)
             {
+                SatelliteComponent component = components[i];
                 if (component == null) continue;
                 baseDraw += component.BasePowerDrawWatts;
-                if (component.Category == ComponentCategory.SciencePayload)
-                {
-                    scienceDraw += component.ActivePowerDrawWatts;
-                    dataPerTick += component.DataGenGbPerTick;
-                    sciencePerTick += component.SciencePointsPerTick;
-                }
-                else if (component.Category == ComponentCategory.CommsAndStorage)
-                {
-                    commsDraw += component.ActivePowerDrawWatts;
-                }
+                if (component.Category == ComponentCategory.SciencePayload) { scienceDraw += component.ActivePowerDrawWatts; dataPerTick += component.DataGenGbPerTick; sciencePerTick += component.SciencePointsPerTick; }
+                else if (component.Category == ComponentCategory.CommsAndStorage) { commsDraw += component.ActivePowerDrawWatts; }
             }
 
-            float batteryWh = resources.MaxBatteryWh;
-            float ssdUsedGb = 0f;
-            float pendingScience = 0f;
-            float deliveredScience = 0f;
-            float lostDataGb = 0f;
-            float health = 100f;
-            float minBatteryPercent = 100f;
+            float batteryWh = resources.MaxBatteryWh, ssdUsedGb = 0f, pendingScience = 0f, deliveredScience = 0f, lostDataGb = 0f, health = 100f, minBatteryPercent = 100f;
             float tickHours = orbit.OrbitPeriodHours / TicksPerOrbit;
-            bool scienceActive = true;
-            bool commsActive = true;
-            bool safeModeActive = false;
-            int totalTicks = goal.RequiredOrbits * TicksPerOrbit;
+            bool scienceActive = true, commsActive = true, safeModeActive = false;
+            int totalTicks = orbitsToSimulate * TicksPerOrbit;
             report.Status = MissionStatus.InProgress;
 
             for (int tick = 0; tick < totalTicks; tick++)
             {
+                int orbitNumber = tick / TicksPerOrbit + 1;
                 float position = (tick % TicksPerOrbit) / (float)TicksPerOrbit;
                 bool eclipse = position >= 1f - orbit.EclipseFraction;
                 bool inCommWindow = position < orbit.CommWindowFraction;
-                float generation = (eclipse ? 0f : resources.MaxSolarWatts * orbit.SolarFluxFactor)
-                                   + resources.RtgWatts;
 
-                float draw = safeModeActive
-                    ? baseDraw * 0.5f
-                    : baseDraw + (scienceActive ? scienceDraw : 0f)
-                        + (commsActive && inCommWindow ? commsDraw : 0f);
+                float eventRadiationBoost = 0f, eventSolarMultiplier = 1f, eventDownlinkMultiplier = 1f;
+                string activeEventTitle = string.Empty;
+
+                if (!isDryRun && events != null)
+                {
+                    for (int e = 0; e < events.Count; e++)
+                    {
+                        SpaceEventDefinition ev = events[e];
+                        if (ev == null) continue;
+                        int startTick = (ev.TriggerOrbit - 1) * TicksPerOrbit + 4;
+                        if (tick >= startTick && tick < startTick + ev.DurationTicks)
+                        {
+                            ApplyEventModifiers(ev, ref eventRadiationBoost, ref eventSolarMultiplier, ref eventDownlinkMultiplier);
+                            if (string.IsNullOrEmpty(activeEventTitle)) activeEventTitle = !string.IsNullOrEmpty(ev.Title) ? ev.Title : ev.Type.ToString();
+                        }
+                    }
+                }
+
+                if (!isDryRun && manualCommands != null && manualCommands.Count > 0)
+                {
+                    _autopilotEvaluator.ApplyManualCommandsForTick(tick, manualCommands, ref scienceActive, ref commsActive, ref safeModeActive);
+                }
+
+                float solarGenBeforeRules = eclipse ? 0f : resources.MaxSolarWatts * orbit.SolarFluxFactor * eventSolarMultiplier;
+                float batteryPercentBeforeRules = 100f * batteryWh / resources.MaxBatteryWh;
+                float ssdPercentBeforeRules = 100f * ssdUsedGb / resources.MaxSsdGb;
+                float radiation = orbit.BaseRadiation + eventRadiationBoost;
+
+                var triggeredRuleIds = new List<string>();
+                if (rules != null && rules.Count > 0)
+                {
+                    _autopilotEvaluator.EvaluateRulesForTick(rules, solarGenBeforeRules, batteryPercentBeforeRules, ssdPercentBeforeRules, radiation, ref scienceActive, ref commsActive, ref safeModeActive, triggeredRuleIds);
+                }
+
+                AutopilotEvaluator.ResolveEffectiveSubsystems(scienceActive, commsActive, safeModeActive, out bool effectiveScience, out bool effectiveComms);
+
+                float generation = solarGenBeforeRules + resources.RtgWatts;
+                float draw = safeModeActive ? baseDraw * 0.5f : baseDraw + (effectiveScience ? scienceDraw : 0f) + (effectiveComms && inCommWindow ? commsDraw : 0f);
+
                 batteryWh = Clamp(batteryWh + (generation - draw) * tickHours, 0f, resources.MaxBatteryWh);
                 float batteryPercent = 100f * batteryWh / resources.MaxBatteryWh;
                 minBatteryPercent = Math.Min(minBatteryPercent, batteryPercent);
 
                 if (batteryWh > 0f)
                 {
-                    if (scienceActive && !safeModeActive)
+                    if (effectiveScience)
                     {
-                        ssdUsedGb += dataPerTick;
-                        pendingScience += sciencePerTick;
-                        if (ssdUsedGb > resources.MaxSsdGb)
-                        {
-                            lostDataGb += ssdUsedGb - resources.MaxSsdGb;
-                            pendingScience *= resources.MaxSsdGb / ssdUsedGb;
-                            ssdUsedGb = resources.MaxSsdGb;
-                        }
+                        ssdUsedGb += dataPerTick; pendingScience += sciencePerTick;
+                        if (ssdUsedGb > resources.MaxSsdGb) { lostDataGb += ssdUsedGb - resources.MaxSsdGb; pendingScience *= resources.MaxSsdGb / ssdUsedGb; ssdUsedGb = resources.MaxSsdGb; }
                     }
-
-                    if (commsActive && !safeModeActive && inCommWindow && ssdUsedGb > 0.0001f)
+                    if (effectiveComms && inCommWindow && ssdUsedGb > 0.0001f)
                     {
-                        float sentGb = Math.Min(ssdUsedGb, resources.DownlinkGbPerTick);
+                        float effectiveDownlink = resources.DownlinkGbPerTick * eventDownlinkMultiplier;
+                        float sentGb = Math.Min(ssdUsedGb, effectiveDownlink);
                         float deliveredNow = pendingScience * (sentGb / ssdUsedGb);
-                        deliveredScience += deliveredNow;
-                        pendingScience -= deliveredNow;
-                        ssdUsedGb -= sentGb;
+                        deliveredScience += deliveredNow; pendingScience -= deliveredNow; ssdUsedGb -= sentGb;
                     }
                 }
 
-                float radiation = orbit.BaseRadiation; // Event radiation is added in S2-01.
                 if (radiation > 50f && !safeModeActive && batteryWh > 0f)
                 {
-                    health = Math.Max(0f, health - Math.Max(0f,
-                        (radiation - resources.TotalShielding * resources.OverallReliability) * 0.4f));
+                    health = Math.Max(0f, health - Math.Max(0f, (radiation - resources.TotalShielding * resources.OverallReliability) * 0.4f));
                 }
 
                 report.Ticks.Add(new SimulationTickSnapshot
                 {
                     TickIndex = tick,
-                    OrbitNumber = tick / TicksPerOrbit + 1,
+                    OrbitNumber = orbitNumber,
                     OrbitProgress = position,
                     IsInEclipse = eclipse,
                     IsInCommWindow = inCommWindow,
                     SafeModeActive = safeModeActive,
-                    ScienceActive = scienceActive,
-                    CommsActive = commsActive,
+                    ScienceActive = effectiveScience,
+                    CommsActive = effectiveComms,
                     SolarGenWatts = generation,
                     PowerDrawWatts = draw,
                     BatteryWh = batteryWh,
@@ -214,53 +213,66 @@ namespace AstraLink.Core
                     RadiationLevel = radiation,
                     HealthPercent = health,
                     DeliveredScience = deliveredScience,
-                    ActiveEventTitle = string.Empty
+                    ActiveEventTitle = activeEventTitle,
+                    TriggeredRuleIds = triggeredRuleIds
                 });
 
                 if (batteryWh <= 0f || health <= 0f)
                 {
                     report.Status = MissionStatus.Failed;
-                    report.FailureTitle = batteryWh <= 0f
-                        ? GetLogMessage(OrbitLogType.BatteryDepleted)
-                        : GetLogMessage(OrbitLogType.ElectronicsFailure);
-                    report.FailureCause = string.Format(
-                        CultureInfo.InvariantCulture,
-                        GetLogMessage(OrbitLogType.FailureLocation),
-                        tick / TicksPerOrbit + 1,
-                        tick);
+                    report.FailureTitle = batteryWh <= 0f ? GetLogMessage(OrbitLogType.BatteryDepleted) : GetLogMessage(OrbitLogType.ElectronicsFailure);
+                    report.FailureCause = string.Format(CultureInfo.InvariantCulture, GetLogMessage(OrbitLogType.FailureLocation), orbitNumber, tick);
                     break;
                 }
             }
 
-            report.DeliveredScience = deliveredScience;
-            report.LostDataGb = lostDataGb;
-            report.MinBatteryPercent = minBatteryPercent;
-            report.FinalHealthPercent = health;
+            report.DeliveredScience = deliveredScience; report.LostDataGb = lostDataGb; report.MinBatteryPercent = minBatteryPercent; report.FinalHealthPercent = health;
 
             if (report.Status == MissionStatus.InProgress)
             {
-                report.Status = deliveredScience >= goal.TargetSciencePoints
-                    ? MissionStatus.Success : MissionStatus.Failed;
-                if (report.Status == MissionStatus.Failed)
+                if (isDryRun) { report.Status = MissionStatus.Success; }
+                else
                 {
-                    report.FailureTitle = GetLogMessage(OrbitLogType.InsufficientScienceData);
-                    report.FailureCause = string.Format(
-                        CultureInfo.InvariantCulture,
-                        GetLogMessage(OrbitLogType.InsufficientScienceDetails),
-                        deliveredScience,
-                        goal.TargetSciencePoints);
+                    report.Status = deliveredScience >= goal.TargetSciencePoints ? MissionStatus.Success : MissionStatus.Failed;
+                    if (report.Status == MissionStatus.Failed)
+                    {
+                        report.FailureTitle = GetLogMessage(OrbitLogType.InsufficientScienceData);
+                        report.FailureCause = string.Format(CultureInfo.InvariantCulture, GetLogMessage(OrbitLogType.InsufficientScienceDetails), deliveredScience, goal.TargetSciencePoints);
+                    }
                 }
             }
 
             if (report.Status == MissionStatus.Success)
             {
-                float bonus = minBatteryPercent >= 15f && health >= 80f &&
-                              resources.OverallReliability >= 0.85f ? 50f : 0f;
-                report.FinalScore = deliveredScience
-                    + (goal.BudgetLimitThousands - resources.TotalCostThousands) * 0.5f + bonus;
+                float marginBonus = minBatteryPercent >= 15f && health >= 80f && resources.OverallReliability >= 0.85f ? 50f : 0f;
+                report.FinalScore = deliveredScience + (goal.BudgetLimitThousands - resources.TotalCostThousands) * 0.5f + marginBonus;
             }
 
             return report;
+        }
+
+        private static void ApplyEventModifiers(SpaceEventDefinition ev, ref float radiationBoost, ref float solarMultiplier, ref float downlinkMultiplier)
+        {
+            bool isPresetWithDefaults = ev.Type != SpaceEventType.Custom
+                                        && Math.Abs(ev.RadiationBoost) < 0.0001f
+                                        && Math.Abs(ev.SolarMultiplier - 1f) < 0.0001f
+                                        && Math.Abs(ev.DownlinkMultiplier - 1f) < 0.0001f;
+
+            if (!isPresetWithDefaults)
+            {
+                radiationBoost += ev.RadiationBoost;
+                solarMultiplier *= Math.Max(0f, ev.SolarMultiplier);
+                downlinkMultiplier *= Math.Max(0f, ev.DownlinkMultiplier);
+                return;
+            }
+
+            switch (ev.Type)
+            {
+                case SpaceEventType.CoronalMassEjection: radiationBoost += 85f; break;
+                case SpaceEventType.TransmitterOverheat: downlinkMultiplier *= 0.45f; break;
+                case SpaceEventType.MicrometeoroidNoise: solarMultiplier *= 0.6f; radiationBoost += 15f; break;
+                default: break;
+            }
         }
 
         private static float Clamp(float value, float min, float max)
