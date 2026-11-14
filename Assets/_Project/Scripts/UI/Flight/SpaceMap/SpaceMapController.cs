@@ -47,6 +47,7 @@ namespace AstraLink.UI.Flight
         [SerializeField] private float phase1AscentDurationSeconds = 4.0f;
         [SerializeField] private float phase2SeparationDurationSeconds = 1.0f;
         [SerializeField] private bool showSandboxTestBar = true;
+        [SerializeField] private bool autoSetupDemoOnStart = true;
 
         // Cached mission config
         private MissionGoal _currentGoal;
@@ -56,6 +57,7 @@ namespace AstraLink.UI.Flight
 
         // UI Hierarchy References
         private RectTransform _mapViewportRect;
+        private RectTransform _stageRect;
         private RectTransform _starfieldLayerA;
         private RectTransform _starfieldLayerB;
         private Image _starfieldImageA;
@@ -136,6 +138,8 @@ namespace AstraLink.UI.Flight
         /// </summary>
         public event Action OnLaunchSequenceCompleted;
 
+        public bool IsLaunchPlaying => _isLaunchPlaying;
+
         private void Awake()
         {
             Instance = this;
@@ -143,7 +147,7 @@ namespace AstraLink.UI.Flight
 
         private void Start()
         {
-            if (_currentOrbit == null)
+            if (autoSetupDemoOnStart && _currentOrbit == null)
             {
                 SetupDemoPreset(0);
             }
@@ -152,6 +156,7 @@ namespace AstraLink.UI.Flight
         private void Update()
         {
             AnimateStarfieldDrift();
+            UpdateStageScale();
 
             if (_isDemoAutoOrbiting && !_isLaunchPlaying)
             {
@@ -174,6 +179,61 @@ namespace AstraLink.UI.Flight
             }
         }
 
+        public void SetAutoSetupDemoOnStart(bool value)
+        {
+            autoSetupDemoOnStart = value;
+        }
+
+        public void SetSandboxTestBarVisible(bool visible)
+        {
+            showSandboxTestBar = visible;
+            if (_sandboxToolbarObj != null)
+            {
+                _sandboxToolbarObj.SetActive(visible);
+            }
+
+            UpdateStageScale();
+        }
+
+        public void ConfigureSprites(
+            Sprite starfield,
+            Sprite launchPad,
+            Sprite eclipseOverlay,
+            Sprite earth,
+            Sprite moon,
+            Sprite mars,
+            Sprite venus,
+            Sprite smallRocket,
+            Sprite reusableRocket,
+            Sprite heavyLiftRocket,
+            Sprite rocketFlame,
+            Sprite launchSmoke,
+            Sprite cubesat,
+            Sprite satellite,
+            Sprite deepSpaceProbe)
+        {
+            if (starfield != null) starfieldSprite = starfield;
+            if (launchPad != null) launchPadSprite = launchPad;
+            if (eclipseOverlay != null) eclipseOverlaySprite = eclipseOverlay;
+            if (earth != null) earthSprite = earth;
+            if (moon != null) moonSprite = moon;
+            if (mars != null) marsSprite = mars;
+            if (venus != null) venusSprite = venus;
+            if (smallRocket != null) smallRocketSprite = smallRocket;
+            if (reusableRocket != null) reusableRocketSprite = reusableRocket;
+            if (heavyLiftRocket != null) heavyLiftRocketSprite = heavyLiftRocket;
+            if (rocketFlame != null) rocketFlameSprite = rocketFlame;
+            if (launchSmoke != null) launchSmokeSprite = launchSmoke;
+            if (cubesat != null) cubesatSprite = cubesat;
+            if (satellite != null) satelliteSprite = satellite;
+            if (deepSpaceProbe != null) deepSpaceProbeSprite = deepSpaceProbe;
+
+            if (_currentOrbit != null && _mapViewportRect != null)
+            {
+                ConfigureLayoutForMission();
+            }
+        }
+
         // =====================================================================
         // PUBLIC INTEGRATION API (Required by Spec)
         // =====================================================================
@@ -188,6 +248,15 @@ namespace AstraLink.UI.Flight
             RocketOption rocket,
             List<SatelliteComponent> components)
         {
+            if (_launchCoroutine != null)
+            {
+                StopCoroutine(_launchCoroutine);
+                _launchCoroutine = null;
+            }
+
+            _isLaunchPlaying = false;
+            _skipRequested = false;
+
             _currentGoal = goal;
             _currentOrbit = orbit ?? CreateFallbackOrbit(OrbitType.LowEarth, "orbit_leo", "LEO 400 km (Earth)", 0.35f, 0.25f);
             _currentRocket = rocket ?? new RocketOption { Id = "rocket_light", Name = "Light Rocket 'Arrow-1'" };
@@ -561,6 +630,35 @@ namespace AstraLink.UI.Flight
             AssignSpriteWithPointFilter(_satelliteBodyImage, chosenSatSprite, _procSatelliteSprite,
                 chosenSatSprite != null ? Color.white : new Color(0.45f, 0.88f, 1f, 1f));
             SetPlaceholderVisible(_satellitePlaceholderLabel, chosenSatSprite == null, GetSatelliteShortTag(_currentComponents));
+
+            UpdateStageScale();
+        }
+
+        private void UpdateStageScale()
+        {
+            if (_stageRect == null || _mapViewportRect == null) return;
+
+            float vw = _mapViewportRect.rect.width;
+            float vh = _mapViewportRect.rect.height;
+            if (vw <= 10f || vh <= 10f) return;
+
+            float topMargin = (_launchControlsPanel != null && _launchControlsPanel.activeSelf) ? 62f : 12f;
+            float bottomMargin = (_sandboxToolbarObj != null && _sandboxToolbarObj.activeSelf) ? 64f : 14f;
+            float availW = Mathf.Max(200f, vw - 24f);
+            float availH = Mathf.Max(200f, vh - topMargin - bottomMargin);
+
+            bool isTwoPlanets = IsTwoPlanetTransferMission();
+            float designW = isTwoPlanets ? 1320f : 620f;
+            float designH = isTwoPlanets ? 580f : 560f;
+            float maxScale = isTwoPlanets ? 1.0f : 1.15f;
+
+            float scale = Mathf.Clamp(Mathf.Min(availW / designW, availH / designH), 0.35f, maxScale);
+            _stageRect.localScale = new Vector3(scale, scale, 1f);
+
+            // In two-planet mode content spans roughly [-605..+665] horizontally (midpoint +30)
+            float centerOffsetX = isTwoPlanets ? -30f * scale : 0f;
+            float centerOffsetY = (bottomMargin - topMargin) * 0.5f;
+            _stageRect.anchoredPosition = new Vector2(centerOffsetX, centerOffsetY);
         }
 
         private void UpdateBezierTransferDots()
@@ -605,9 +703,10 @@ namespace AstraLink.UI.Flight
 
             if (_statusBannerText != null)
             {
+                string missionTitle = _currentGoal != null && !string.IsNullOrEmpty(_currentGoal.Title) ? _currentGoal.Title : "Orbital Mission";
                 string orbitName = _currentOrbit != null ? _currentOrbit.Name : "LEO";
-                _statusBannerText.text = string.Format("PAD READY: {0} -> Target: {1} (Click Launch or PlayLaunchSequence)",
-                    _currentRocket != null ? _currentRocket.Name : "Rocket", orbitName);
+                _statusBannerText.text = string.Format("{0}  |  {1} -> {2}",
+                    missionTitle, _currentRocket != null ? _currentRocket.Name : "Rocket", orbitName);
             }
         }
 
@@ -1252,8 +1351,16 @@ namespace AstraLink.UI.Flight
             _starfieldImageB.sprite = _procStarfieldSprite;
             _starfieldImageB.color = new Color(0.8f, 0.9f, 1f, 0.45f);
 
+            // Stage Container (scales planets/orbits/vehicles uniformly to fit any panel width)
+            GameObject stageObj = CreateUIObject("SpaceMapStage", rootObj.transform);
+            _stageRect = stageObj.GetComponent<RectTransform>();
+            _stageRect.anchorMin = new Vector2(0.5f, 0.5f);
+            _stageRect.anchorMax = new Vector2(0.5f, 0.5f);
+            _stageRect.pivot = new Vector2(0.5f, 0.5f);
+            _stageRect.sizeDelta = new Vector2(1380f, 780f);
+
             // 2. Bezier Transfer Trajectory Container (Earth -> Moon/Mars/Venus)
-            GameObject bezierObj = CreateUIObject("BezierTransferTrajectory", rootObj.transform);
+            GameObject bezierObj = CreateUIObject("BezierTransferTrajectory", stageObj.transform);
             _bezierContainerRect = bezierObj.GetComponent<RectTransform>();
             StretchFull(_bezierContainerRect);
 
@@ -1270,7 +1377,7 @@ namespace AstraLink.UI.Flight
             }
 
             // 3. Orbit Container (Dashed Orbit Ring + Eclipse Cone + Comm Window Green Arc)
-            GameObject orbitObj = CreateUIObject("OrbitRingContainer", rootObj.transform);
+            GameObject orbitObj = CreateUIObject("OrbitRingContainer", _stageRect);
             _orbitContainerRect = orbitObj.GetComponent<RectTransform>();
             _orbitContainerRect.sizeDelta = new Vector2(480f, 480f);
 
@@ -1314,7 +1421,7 @@ namespace AstraLink.UI.Flight
             _eclipseTagText.rectTransform.sizeDelta = new Vector2(130f, 22f);
 
             // 4. Earth + Launch Pad
-            GameObject earthObj = CreateUIObject("EarthPlanet", rootObj.transform);
+            GameObject earthObj = CreateUIObject("EarthPlanet", _stageRect);
             _earthRect = earthObj.GetComponent<RectTransform>();
             _earthRect.sizeDelta = new Vector2(210f, 210f);
             _earthImage = earthObj.AddComponent<Image>();
@@ -1323,7 +1430,7 @@ namespace AstraLink.UI.Flight
                 "EARTH\n(earth.png)", 14, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
             StretchFull(_earthPlaceholderLabel.rectTransform);
 
-            GameObject padObj = CreateUIObject("LaunchPad", rootObj.transform);
+            GameObject padObj = CreateUIObject("LaunchPad", _stageRect);
             _launchPadRect = padObj.GetComponent<RectTransform>();
             _launchPadRect.sizeDelta = new Vector2(38f, 38f);
             _launchPadImage = padObj.AddComponent<Image>();
@@ -1333,7 +1440,7 @@ namespace AstraLink.UI.Flight
             StretchFull(_launchPadPlaceholderLabel.rectTransform);
 
             // 5. Target Planet (Moon / Mars / Venus)
-            GameObject targetPlanetObj = CreateUIObject("TargetPlanet", rootObj.transform);
+            GameObject targetPlanetObj = CreateUIObject("TargetPlanet", _stageRect);
             _targetPlanetRect = targetPlanetObj.GetComponent<RectTransform>();
             _targetPlanetRect.sizeDelta = new Vector2(170f, 170f);
             _targetPlanetImage = targetPlanetObj.AddComponent<Image>();
@@ -1345,7 +1452,7 @@ namespace AstraLink.UI.Flight
             // 6. Launch Smoke Puffs (3)
             for (int i = 0; i < 3; i++)
             {
-                GameObject smokeObj = CreateUIObject("LaunchSmoke_" + i, rootObj.transform);
+                GameObject smokeObj = CreateUIObject("LaunchSmoke_" + i, _stageRect);
                 _smokeRects[i] = smokeObj.GetComponent<RectTransform>();
                 _smokeRects[i].sizeDelta = new Vector2(36f, 36f);
                 _smokeImages[i] = smokeObj.AddComponent<Image>();
@@ -1354,7 +1461,7 @@ namespace AstraLink.UI.Flight
             }
 
             // 7. Rocket + Nozzle Flame + Mars Aerobraking Glow
-            GameObject rocketObj = CreateUIObject("RocketVehicle", rootObj.transform);
+            GameObject rocketObj = CreateUIObject("RocketVehicle", _stageRect);
             _rocketRootRect = rocketObj.GetComponent<RectTransform>();
             _rocketRootRect.sizeDelta = new Vector2(54f, 54f);
 
@@ -1383,13 +1490,13 @@ namespace AstraLink.UI.Flight
             StretchFull(_rocketPlaceholderLabel.rectTransform);
 
             // 8. Player Satellite + Separation Flash
-            GameObject flashObj = CreateUIObject("SeparationFlash", rootObj.transform);
+            GameObject flashObj = CreateUIObject("SeparationFlash", _stageRect);
             flashObj.GetComponent<RectTransform>().sizeDelta = new Vector2(68f, 68f);
             _deployFlashImage = flashObj.AddComponent<Image>();
             _deployFlashImage.sprite = _procPlanetCircleSprite;
             flashObj.SetActive(false);
 
-            GameObject satObj = CreateUIObject("PlayerSatellite", rootObj.transform);
+            GameObject satObj = CreateUIObject("PlayerSatellite", _stageRect);
             _satelliteRootRect = satObj.GetComponent<RectTransform>();
             _satelliteRootRect.sizeDelta = new Vector2(52f, 52f);
             _satelliteBodyImage = satObj.AddComponent<Image>();
@@ -1468,12 +1575,15 @@ namespace AstraLink.UI.Flight
         private void BindExistingHierarchy(Transform root)
         {
             _mapViewportRect = root.GetComponent<RectTransform>();
+            _stageRect = FindChild<RectTransform>(root, "SpaceMapStage");
+            Transform worldRoot = _stageRect != null ? _stageRect : root;
+
             _starfieldLayerA = FindChild<RectTransform>(root, "StarfieldBg_Main");
             _starfieldLayerB = FindChild<RectTransform>(root, "StarfieldBg_Twinkle");
             _starfieldImageA = FindChild<Image>(root, "StarfieldBg_Main");
             _starfieldImageB = FindChild<Image>(root, "StarfieldBg_Twinkle");
 
-            _bezierContainerRect = FindChild<RectTransform>(root, "BezierTransferTrajectory");
+            _bezierContainerRect = FindChild<RectTransform>(worldRoot, "BezierTransferTrajectory");
             _bezierDotRects.Clear();
             if (_bezierContainerRect != null)
             {
@@ -1484,7 +1594,7 @@ namespace AstraLink.UI.Flight
                 }
             }
 
-            _orbitContainerRect = FindChild<RectTransform>(root, "OrbitRingContainer");
+            _orbitContainerRect = FindChild<RectTransform>(worldRoot, "OrbitRingContainer");
             if (_orbitContainerRect != null)
             {
                 _eclipseSectorImage = FindChild<Image>(_orbitContainerRect, "EclipseShadowSector");
@@ -1494,35 +1604,35 @@ namespace AstraLink.UI.Flight
                 _eclipseTagText = FindChild<Text>(_orbitContainerRect, "EclipseSectorTag");
             }
 
-            _earthRect = FindChild<RectTransform>(root, "EarthPlanet");
-            _earthImage = FindChild<Image>(root, "EarthPlanet");
-            _earthPlaceholderLabel = FindChild<Text>(root, "EarthPlanet/EarthPlaceholderTag");
+            _earthRect = FindChild<RectTransform>(worldRoot, "EarthPlanet");
+            _earthImage = FindChild<Image>(worldRoot, "EarthPlanet");
+            _earthPlaceholderLabel = FindChild<Text>(worldRoot, "EarthPlanet/EarthPlaceholderTag");
 
-            _launchPadRect = FindChild<RectTransform>(root, "LaunchPad");
-            _launchPadImage = FindChild<Image>(root, "LaunchPad");
-            _launchPadPlaceholderLabel = FindChild<Text>(root, "LaunchPad/PadPlaceholderTag");
+            _launchPadRect = FindChild<RectTransform>(worldRoot, "LaunchPad");
+            _launchPadImage = FindChild<Image>(worldRoot, "LaunchPad");
+            _launchPadPlaceholderLabel = FindChild<Text>(worldRoot, "LaunchPad/PadPlaceholderTag");
 
-            _targetPlanetRect = FindChild<RectTransform>(root, "TargetPlanet");
-            _targetPlanetImage = FindChild<Image>(root, "TargetPlanet");
-            _targetPlanetPlaceholderLabel = FindChild<Text>(root, "TargetPlanet/TargetPlaceholderTag");
+            _targetPlanetRect = FindChild<RectTransform>(worldRoot, "TargetPlanet");
+            _targetPlanetImage = FindChild<Image>(worldRoot, "TargetPlanet");
+            _targetPlanetPlaceholderLabel = FindChild<Text>(worldRoot, "TargetPlanet/TargetPlaceholderTag");
 
             for (int i = 0; i < 3; i++)
             {
-                _smokeRects[i] = FindChild<RectTransform>(root, "LaunchSmoke_" + i);
-                _smokeImages[i] = FindChild<Image>(root, "LaunchSmoke_" + i);
+                _smokeRects[i] = FindChild<RectTransform>(worldRoot, "LaunchSmoke_" + i);
+                _smokeImages[i] = FindChild<Image>(worldRoot, "LaunchSmoke_" + i);
             }
 
-            _rocketRootRect = FindChild<RectTransform>(root, "RocketVehicle");
-            _rocketBodyImage = FindChild<Image>(root, "RocketVehicle");
-            _rocketPlaceholderLabel = FindChild<Text>(root, "RocketVehicle/RocketPlaceholderTag");
-            _rocketFlameRect = FindChild<RectTransform>(root, "RocketVehicle/RocketFlame");
-            _rocketFlameImage = FindChild<Image>(root, "RocketVehicle/RocketFlame");
-            _aerobrakeGlowImage = FindChild<Image>(root, "RocketVehicle/MarsAerobrakeGlow");
+            _rocketRootRect = FindChild<RectTransform>(worldRoot, "RocketVehicle");
+            _rocketBodyImage = FindChild<Image>(worldRoot, "RocketVehicle");
+            _rocketPlaceholderLabel = FindChild<Text>(worldRoot, "RocketVehicle/RocketPlaceholderTag");
+            _rocketFlameRect = FindChild<RectTransform>(worldRoot, "RocketVehicle/RocketFlame");
+            _rocketFlameImage = FindChild<Image>(worldRoot, "RocketVehicle/RocketFlame");
+            _aerobrakeGlowImage = FindChild<Image>(worldRoot, "RocketVehicle/MarsAerobrakeGlow");
 
-            _deployFlashImage = FindChild<Image>(root, "SeparationFlash");
-            _satelliteRootRect = FindChild<RectTransform>(root, "PlayerSatellite");
-            _satelliteBodyImage = FindChild<Image>(root, "PlayerSatellite");
-            _satellitePlaceholderLabel = FindChild<Text>(root, "PlayerSatellite/SatellitePlaceholderTag");
+            _deployFlashImage = FindChild<Image>(worldRoot, "SeparationFlash");
+            _satelliteRootRect = FindChild<RectTransform>(worldRoot, "PlayerSatellite");
+            _satelliteBodyImage = FindChild<Image>(worldRoot, "PlayerSatellite");
+            _satellitePlaceholderLabel = FindChild<Text>(worldRoot, "PlayerSatellite/SatellitePlaceholderTag");
 
             Transform lc = root.Find("LaunchControlsBar");
             if (lc != null)

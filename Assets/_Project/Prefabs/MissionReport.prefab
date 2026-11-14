@@ -131,3 +131,19 @@ MonoBehaviour:
   returnToWorkshopButton: {fileID: 0}
   showVerificationBar: 1
   verificationBarRoot: {fileID: 0}
+  spaceMapController: {fileID: 0}
+  spaceMapStarfieldSprite: {fileID: 21300000, guid: f6e97eb051d4bc64bbfc2d9a6586834b, type: 3}
+  spaceMapLaunchPadSprite: {fileID: 21300000, guid: f0f896b5d705f234c8627c925335a8f9, type: 3}
+  spaceMapEclipseOverlaySprite: {fileID: 21300000, guid: 755409556c64bb7458e845483f7abec3, type: 3}
+  spaceMapEarthSprite: {fileID: 21300000, guid: ee9dad7c549a3d340be0c6a8ad9123a1, type: 3}
+  spaceMapMoonSprite: {fileID: 21300000, guid: b49f4048998f7f54785716e82ed8eee7, type: 3}
+  spaceMapMarsSprite: {fileID: 21300000, guid: e2aceb58a0071c5439f746e995dd0bae, type: 3}
+  spaceMapVenusSprite: {fileID: 21300000, guid: f6135f944121f8f419e1447c099dac1c, type: 3}
+  spaceMapSmallRocketSprite: {fileID: 21300000, guid: a94219ba7c69a3f44947ae7ad83ac22d, type: 3}
+  spaceMapReusableRocketSprite: {fileID: 21300000, guid: ac7dd2fc22680f148a5208a7af604e9b, type: 3}
+  spaceMapHeavyLiftRocketSprite: {fileID: 21300000, guid: f7bcc6c68a7e8ab4f841fecf9d246baa, type: 3}
+  spaceMapRocketFlameSprite: {fileID: 21300000, guid: 658542c0660710d4a9478c970d68857b, type: 3}
+  spaceMapLaunchSmokeSprite: {fileID: 21300000, guid: 8c2766a8cd2d77a488455b894b4e3f45, type: 3}
+  spaceMapCubesatSprite: {fileID: 21300000, guid: 31d32b1dc3d958847acdbb2710a439a0, type: 3}
+  spaceMapSatelliteSprite: {fileID: 21300000, guid: 4aab47f95b80b054195c6f83f1d6e9a2, type: 3}
+  spaceMapDeepSpaceProbeSprite: {fileID: 21300000, guid: 503202c8c56bccc49b624c6bf59d1a75, type: 3}
