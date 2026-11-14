@@ -22,6 +22,8 @@ namespace AstraLink.Core
     /// </summary>
     public static class DescriptionTips
     {
+        private static bool _isEnabled = true;
+
         private static readonly Dictionary<DescriptionTipTemplate, string> Templates = new Dictionary<DescriptionTipTemplate, string>
         {
             { DescriptionTipTemplate.None, string.Empty },
@@ -151,10 +153,66 @@ namespace AstraLink.Core
         };
 
         /// <summary>
+        /// Gets or sets a value indicating whether tooltip descriptions are globally enabled in user settings.
+        /// </summary>
+        public static bool IsEnabled
+        {
+            get { return _isEnabled; }
+            set
+            {
+                if (value)
+                {
+                    _isEnabled = true;
+                }
+                else
+                {
+                    _isEnabled = false;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Enables or disables tooltip descriptions according to the user settings toggle.
+        /// </summary>
+        public static void SetEnabled(bool enabled)
+        {
+            if (enabled)
+            {
+                _isEnabled = true;
+            }
+            else
+            {
+                _isEnabled = false;
+            }
+        }
+
+        /// <summary>
+        /// Toggles tooltip descriptions between enabled and disabled states and returns the new state.
+        /// </summary>
+        public static bool ToggleEnabled()
+        {
+            if (_isEnabled)
+            {
+                _isEnabled = false;
+            }
+            else
+            {
+                _isEnabled = true;
+            }
+
+            return _isEnabled;
+        }
+
+        /// <summary>
         /// Retrieves the single-sentence English tooltip description for the specified key, or returns the fallback string if not found.
         /// </summary>
         public static string Get(string key, string fallback = "")
         {
+            if (!_isEnabled)
+            {
+                return string.Empty;
+            }
+
             if (string.IsNullOrWhiteSpace(key))
             {
                 return fallback ?? string.Empty;
@@ -174,7 +232,7 @@ namespace AstraLink.Core
         /// </summary>
         public static string GetComponentTip(SatelliteComponent comp)
         {
-            if (comp == null)
+            if (!_isEnabled || comp == null)
             {
                 return string.Empty;
             }
@@ -214,7 +272,7 @@ namespace AstraLink.Core
         /// </summary>
         public static string GetRocketTip(RocketOption rocket, float maxOrbitMassKg)
         {
-            if (rocket == null)
+            if (!_isEnabled || rocket == null)
             {
                 return string.Empty;
             }

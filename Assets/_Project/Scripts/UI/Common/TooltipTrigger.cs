@@ -75,9 +75,16 @@ namespace AstraLink.Core
         /// </summary>
         public void OnPointerEnter(PointerEventData eventData)
         {
-            _isPointerInside = true;
-            _isShowing = false;
-            _hoverTimer = 0f;
+            if (IsTipsEnabledInSettings())
+            {
+                _isPointerInside = true;
+                _isShowing = false;
+                _hoverTimer = 0f;
+            }
+            else
+            {
+                CancelAndHide();
+            }
         }
 
         /// <summary>
@@ -103,6 +110,15 @@ namespace AstraLink.Core
 
         private void Update()
         {
+            if (!IsTipsEnabledInSettings())
+            {
+                if (_isPointerInside || _isShowing)
+                {
+                    CancelAndHide();
+                }
+                return;
+            }
+
             if (!_isPointerInside || _isShowing)
             {
                 return;
@@ -119,6 +135,22 @@ namespace AstraLink.Core
                 {
                     TooltipSystem.Instance.Show(resolvedText);
                 }
+            }
+        }
+
+        private static bool IsTipsEnabledInSettings()
+        {
+            if (!DescriptionTips.IsEnabled)
+            {
+                return false;
+            }
+            else if (TooltipSystem.HasInstance && !TooltipSystem.Instance.IsTipsEnabled)
+            {
+                return false;
+            }
+            else
+            {
+                return true;
             }
         }
 

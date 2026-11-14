@@ -21,6 +21,7 @@ namespace AstraLink.Core
     public class TooltipSystem : MonoBehaviour
     {
         public const int OverlaySortingOrder = 999;
+        public const string TipsEnabledPrefsKey = "AstraLink_TipsEnabled";
         private const string BuiltinFontResourceName = "LegacyRuntime.ttf";
 
         private static TooltipSystem _instance;
@@ -30,6 +31,7 @@ namespace AstraLink.Core
         [SerializeField] private Vector2 cursorOffset = new Vector2(16f, -16f);
         [SerializeField] private float screenEdgePadding = 12f;
         [SerializeField] private int fontSize = 14;
+        [SerializeField] private bool tipsEnabled = true;
 
         private Canvas _canvas;
         private RectTransform _panelRect;
@@ -88,8 +90,80 @@ namespace AstraLink.Core
 
             _instance = this;
             DontDestroyOnLoad(gameObject);
+            LoadTipsSetting();
             EnsureOverlayUI();
             SceneManager.sceneLoaded += OnSceneLoaded;
+        }
+
+        /// <summary>
+        /// Gets or sets whether UI tooltips are enabled in user settings.
+        /// </summary>
+        public bool IsTipsEnabled
+        {
+            get { return tipsEnabled && DescriptionTips.IsEnabled; }
+            set { SetTipsEnabled(value); }
+        }
+
+        /// <summary>
+        /// Enables or disables UI tooltips from the settings menu and persists the choice.
+        /// </summary>
+        public void SetTipsEnabled(bool enabled)
+        {
+            if (enabled)
+            {
+                tipsEnabled = true;
+                DescriptionTips.SetEnabled(true);
+                PlayerPrefs.SetInt(TipsEnabledPrefsKey, 1);
+            }
+            else
+            {
+                tipsEnabled = false;
+                DescriptionTips.SetEnabled(false);
+                PlayerPrefs.SetInt(TipsEnabledPrefsKey, 0);
+                Hide();
+            }
+
+            PlayerPrefs.Save();
+        }
+
+        /// <summary>
+        /// Toggles UI tooltips on or off and returns the updated enabled state.
+        /// </summary>
+        public bool ToggleTipsEnabled()
+        {
+            if (IsTipsEnabled)
+            {
+                SetTipsEnabled(false);
+                return false;
+            }
+            else
+            {
+                SetTipsEnabled(true);
+                return true;
+            }
+        }
+
+        private void LoadTipsSetting()
+        {
+            if (PlayerPrefs.HasKey(TipsEnabledPrefsKey))
+            {
+                int saved = PlayerPrefs.GetInt(TipsEnabledPrefsKey, 1);
+                if (saved == 1)
+                {
+                    tipsEnabled = true;
+                    DescriptionTips.SetEnabled(true);
+                }
+                else
+                {
+                    tipsEnabled = false;
+                    DescriptionTips.SetEnabled(false);
+                }
+            }
+            else
+            {
+                tipsEnabled = true;
+                DescriptionTips.SetEnabled(true);
+            }
         }
 
         private void OnDestroy()
@@ -127,6 +201,12 @@ namespace AstraLink.Core
         /// </summary>
         public void Show(string text)
         {
+            if (!IsTipsEnabled)
+            {
+                Hide();
+                return;
+            }
+
             if (string.IsNullOrWhiteSpace(text))
             {
                 Hide();
