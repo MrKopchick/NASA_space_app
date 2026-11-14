@@ -42,10 +42,11 @@ namespace AstraLink.UI.Hub
         {
             if (_missions.Count == 0)
             {
+                IGameDataRepository repo = _repository ?? (GameManager.Instance != null ? GameManager.Instance.Repository : null);
                 AgencyState state = GameManager.Instance != null
                     ? GameManager.Instance.CurrentAgencyState
                     : new AgencyState();
-                Initialize(_repository, state);
+                Initialize(repo, state);
             }
         }
 

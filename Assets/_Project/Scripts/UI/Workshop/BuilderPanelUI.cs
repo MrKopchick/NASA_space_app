@@ -79,6 +79,8 @@ namespace AstraLink.UI.Workshop
 
         // UI Widgets
         private Text _activeContractBannerText;
+        private GameObject _launchErrorBannerObj;
+        private Text _launchErrorBannerText;
         private Text _autopilotButtonText;
         private Text _dryRunButtonText;
         private Text _agencyCapitalButtonText;
@@ -90,6 +92,7 @@ namespace AstraLink.UI.Workshop
         private Text _rocketIconPlaceholderText;
 
         public event Action<List<SatelliteComponent>, RocketOption, ResourceSummary> OnConfigurationChanged;
+        public event Action OnLaunchMissionRequested;
 
         public AutopilotUI AutopilotPanel => autopilotUI;
         public DryRunUI DryRunPanel => dryRunUI;
@@ -103,9 +106,13 @@ namespace AstraLink.UI.Workshop
         {
             if (_allComponents.Count == 0)
             {
-                IMissionSimulator sim = GameManager.Instance != null ? GameManager.Instance.Simulator : new MockMissionSimulator();
+                IGameDataRepository repo = _repository ?? (GameManager.Instance != null ? GameManager.Instance.Repository : null);
+                IMissionSimulator sim = GameManager.Instance != null && GameManager.Instance.Simulator != null
+                    ? GameManager.Instance.Simulator
+                    : new MockMissionSimulator();
                 AgencyState state = GameManager.Instance != null ? GameManager.Instance.CurrentAgencyState : new AgencyState();
-                Initialize(_repository, sim, state);
+                IAstraAuditor aud = _auditor ?? (GameManager.Instance != null ? GameManager.Instance.Auditor : null);
+                Initialize(repo, sim, state, _activeMission, aud);
             }
         }
 
@@ -364,7 +371,43 @@ namespace AstraLink.UI.Workshop
         public void SetActiveMission(MissionGoal goal)
         {
             _activeMission = goal;
+            ClearLaunchValidationError();
             RefreshWorkshopUI();
+        }
+
+        public void TriggerLaunchMission()
+        {
+            if (OnLaunchMissionRequested != null)
+            {
+                OnLaunchMissionRequested.Invoke();
+            }
+            else if (GameManager.Instance != null)
+            {
+                GameManager.Instance.LaunchActiveMission();
+            }
+        }
+
+        public void ShowLaunchValidationError(string errorMessage)
+        {
+            EnsureWorkshopUIHierarchy();
+            if (_launchErrorBannerObj != null)
+            {
+                _launchErrorBannerObj.SetActive(!string.IsNullOrWhiteSpace(errorMessage));
+            }
+            if (_launchErrorBannerText != null)
+            {
+                _launchErrorBannerText.text = string.IsNullOrWhiteSpace(errorMessage)
+                    ? string.Empty
+                    : "LAUNCH BLOCKED: " + errorMessage;
+            }
+        }
+
+        public void ClearLaunchValidationError()
+        {
+            if (_launchErrorBannerObj != null)
+            {
+                _launchErrorBannerObj.SetActive(false);
+            }
         }
 
         public MissionGoal GetActiveMissionGoal()
@@ -499,11 +542,13 @@ namespace AstraLink.UI.Workshop
 
             UpdateDryRunButtonBadge(selectedList, rocket, activeOrbit, activeGoal);
 
+            ClearLaunchValidationError();
             OnConfigurationChanged?.Invoke(selectedList, rocket, summary);
         }
 
         private void HandleAutopilotRulesChanged(List<AutopilotRule> rules)
         {
+            ClearLaunchValidationError();
             MissionGoal activeGoal = GetActiveMissionGoal();
             OrbitDefinition activeOrbit = GetActiveOrbit(activeGoal);
             List<SatelliteComponent> selectedList = GetSelectedComponentsList();
@@ -696,8 +741,22 @@ namespace AstraLink.UI.Workshop
             _dryRunButtonText = drBtn.GetComponentInChildren<Text>();
 
             Button rndBtn = CreateButton(contractBar.transform, "Btn_OpenRnD", "R&D Tree ($50k)",
-                new Color(0.55f, 0.36f, 0.10f, 1f), 185f, 44f, font, OpenRnDOverlay);
+                new Color(0.55f, 0.36f, 0.10f, 1f), 175f, 44f, font, OpenRnDOverlay);
             _agencyCapitalButtonText = rndBtn.GetComponentInChildren<Text>();
+
+            CreateButton(contractBar.transform, "Btn_LaunchMission", "LAUNCH >>",
+                new Color(0.14f, 0.62f, 0.28f, 1f), 165f, 44f, font, TriggerLaunchMission);
+
+            // Launch validation banner (shown only when pre-launch validation fails)
+            _launchErrorBannerObj = CreateUIObject("LaunchValidationBanner", rootObj.transform);
+            Image errImg = _launchErrorBannerObj.AddComponent<Image>();
+            errImg.color = new Color(0.42f, 0.10f, 0.12f, 0.96f);
+            LayoutElement errLe = _launchErrorBannerObj.AddComponent<LayoutElement>();
+            errLe.preferredHeight = 36f;
+            _launchErrorBannerText = CreateText("ErrorText", _launchErrorBannerObj.transform, font,
+                string.Empty, 15, FontStyle.Bold, new Color(1f, 0.88f, 0.88f, 1f), TextAnchor.MiddleCenter);
+            StretchFull(_launchErrorBannerText.GetComponent<RectTransform>());
+            _launchErrorBannerObj.SetActive(false);
 
             // 2. MAIN WORKSPACE COLUMNS (Clean 2-Column Hangar: 5 Module Slots + Rocket | 6 NASA Resource Gauges)
             GameObject columnsRow = CreateUIObject("MainColumns", rootObj.transform);
@@ -819,6 +878,20 @@ namespace AstraLink.UI.Workshop
                 rndBtn.onClick.RemoveAllListeners();
                 rndBtn.onClick.AddListener(OpenRnDOverlay);
                 _agencyCapitalButtonText = rndBtn.GetComponentInChildren<Text>();
+            }
+
+            Button launchBtn = FindChild<Button>(root, "ActiveContractBar/Btn_LaunchMission");
+            if (launchBtn != null)
+            {
+                launchBtn.onClick.RemoveAllListeners();
+                launchBtn.onClick.AddListener(TriggerLaunchMission);
+            }
+
+            Transform errTransform = root.Find("LaunchValidationBanner");
+            if (errTransform != null)
+            {
+                _launchErrorBannerObj = errTransform.gameObject;
+                _launchErrorBannerText = FindChild<Text>(errTransform, "ErrorText");
             }
 
             if (slotIconImages == null || slotIconImages.Length != 5)
