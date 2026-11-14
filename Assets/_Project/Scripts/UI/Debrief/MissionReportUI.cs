@@ -66,9 +66,29 @@ namespace AstraLink.UI.Debrief
 
         [Header("S2-04 Connected Flight Components (OrbitRadarUI, TelemetryHUD, ManualOverrideUI, EventPopupUI)")]
         [SerializeField] private OrbitRadarUI orbitRadarUI;
+        [SerializeField] private SpaceMapController spaceMapController;
         [SerializeField] private TelemetryHUD telemetryHUD;
         [SerializeField] private ManualOverrideUI manualOverrideUI;
         [SerializeField] private EventPopupUI eventPopupUI;
+
+#pragma warning disable 0649
+        [Header("S2-04 SpaceMap Pixel-Art Sprites")]
+        [SerializeField] private Sprite spaceMapStarfieldSprite;
+        [SerializeField] private Sprite spaceMapLaunchPadSprite;
+        [SerializeField] private Sprite spaceMapEclipseOverlaySprite;
+        [SerializeField] private Sprite spaceMapEarthSprite;
+        [SerializeField] private Sprite spaceMapMoonSprite;
+        [SerializeField] private Sprite spaceMapMarsSprite;
+        [SerializeField] private Sprite spaceMapVenusSprite;
+        [SerializeField] private Sprite spaceMapSmallRocketSprite;
+        [SerializeField] private Sprite spaceMapReusableRocketSprite;
+        [SerializeField] private Sprite spaceMapHeavyLiftRocketSprite;
+        [SerializeField] private Sprite spaceMapRocketFlameSprite;
+        [SerializeField] private Sprite spaceMapLaunchSmokeSprite;
+        [SerializeField] private Sprite spaceMapCubesatSprite;
+        [SerializeField] private Sprite spaceMapSatelliteSprite;
+        [SerializeField] private Sprite spaceMapDeepSpaceProbeSprite;
+#pragma warning restore 0649
 
         [Header("S2-04 Playback Speed Switches (1x, 5x, 10x)")]
         [SerializeField] private Button playbackSpeed1xButton;
@@ -156,6 +176,7 @@ namespace AstraLink.UI.Debrief
         private bool _hasExplicitRules;
         private bool _hasExplicitEvents;
         private bool _allowPayoutForCurrentReport = true;
+        private bool _pendingLaunchSequence;
         private GameObject _sampleOrbitLeoBtn;
         private GameObject _sampleOrbitLunarBtn;
         private GameObject _sampleOrbitMarsBtn;
@@ -164,6 +185,11 @@ namespace AstraLink.UI.Debrief
         /// Gets the currently displayed <see cref="MissionReport"/>.
         /// </summary>
         public MissionReport CurrentReport => _currentReport;
+
+        /// <summary>
+        /// Gets the linked <see cref="SpaceMapController"/> controller (new pixel-art flight visual).
+        /// </summary>
+        public SpaceMapController SpaceMap => spaceMapController;
 
         /// <summary>
         /// Gets the linked <see cref="OrbitRadarUI"/> controller (Task S1-08 / S2-04).
@@ -258,6 +284,7 @@ namespace AstraLink.UI.Debrief
             if (_currentReport != null)
             {
                 RefreshUI();
+                TryStartPendingSpaceMapLaunch();
             }
         }
 
@@ -282,7 +309,7 @@ namespace AstraLink.UI.Debrief
 
             _repository = repository ?? _repository;
             _simulator = simulator ?? _simulator;
-            if (components != null && components.Count > 0) _activeComponents = new List<SatelliteComponent>(components);
+            if (components != null) _activeComponents = new List<SatelliteComponent>(components);
             if (rocket != null) _activeRocket = rocket;
             if (rules != null)
             {
@@ -366,7 +393,10 @@ namespace AstraLink.UI.Debrief
         public void ShowLiveFlightViewInternal()
         {
             SetViewMode(true);
-            if (orbitRadarUI != null && !orbitRadarUI.IsPlaying && _currentReport != null && _currentReport.Ticks != null && _currentReport.Ticks.Count > 1)
+            TryStartPendingSpaceMapLaunch();
+
+            bool waitingOrPlayingLaunch = _pendingLaunchSequence || (spaceMapController != null && spaceMapController.IsLaunchPlaying);
+            if (!waitingOrPlayingLaunch && orbitRadarUI != null && !orbitRadarUI.IsPlaying && _currentReport != null && _currentReport.Ticks != null && _currentReport.Ticks.Count > 1)
             {
                 orbitRadarUI.LoadMissionReport(_currentReport, _activeOrbit, autoPlay: true, resetTickIndex: false);
             }
@@ -455,6 +485,13 @@ namespace AstraLink.UI.Debrief
         /// </summary>
         public void TogglePlaybackPlayPause()
         {
+            if (spaceMapController != null && (_pendingLaunchSequence || spaceMapController.IsLaunchPlaying))
+            {
+                _pendingLaunchSequence = false;
+                spaceMapController.SkipLaunchSequence();
+                return;
+            }
+
             if (orbitRadarUI != null)
             {
                 orbitRadarUI.TogglePlayPause();
@@ -470,6 +507,12 @@ namespace AstraLink.UI.Debrief
         /// </summary>
         public void StepPlaybackNextTick()
         {
+            if (spaceMapController != null && (_pendingLaunchSequence || spaceMapController.IsLaunchPlaying))
+            {
+                _pendingLaunchSequence = false;
+                spaceMapController.SkipLaunchSequence();
+            }
+
             if (orbitRadarUI != null)
             {
                 orbitRadarUI.StepSingleTick(1);
@@ -618,13 +661,53 @@ namespace AstraLink.UI.Debrief
                 orbitRadarUI.SetSimulationContext(_simulator, _activeRocket, _activeGoal, _activeComponents, _activeRules);
                 orbitRadarUI.OnTickUpdated -= HandleRadarTickUpdated;
                 orbitRadarUI.OnTickUpdated += HandleRadarTickUpdated;
+                orbitRadarUI.OnSmoothTickUpdated -= HandleSmoothFlightTick;
+                orbitRadarUI.OnSmoothTickUpdated += HandleSmoothFlightTick;
                 orbitRadarUI.OnSpeedChanged -= HandleRadarSpeedChanged;
                 orbitRadarUI.OnSpeedChanged += HandleRadarSpeedChanged;
                 orbitRadarUI.OnTestFlightCompleted -= HandleRadarTestFlightCompleted;
                 orbitRadarUI.OnTestFlightCompleted += HandleRadarTestFlightCompleted;
+            }
 
-                orbitRadarUI.LoadMissionReport(report, _activeOrbit, autoPlay: autoPlay, resetTickIndex: resetTickIndex);
-                UpdatePlaybackSpeedButtonHighlights(orbitRadarUI.SpeedMultiplier);
+            if (spaceMapController != null && resetTickIndex)
+            {
+                ConfigureSpaceMapSprites();
+                spaceMapController.SetSandboxTestBarVisible(false);
+                spaceMapController.OnLaunchSequenceCompleted -= HandleSpaceMapLaunchCompleted;
+                spaceMapController.OnLaunchSequenceCompleted += HandleSpaceMapLaunchCompleted;
+                spaceMapController.Initialize(_activeGoal, _activeOrbit, _activeRocket, _activeComponents);
+
+                if (autoPlay && report != null && report.Ticks != null && report.Ticks.Count > 0)
+                {
+                    // Pause tick loop while rocket launch animation plays; HandleSpaceMapLaunchCompleted starts playback.
+                    if (orbitRadarUI != null)
+                    {
+                        orbitRadarUI.LoadMissionReport(report, _activeOrbit, autoPlay: false, resetTickIndex: true);
+                        UpdatePlaybackSpeedButtonHighlights(orbitRadarUI.SpeedMultiplier);
+                    }
+
+                    _pendingLaunchSequence = true;
+                    TryStartPendingSpaceMapLaunch();
+                }
+                else if (orbitRadarUI != null)
+                {
+                    orbitRadarUI.LoadMissionReport(report, _activeOrbit, autoPlay: false, resetTickIndex: true);
+                    UpdatePlaybackSpeedButtonHighlights(orbitRadarUI.SpeedMultiplier);
+                }
+            }
+            else
+            {
+                if (spaceMapController != null && resetTickIndex == false && !spaceMapController.IsLaunchPlaying && !_pendingLaunchSequence)
+                {
+                    // Manual recalculation: keep orbiting smoothly using the recalculated report.
+                    spaceMapController.SetSandboxTestBarVisible(false);
+                }
+
+                if (orbitRadarUI != null)
+                {
+                    orbitRadarUI.LoadMissionReport(report, _activeOrbit, autoPlay: autoPlay, resetTickIndex: resetTickIndex);
+                    UpdatePlaybackSpeedButtonHighlights(orbitRadarUI.SpeedMultiplier);
+                }
             }
 
             if (manualOverrideUI != null)
@@ -638,6 +721,75 @@ namespace AstraLink.UI.Debrief
                 int idx = orbitRadarUI != null ? Mathf.Clamp(orbitRadarUI.CurrentTickIndex, 0, report.Ticks.Count - 1) : 0;
                 HandleRadarTickUpdated(report.Ticks[idx], idx);
             }
+        }
+
+        private void TryStartPendingSpaceMapLaunch()
+        {
+            if (!_pendingLaunchSequence || spaceMapController == null || !_isLiveFlightViewActive)
+            {
+                return;
+            }
+
+            if (!spaceMapController.gameObject.activeInHierarchy)
+            {
+                return;
+            }
+
+            _pendingLaunchSequence = false;
+            spaceMapController.PlayLaunchSequence();
+
+            if (playbackPlayPauseLabel != null)
+            {
+                playbackPlayPauseLabel.text = "PAUSE";
+            }
+        }
+
+        private void HandleSpaceMapLaunchCompleted()
+        {
+            if (orbitRadarUI == null || _currentReport == null || _currentReport.Ticks == null || _currentReport.Ticks.Count == 0)
+            {
+                return;
+            }
+
+            orbitRadarUI.JumpToTick(0, pausePlayback: false);
+            orbitRadarUI.SetPlaying(true);
+
+            if (playbackPlayPauseLabel != null)
+            {
+                playbackPlayPauseLabel.text = "PAUSE";
+            }
+        }
+
+        private void HandleSmoothFlightTick(SimulationTickSnapshot currentTick, SimulationTickSnapshot nextTick, float lerpT)
+        {
+            if (spaceMapController == null || _pendingLaunchSequence || spaceMapController.IsLaunchPlaying)
+            {
+                return;
+            }
+
+            spaceMapController.UpdateFlightTick(currentTick, nextTick, lerpT);
+        }
+
+        private void ConfigureSpaceMapSprites()
+        {
+            if (spaceMapController == null) return;
+
+            spaceMapController.ConfigureSprites(
+                spaceMapStarfieldSprite,
+                spaceMapLaunchPadSprite,
+                spaceMapEclipseOverlaySprite,
+                spaceMapEarthSprite,
+                spaceMapMoonSprite,
+                spaceMapMarsSprite,
+                spaceMapVenusSprite,
+                spaceMapSmallRocketSprite,
+                spaceMapReusableRocketSprite,
+                spaceMapHeavyLiftRocketSprite,
+                spaceMapRocketFlameSprite,
+                spaceMapLaunchSmokeSprite,
+                spaceMapCubesatSprite,
+                spaceMapSatelliteSprite,
+                spaceMapDeepSpaceProbeSprite);
         }
 
         private void UpdatePlaybackSpeedButtonHighlights(float speed)
@@ -761,9 +913,14 @@ namespace AstraLink.UI.Debrief
             {
                 _activeOrbit = explicitOrbit;
             }
-            else if (_activeOrbit == null)
+            else if (_activeOrbit == null ||
+                     (_activeGoal != null && !string.IsNullOrEmpty(_activeGoal.OrbitId) &&
+                      !string.Equals(_activeOrbit.Id, _activeGoal.OrbitId, StringComparison.OrdinalIgnoreCase)))
             {
-                _activeOrbit = BuildDefaultOrbitForGoal(_activeGoal);
+                OrbitDefinition fromRepo = _repository != null && _activeGoal != null
+                    ? _repository.GetOrbit(_activeGoal.OrbitId)
+                    : null;
+                _activeOrbit = fromRepo ?? BuildDefaultOrbitForGoal(_activeGoal);
             }
 
             if (_activeComponents == null || _activeComponents.Count == 0)
@@ -1797,6 +1954,21 @@ namespace AstraLink.UI.Debrief
                     BaseRadiation = 20.0f
                 };
             }
+            if (string.Equals(orbitId, "orbit_venus", StringComparison.OrdinalIgnoreCase))
+            {
+                return new OrbitDefinition
+                {
+                    Id = "orbit_venus",
+                    Name = "Venus Orbit (300 km)",
+                    Type = OrbitType.DeepSpace,
+                    OrbitPeriodHours = 1.8f,
+                    EclipseFraction = 0.40f,
+                    CommWindowFraction = 0.15f,
+                    SolarFluxFactor = 1.90f,
+                    SignalDelaySeconds = 12.0f,
+                    BaseRadiation = 25.0f
+                };
+            }
             return new OrbitDefinition
             {
                 Id = "orbit_leo",
@@ -1910,6 +2082,7 @@ namespace AstraLink.UI.Debrief
             Transform root = transform.Find("DebriefContentRoot_v4");
             if (root != null &&
                 orbitRadarUI != null &&
+                spaceMapController != null &&
                 telemetryHUD != null &&
                 manualOverrideUI != null &&
                 eventPopupUI != null &&
@@ -2194,27 +2367,36 @@ namespace AstraLink.UI.Debrief
             colsLayout.childForceExpandWidth = false;
             colsLayout.childForceExpandHeight = true;
 
-            // Column 1: 2D Orbit Radar (OrbitRadarUI from S1-08)
-            GameObject radarCol = CreateUIObject("OrbitRadarColumn", flightColumns.transform);
-            LayoutElement radarLe = radarCol.AddComponent<LayoutElement>();
-            radarLe.flexibleWidth = 0.95f;
-            radarLe.preferredWidth = 570f;
-            orbitRadarUI = radarCol.AddComponent<OrbitRadarUI>();
-            orbitRadarUI.EnsureRadarHierarchy();
+            // Column 1: Pixel-Art Interactive Space Map (SpaceMapController) + Headless Tick Playback Driver
+            GameObject spaceMapCol = CreateUIObject("SpaceMapColumn", flightColumns.transform);
+            LayoutElement spaceMapLe = spaceMapCol.AddComponent<LayoutElement>();
+            spaceMapLe.flexibleWidth = 1.25f;
+            spaceMapLe.preferredWidth = 740f;
+
+            spaceMapController = spaceMapCol.AddComponent<SpaceMapController>();
+            spaceMapController.SetAutoSetupDemoOnStart(false);
+            spaceMapController.SetSandboxTestBarVisible(false);
+            ConfigureSpaceMapSprites();
+
+            GameObject playbackDriverObj = CreateUIObject("FlightPlaybackEngine", spaceMapCol.transform);
+            playbackDriverObj.SetActive(false);
+            orbitRadarUI = playbackDriverObj.AddComponent<OrbitRadarUI>();
+            orbitRadarUI.SetHeadlessPlaybackOnly(true);
+            playbackDriverObj.SetActive(true);
 
             // Column 2: Live Telemetry & Green Autopilot Rule Highlighting (TelemetryHUD)
             GameObject telemetryCol = CreateUIObject("TelemetryHUDColumn", flightColumns.transform);
             LayoutElement telemetryLe = telemetryCol.AddComponent<LayoutElement>();
-            telemetryLe.flexibleWidth = 1.15f;
-            telemetryLe.preferredWidth = 690f;
+            telemetryLe.flexibleWidth = 1.00f;
+            telemetryLe.preferredWidth = 600f;
             telemetryHUD = telemetryCol.AddComponent<TelemetryHUD>();
             telemetryHUD.EnsureTelemetryHierarchy();
 
             // Column 3: Manual Override Commands with Signal Delay Timer (ManualOverrideUI)
             GameObject manualCol = CreateUIObject("ManualOverrideColumn", flightColumns.transform);
             LayoutElement manualLe = manualCol.AddComponent<LayoutElement>();
-            manualLe.flexibleWidth = 0.90f;
-            manualLe.preferredWidth = 550f;
+            manualLe.flexibleWidth = 0.85f;
+            manualLe.preferredWidth = 500f;
             manualOverrideUI = manualCol.AddComponent<ManualOverrideUI>();
             manualOverrideUI.EnsureManualOverrideHierarchy();
         }

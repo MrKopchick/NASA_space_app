@@ -237,6 +237,7 @@ namespace AstraLink.UI.Flight
         [Header("Radar Geometry Settings")]
         [SerializeField] private float orbitRadiusPx = 178f;
         [SerializeField] private float baseSecondsPerTick = 1.0f;
+        [SerializeField] private bool headlessPlaybackOnly;
 
         private IMissionSimulator _simulator;
         private OrbitDefinition _currentOrbit;
@@ -261,6 +262,11 @@ namespace AstraLink.UI.Flight
         /// Fired whenever the playback advances to a new <see cref="SimulationTickSnapshot"/>.
         /// </summary>
         public event Action<SimulationTickSnapshot, int> OnTickUpdated;
+
+        /// <summary>
+        /// Fired every frame during playback and on discrete jumps so external views (e.g. SpaceMapController) can smoothly interpolate orbit progress.
+        /// </summary>
+        public event Action<SimulationTickSnapshot, SimulationTickSnapshot, float> OnSmoothTickUpdated;
 
         /// <summary>
         /// Fired when the 20-tick orbital test flight finishes a full revolution.
@@ -478,6 +484,7 @@ namespace AstraLink.UI.Flight
 
             ApplyTickSnapshot(_activeReport.Ticks[0], 0, _activeReport.Ticks.Count);
             SetSatelliteOrbitProgress(_activeReport.Ticks[0].OrbitProgress);
+            EmitSmoothSnap(0, 0f);
 
             Debug.Log(string.Format(
                 "[OrbitRadarUI] Test flight started on '{0}' ({1} ticks, speed {2:0.#}x).",
@@ -596,6 +603,26 @@ namespace AstraLink.UI.Flight
             SimulationTickSnapshot snap = _activeReport.Ticks[_currentTickIndex];
             ApplyTickSnapshot(snap, _currentTickIndex, _activeReport.Ticks.Count);
             SetSatelliteOrbitProgress(snap.OrbitProgress);
+            EmitSmoothSnap(_currentTickIndex, 0f);
+        }
+
+        public void SetHeadlessPlaybackOnly(bool headless)
+        {
+            headlessPlaybackOnly = headless;
+        }
+
+        public void SetPlaying(bool playing)
+        {
+            _isPlaying = playing && _activeReport != null && _activeReport.Ticks != null && _activeReport.Ticks.Count > 0;
+        }
+
+        private void EmitSmoothSnap(int index, float lerpT)
+        {
+            if (_activeReport == null || _activeReport.Ticks == null || _activeReport.Ticks.Count == 0) return;
+            int clamped = Mathf.Clamp(index, 0, _activeReport.Ticks.Count - 1);
+            SimulationTickSnapshot cur = _activeReport.Ticks[clamped];
+            SimulationTickSnapshot next = (clamped + 1 < _activeReport.Ticks.Count) ? _activeReport.Ticks[clamped + 1] : cur;
+            OnSmoothTickUpdated?.Invoke(cur, next, lerpT);
         }
 
         /// <summary>
@@ -616,6 +643,7 @@ namespace AstraLink.UI.Flight
                 SimulationTickSnapshot firstSnap = _activeReport.Ticks[0];
                 ApplyTickSnapshot(firstSnap, 0, _activeReport.Ticks.Count);
                 SetSatelliteOrbitProgress(firstSnap.OrbitProgress);
+                EmitSmoothSnap(0, 0f);
             }
 
             _isPlaying = !_isPlaying;
@@ -638,6 +666,7 @@ namespace AstraLink.UI.Flight
             SimulationTickSnapshot snap = _activeReport.Ticks[_currentTickIndex];
             ApplyTickSnapshot(snap, _currentTickIndex, _activeReport.Ticks.Count);
             SetSatelliteOrbitProgress(snap.OrbitProgress);
+            EmitSmoothSnap(_currentTickIndex, 0f);
         }
 
         /// <summary>
@@ -661,6 +690,7 @@ namespace AstraLink.UI.Flight
             SimulationTickSnapshot snap = _activeReport.Ticks[_currentTickIndex];
             ApplyTickSnapshot(snap, _currentTickIndex, _activeReport.Ticks.Count);
             SetSatelliteOrbitProgress(snap.OrbitProgress);
+            EmitSmoothSnap(_currentTickIndex, 0f);
         }
 
         private void Update()
@@ -686,6 +716,7 @@ namespace AstraLink.UI.Flight
                     _isPlaying = false;
                     _currentTickIndex = totalTicks - 1;
                     SetSatelliteOrbitProgress(1.0f);
+                    EmitSmoothSnap(_currentTickIndex, 0f);
 
                     if (statusHeaderLabel != null)
                     {
@@ -729,6 +760,7 @@ namespace AstraLink.UI.Flight
                 float t = Mathf.Clamp01(_tickElapsedSeconds / secondsPerTick);
                 float smoothProgress = Mathf.Lerp(startProgress, endProgress, t);
                 SetSatelliteOrbitProgress(smoothProgress);
+                EmitSmoothSnap(_currentTickIndex, t);
             }
         }
 
@@ -1137,6 +1169,11 @@ namespace AstraLink.UI.Flight
         /// </summary>
         public void EnsureRadarHierarchy()
         {
+            if (headlessPlaybackOnly)
+            {
+                return;
+            }
+
             RectTransform rootRt = GetComponent<RectTransform>();
             if (rootRt == null)
             {
