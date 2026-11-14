@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using AstraLink.UI.Debrief;
 using AstraLink.UI.Hub;
 using AstraLink.UI.Workshop;
+using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -107,11 +108,39 @@ namespace AstraLink.Core
 
         private void Update()
         {
+            if (IsTextInputFocused())
+            {
+                return;
+            }
+
             // Quick keyboard shortcuts (F1-F4 or 1-4) for fast testing in the Editor
             if (Input.GetKeyDown(KeyCode.F1) || Input.GetKeyDown(KeyCode.Alpha1)) ShowHub();
             else if (Input.GetKeyDown(KeyCode.F2) || Input.GetKeyDown(KeyCode.Alpha2)) ShowWorkshop();
             else if (Input.GetKeyDown(KeyCode.F3) || Input.GetKeyDown(KeyCode.Alpha3)) ShowFlight();
             else if (Input.GetKeyDown(KeyCode.F4) || Input.GetKeyDown(KeyCode.Alpha4)) ShowDebrief();
+        }
+
+        private static bool IsTextInputFocused()
+        {
+            if (EventSystem.current == null)
+            {
+                return false;
+            }
+
+            GameObject selected = EventSystem.current.currentSelectedGameObject;
+            if (selected == null)
+            {
+                return false;
+            }
+
+            InputField legacyInput = selected.GetComponent<InputField>();
+            if (legacyInput != null && legacyInput.isFocused)
+            {
+                return true;
+            }
+
+            TMP_InputField tmpInput = selected.GetComponent<TMP_InputField>();
+            return tmpInput != null && tmpInput.isFocused;
         }
 
         private void InitializeCoreServices()
