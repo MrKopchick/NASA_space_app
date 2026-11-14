@@ -185,6 +185,32 @@ namespace AstraLink.UI.Workshop
             return null;
         }
 
+        private Transform GetWorkshopRootTransform()
+        {
+            if (string.Equals(gameObject.name, "WorkshopPanel", StringComparison.OrdinalIgnoreCase))
+            {
+                return transform;
+            }
+            Transform foundChild = transform.Find("WorkshopPanel");
+            if (foundChild != null)
+            {
+                return foundChild;
+            }
+            return transform;
+        }
+
+        private static void EnsurePanelRectUnderNavBar(Transform panelTransform)
+        {
+            RectTransform rt = panelTransform != null ? panelTransform.GetComponent<RectTransform>() : null;
+            if (rt == null) return;
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = new Vector2(0f, -70f);
+            rt.localScale = Vector3.one;
+        }
+
         [ContextMenu("Generate Workshop UI In Scene")]
         public void BuildUIInEditor()
         {
@@ -203,19 +229,30 @@ namespace AstraLink.UI.Workshop
             if (_simulator == null) _simulator = new MockMissionSimulator();
             if (_auditor == null) _auditor = new AstraAuditor(new ResourceCalculator(), _repository);
 
+            Transform targetRoot = GetWorkshopRootTransform();
+            EnsurePanelRectUnderNavBar(targetRoot);
+
             string[] childRoots = { "WorkshopContentRoot", "AutopilotModalOverlay", "DryRunModalOverlay", "RnDModalOverlay" };
             for (int i = 0; i < childRoots.Length; i++)
             {
-                Transform existing = transform.Find(childRoots[i]);
-                if (existing != null)
+                Transform existingOnSelf = transform.Find(childRoots[i]);
+                if (existingOnSelf != null)
                 {
-                    DestroyImmediate(existing.gameObject);
+                    DestroyImmediate(existingOnSelf.gameObject);
+                }
+                if (targetRoot != transform)
+                {
+                    Transform existingOnTarget = targetRoot.Find(childRoots[i]);
+                    if (existingOnTarget != null)
+                    {
+                        DestroyImmediate(existingOnTarget.gameObject);
+                    }
                 }
             }
 
             EnsureWorkshopUIHierarchy();
             ApplyMission1StarterTemplate();
-            Debug.Log("[BuilderPanelUI] Hangar UI generated with modal buttons for Construct Autopilot, A.S.T.R.A./DryRun, and R&D Tech Tree!");
+            Debug.Log("[BuilderPanelUI] Hangar UI generated inside WorkshopPanel with modal buttons for Construct Autopilot, A.S.T.R.A./DryRun, and R&D Tech Tree!");
         }
 
         public void ApplyMission1StarterTemplate()
@@ -593,27 +630,31 @@ namespace AstraLink.UI.Workshop
 
         private void EnsureWorkshopUIHierarchy()
         {
-            Transform placeholder = transform.Find("PlaceholderTitle");
+            Transform workshopRoot = GetWorkshopRootTransform();
+            EnsurePanelRectUnderNavBar(workshopRoot);
+
+            Transform placeholder = workshopRoot.Find("PlaceholderTitle");
             if (placeholder != null)
             {
                 placeholder.gameObject.SetActive(false);
             }
 
-            Transform existingRoot = transform.Find("WorkshopContentRoot");
+            Transform existingRoot = workshopRoot.Find("WorkshopContentRoot");
             if (existingRoot != null)
             {
-                BindExistingHierarchy(existingRoot);
+                StretchFull(existingRoot.GetComponent<RectTransform>());
+                BindExistingHierarchy(existingRoot, workshopRoot);
                 return;
             }
 
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
-            GameObject rootObj = CreateUIObject("WorkshopContentRoot", transform);
+            GameObject rootObj = CreateUIObject("WorkshopContentRoot", workshopRoot);
             StretchFull(rootObj.GetComponent<RectTransform>());
 
             VerticalLayoutGroup rootLayout = rootObj.AddComponent<VerticalLayoutGroup>();
-            rootLayout.padding = new RectOffset(28, 28, 18, 18);
-            rootLayout.spacing = 14f;
+            rootLayout.padding = new RectOffset(24, 24, 14, 14);
+            rootLayout.spacing = 12f;
             rootLayout.childControlWidth = true;
             rootLayout.childControlHeight = true;
             rootLayout.childForceExpandWidth = true;
@@ -624,7 +665,8 @@ namespace AstraLink.UI.Workshop
             Image barBg = contractBar.AddComponent<Image>();
             barBg.color = new Color(0.06f, 0.11f, 0.20f, 0.96f);
             LayoutElement barLe = contractBar.AddComponent<LayoutElement>();
-            barLe.preferredHeight = 62f;
+            barLe.minHeight = 60f;
+            barLe.preferredHeight = 60f;
 
             HorizontalLayoutGroup barLayout = contractBar.AddComponent<HorizontalLayoutGroup>();
             barLayout.padding = new RectOffset(16, 16, 8, 8);
@@ -633,6 +675,7 @@ namespace AstraLink.UI.Workshop
             barLayout.childControlWidth = true;
             barLayout.childControlHeight = true;
             barLayout.childForceExpandWidth = false;
+            barLayout.childForceExpandHeight = true;
 
             _activeContractBannerText = CreateText("ContractBannerText", contractBar.transform, font,
                 "CONTRACT: 1. LEO Weather CubeSat", 15, FontStyle.Normal,
@@ -677,18 +720,18 @@ namespace AstraLink.UI.Workshop
             leftLe.preferredWidth = 1020f;
 
             VerticalLayoutGroup leftLayout = leftCol.AddComponent<VerticalLayoutGroup>();
-            leftLayout.padding = new RectOffset(18, 18, 14, 14);
-            leftLayout.spacing = 10f;
+            leftLayout.padding = new RectOffset(18, 18, 12, 12);
+            leftLayout.spacing = 8f;
             leftLayout.childControlWidth = true;
             leftLayout.childControlHeight = true;
             leftLayout.childForceExpandWidth = true;
             leftLayout.childForceExpandHeight = false;
 
             Text leftHeader = CreateText("SlotsHeader", leftCol.transform, font,
-                "SPACECRAFT ASSEMBLY — 5 FIXED MODULE SLOTS & LAUNCH VEHICLE", 20, FontStyle.Bold,
+                "SPACECRAFT ASSEMBLY — 5 FIXED MODULE SLOTS & LAUNCH VEHICLE", 19, FontStyle.Bold,
                 new Color(1f, 0.88f, 0.42f, 1f), TextAnchor.MiddleLeft);
             LayoutElement lhLe = leftHeader.gameObject.AddComponent<LayoutElement>();
-            lhLe.preferredHeight = 28f;
+            lhLe.preferredHeight = 26f;
 
             if (slotIconImages == null || slotIconImages.Length != 5)
             {
@@ -714,7 +757,7 @@ namespace AstraLink.UI.Workshop
             resourceGaugesUI.EnsureGaugesUIHierarchy();
 
             // 3. MODAL #1: CONSTRUCT-STYLE AUTOPILOT RULE EDITOR OVERLAY
-            GameObject apOverlay = CreateUIObject("AutopilotModalOverlay", transform);
+            GameObject apOverlay = CreateUIObject("AutopilotModalOverlay", workshopRoot);
             StretchFull(apOverlay.GetComponent<RectTransform>());
             autopilotUI = apOverlay.AddComponent<AutopilotUI>();
             autopilotUI.Initialize(_agencyState, GetSelectedComponentsList());
@@ -725,7 +768,7 @@ namespace AstraLink.UI.Workshop
             apOverlay.SetActive(false);
 
             // 4. MODAL #2: A.S.T.R.A. AUDITOR & 3s DRY RUN BENCH OVERLAY
-            GameObject drOverlay = CreateUIObject("DryRunModalOverlay", transform);
+            GameObject drOverlay = CreateUIObject("DryRunModalOverlay", workshopRoot);
             StretchFull(drOverlay.GetComponent<RectTransform>());
             dryRunUI = drOverlay.AddComponent<DryRunUI>();
             dryRunUI.Initialize(_auditor, _simulator, _repository, autopilotUI);
@@ -734,7 +777,7 @@ namespace AstraLink.UI.Workshop
             drOverlay.SetActive(false);
 
             // 5. MODAL #3: KSP-STYLE R&D TECH TREE OVERLAY
-            GameObject rndOverlay = CreateUIObject("RnDModalOverlay", transform);
+            GameObject rndOverlay = CreateUIObject("RnDModalOverlay", workshopRoot);
             StretchFull(rndOverlay.GetComponent<RectTransform>());
             rndPanelUI = rndOverlay.AddComponent<RnDPanelUI>();
             rndPanelUI.Initialize(_agencyState, _allComponents);
@@ -743,7 +786,7 @@ namespace AstraLink.UI.Workshop
             rndOverlay.SetActive(false);
         }
 
-        private void BindExistingHierarchy(Transform root)
+        private void BindExistingHierarchy(Transform root, Transform workshopRoot)
         {
             _activeContractBannerText = FindChild<Text>(root, "ActiveContractBar/ContractBannerText");
 
@@ -843,7 +886,7 @@ namespace AstraLink.UI.Workshop
                 if (resourceGaugesUI == null) resourceGaugesUI = rightCol.gameObject.AddComponent<ResourceGaugesUI>();
             }
 
-            Transform apModal = transform.Find("AutopilotModalOverlay");
+            Transform apModal = workshopRoot.Find("AutopilotModalOverlay") ?? transform.Find("AutopilotModalOverlay");
             if (apModal != null)
             {
                 autopilotUI = apModal.GetComponent<AutopilotUI>();
@@ -855,7 +898,7 @@ namespace AstraLink.UI.Workshop
                 autopilotUI.OnRequestOpenDryRun += OpenDryRunOverlay;
             }
 
-            Transform drModal = transform.Find("DryRunModalOverlay");
+            Transform drModal = workshopRoot.Find("DryRunModalOverlay") ?? transform.Find("DryRunModalOverlay");
             if (drModal != null)
             {
                 dryRunUI = drModal.GetComponent<DryRunUI>();
@@ -865,7 +908,7 @@ namespace AstraLink.UI.Workshop
                 dryRunUI.OnRequestOpenAutopilot += OpenAutopilotOverlay;
             }
 
-            Transform rndModal = transform.Find("RnDModalOverlay");
+            Transform rndModal = workshopRoot.Find("RnDModalOverlay") ?? transform.Find("RnDModalOverlay");
             if (rndModal != null)
             {
                 rndPanelUI = rndModal.GetComponent<RnDPanelUI>();
@@ -1144,8 +1187,16 @@ namespace AstraLink.UI.Workshop
             btn.onClick.AddListener(onClick);
 
             LayoutElement le = btnObj.AddComponent<LayoutElement>();
-            if (width > 0f) le.preferredWidth = width;
-            if (height > 0f) le.preferredHeight = height;
+            if (width > 0f)
+            {
+                le.minWidth = width;
+                le.preferredWidth = width;
+            }
+            if (height > 0f)
+            {
+                le.minHeight = height;
+                le.preferredHeight = height;
+            }
 
             Text txt = CreateText("Text", btnObj.transform, font, label, 14, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
             StretchFull(txt.GetComponent<RectTransform>());
