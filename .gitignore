@@ -107,3 +107,8 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# Local sandbox scenes in Workspaces (never commit temporary test scenes)
+*[Ww]orkspaces/*_Sandbox*.unity
+*[Ww]orkspaces/*_Sandbox*.unity.meta
+
