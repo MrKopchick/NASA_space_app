@@ -176,6 +176,11 @@ namespace AstraLink.UI.Flight
         private bool _spacecraftCommsOn = true;
         private bool _spacecraftStormActive;
 
+        // Simulation playback time (Pause / Play / 1x / 5x / 10x sync)
+        private bool _isSimulationPlaying = false;
+        private float _simulationSpeedMultiplier = 1f;
+        private float _mapSimTime = 0f;
+
         // Demo/sandbox state
         private GameObject _sandboxToolbarObj;
         private bool _isDemoAutoOrbiting;
@@ -195,6 +200,16 @@ namespace AstraLink.UI.Flight
         public bool IsLaunchPlaying => _isLaunchPlaying;
         public SolarSystemBodyCatalog.BodyDefinition SelectedBody =>
             _bodyMap.TryGetValue(_selectedBodyId, out CelestialRuntimeNode n) ? n.Spec : null;
+
+        /// <summary>
+        /// Synchronises the Space Map visual time with the flight-playback state.
+        /// Call this whenever play/pause state or speed multiplier changes in MissionReportUI.
+        /// </summary>
+        public void SetSimulationPlaybackState(bool isPlaying, float speedMultiplier)
+        {
+            _isSimulationPlaying = isPlaying;
+            _simulationSpeedMultiplier = Mathf.Max(0f, speedMultiplier);
+        }
 
         private void Awake()
         {
@@ -237,16 +252,18 @@ namespace AstraLink.UI.Flight
 
             float dt = Time.deltaTime;
             float unscaledDt = Time.unscaledDeltaTime;
+            float simDt = _isSimulationPlaying ? dt * _simulationSpeedMultiplier : 0f;
+            _mapSimTime += simDt;
 
             FitOverviewOnFirstValidLayout();
-            AdvanceCelestialOrbitsAndSprites(dt, unscaledDt);
-            AdvanceAsteroidBelt(dt, unscaledDt);
-            UpdateMissionOverlayVisuals(unscaledDt);
+            AdvanceCelestialOrbitsAndSprites(simDt, unscaledDt);
+            AdvanceAsteroidBelt(simDt, unscaledDt);
+            UpdateMissionOverlayVisuals(simDt, unscaledDt);
             UpdateCameraPanAndZoom(unscaledDt);
 
             if (_starfieldLayer != null)
             {
-                _starfieldLayer.Animate(Time.unscaledTime, _currentPanPx);
+                _starfieldLayer.Animate(simDt, _mapSimTime, _currentPanPx);
             }
 
             if (_isDemoAutoOrbiting && !_isLaunchPlaying)
@@ -931,7 +948,7 @@ namespace AstraLink.UI.Flight
             _deployFlashImg.raycastTarget = false;
         }
 
-        private void AdvanceCelestialOrbitsAndSprites(float dt, float unscaledDt)
+        private void AdvanceCelestialOrbitsAndSprites(float simDt, float unscaledDt)
         {
             // Advance Sun & planets in heliocentric order first (parents appear before moons in catalog)
             for (int i = 0; i < _bodies.Count; i++)
@@ -939,7 +956,7 @@ namespace AstraLink.UI.Flight
                 CelestialRuntimeNode node = _bodies[i];
                 SolarSystemBodyCatalog.BodyDefinition spec = node.Spec;
 
-                node.CurrentOrbitAngleDeg = (node.CurrentOrbitAngleDeg + spec.OrbitalSpeedDegPerSec * dt) % 360f;
+                node.CurrentOrbitAngleDeg = (node.CurrentOrbitAngleDeg + spec.OrbitalSpeedDegPerSec * simDt) % 360f;
 
                 Vector2 pos = Vector2.zero;
                 if (string.IsNullOrEmpty(spec.ParentId))
@@ -974,7 +991,7 @@ namespace AstraLink.UI.Flight
 
                 if (node.Frames != null && node.Frames.Length > 0 && node.PlanetImage != null)
                 {
-                    node.AnimTime += unscaledDt * node.FrameRate;
+                    node.AnimTime += simDt * node.FrameRate;
                     int f = Mathf.FloorToInt(node.AnimTime) % node.Frames.Length;
                     if (f < 0) f += node.Frames.Length;
                     Sprite sp = node.Frames[f];
@@ -987,21 +1004,21 @@ namespace AstraLink.UI.Flight
 
             if (_sunCoronaGlow != null)
             {
-                float pulse = 0.20f + 0.08f * Mathf.Sin(Time.unscaledTime * 2.2f);
+                float pulse = 0.20f + 0.08f * Mathf.Sin(_mapSimTime * 2.2f);
                 _sunCoronaGlow.color = new Color(1.0f, 0.66f, 0.20f, pulse);
-                float coronaScale = 1.0f + 0.06f * Mathf.Sin(Time.unscaledTime * 1.7f);
+                float coronaScale = 1.0f + 0.06f * Mathf.Sin(_mapSimTime * 1.7f);
                 _sunCoronaGlow.rectTransform.localScale = new Vector3(coronaScale, coronaScale, 1f);
             }
         }
 
-        private void AdvanceAsteroidBelt(float dt, float unscaledDt)
+        private void AdvanceAsteroidBelt(float simDt, float unscaledDt)
         {
-            float now = Time.unscaledTime;
+            float now = _mapSimTime;
             for (int i = 0; i < _asteroids.Count; i++)
             {
                 AsteroidRuntimeNode ast = _asteroids[i];
-                ast.OrbitAngleDeg = (ast.OrbitAngleDeg + ast.OrbitSpeedDegPerSec * dt) % 360f;
-                ast.SpinAngleDeg = (ast.SpinAngleDeg + ast.SpinSpeedDegPerSec * unscaledDt) % 360f;
+                ast.OrbitAngleDeg = (ast.OrbitAngleDeg + ast.OrbitSpeedDegPerSec * simDt) % 360f;
+                ast.SpinAngleDeg = (ast.SpinAngleDeg + ast.SpinSpeedDegPerSec * simDt) % 360f;
 
                 float r = ast.OrbitRadiusPx + Mathf.Sin(now * 0.7f + ast.WobblePhase) * ast.RadialWobbleAmp;
                 float rad = ast.OrbitAngleDeg * Mathf.Deg2Rad;
@@ -1015,7 +1032,7 @@ namespace AstraLink.UI.Flight
 
                 if (ast.Frames != null && ast.Frames.Length > 0 && ast.Img != null)
                 {
-                    ast.AnimTime += unscaledDt * ast.FrameRate;
+                    ast.AnimTime += simDt * ast.FrameRate;
                     int f = Mathf.FloorToInt(ast.AnimTime) % ast.Frames.Length;
                     if (f < 0) f += ast.Frames.Length;
                     Sprite sp = ast.Frames[f];
@@ -1027,7 +1044,7 @@ namespace AstraLink.UI.Flight
             }
         }
 
-        private void UpdateMissionOverlayVisuals(float unscaledDt)
+        private void UpdateMissionOverlayVisuals(float simDt, float unscaledDt)
         {
             if (!_bodyMap.TryGetValue(_targetPlanetBodyId, out CelestialRuntimeNode targetNode))
             {
@@ -1120,7 +1137,7 @@ namespace AstraLink.UI.Flight
                 Vector2 perp = Vector2.Perpendicular((p2 - p0).normalized);
                 Vector2 p1 = mid + perp * (Vector2.Distance(p0, p2) * 0.24f);
 
-                float phase = Time.unscaledTime * 2.2f;
+                float phase = _mapSimTime * 2.2f;
                 for (int i = 0; i < _transferDots.Count; i++)
                 {
                     float t = (i + 1) / (float)(TransferDotCount + 1);
@@ -1153,14 +1170,14 @@ namespace AstraLink.UI.Flight
                 if (_safeModeShieldImg != null)
                 {
                     _safeModeShieldImg.color = _spacecraftSafeMode
-                        ? new Color(1f, 0.86f, 0.28f, 0.78f + 0.2f * Mathf.Sin(Time.unscaledTime * 6f))
+                        ? new Color(1f, 0.86f, 0.28f, 0.78f + 0.2f * Mathf.Sin(_mapSimTime * 6f))
                         : new Color(1f, 0.86f, 0.28f, 0f);
                 }
 
                 if (_commsPulseRingImg != null)
                 {
                     float commAlpha = (_spacecraftInComm && _spacecraftCommsOn)
-                        ? 0.45f + 0.40f * Mathf.Sin(Time.unscaledTime * 5f)
+                        ? 0.45f + 0.40f * Mathf.Sin(_mapSimTime * 5f)
                         : 0f;
                     _commsPulseRingImg.color = new Color(0.32f, 0.96f, 1f, commAlpha);
                 }
