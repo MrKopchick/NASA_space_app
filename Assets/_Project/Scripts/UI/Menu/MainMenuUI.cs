@@ -165,6 +165,31 @@ namespace AstraLink.UI.Menu
             {
                 savesButtonLabel.text = "SAVES";
             }
+
+            LayoutFourMenuButtons(template.transform.parent as RectTransform);
+        }
+
+        private void LayoutFourMenuButtons(RectTransform panelRt)
+        {
+            if (panelRt != null)
+            {
+                panelRt.anchoredPosition = new Vector2(panelRt.anchoredPosition.x, 195f);
+                panelRt.sizeDelta = new Vector2(panelRt.sizeDelta.x, 330f);
+            }
+
+            SetButtonVerticalRect(startButton, 114f, 64f);
+            SetButtonVerticalRect(newCampaignButton, 38f, 60f);
+            SetButtonVerticalRect(savesButton, -38f, 60f);
+            SetButtonVerticalRect(quitButton, -114f, 58f);
+        }
+
+        private static void SetButtonVerticalRect(Button btn, float yPos, float height)
+        {
+            if (btn == null) return;
+            RectTransform rt = btn.GetComponent<RectTransform>();
+            if (rt == null) return;
+            rt.anchoredPosition = new Vector2(rt.anchoredPosition.x, yPos);
+            rt.sizeDelta = new Vector2(rt.sizeDelta.x, height);
         }
 
         private void BindButtonCallbacks()
