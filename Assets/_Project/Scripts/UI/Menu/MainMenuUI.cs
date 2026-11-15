@@ -49,6 +49,9 @@ namespace AstraLink.UI.Menu
         [SerializeField] private float outroFadeSeconds = 1.0f;
         [SerializeField, Range(0f, 1f)] private float targetMusicVolume = 1.0f;
 
+        [Header("Ambient Space Decor")]
+        [SerializeField] private bool enableAmbientDecor = true;
+
         private Image _crossfadeOverlay;
         private Image _screenFadeOverlay;
         private Coroutine _slideshowCoroutine;
@@ -80,6 +83,10 @@ namespace AstraLink.UI.Menu
         private void Awake()
         {
             BindSceneReferencesIfMissing();
+            if (enableAmbientDecor)
+            {
+                MenuAmbientDecor.AttachIfNeeded(this, backgroundImage);
+            }
             BindButtonCallbacks();
             RefreshMenuLabels();
             CacheBaseVisualState();

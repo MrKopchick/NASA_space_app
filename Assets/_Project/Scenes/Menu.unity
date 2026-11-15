@@ -1655,6 +1655,81 @@ MonoBehaviour:
     m_VerticalOverflow: 0
     m_LineSpacing: 1
   m_Text: EXIT
+--- !u!1 &850000001
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 850000002}
+  - component: {fileID: 850000003}
+  m_Layer: 0
+  m_Name: AudioManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &850000002
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 850000001}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &850000003
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 850000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0cadfbaaa3b2ab84997505f31a11adc8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  sfxEnabled: 1
+  musicEnabled: 1
+  hoverEnabled: 1
+  sfxVolume: 0.85
+  musicVolume: 0.4
+  ambienceVolume: 0.25
+  menuMusicClip: {fileID: 8300000, guid: 336aec65cf84c48438b2a49f11d3ad52, type: 3}
+  flightMusicClip: {fileID: 8300000, guid: 252e8e9ddb004a7448618183b2df0931, type: 3}
+  missionControlAmbienceClip: {fileID: 8300000, guid: 91cb9944acd40cd40aac15857a55be5b, type: 3}
+  uiClickClip: {fileID: 8300000, guid: b9fdaa35eb2bdbb4489ccdc525afa33c, type: 3}
+  uiClickAlt1Clip: {fileID: 8300000, guid: e4e92e9b10f176e48a986a4da3cc3eac, type: 3}
+  uiClickAlt2Clip: {fileID: 8300000, guid: 9d40c0685913f334e9720b46787f276c, type: 3}
+  uiToggleClip: {fileID: 8300000, guid: f37466692fe47b1459f05bc353fe1554, type: 3}
+  uiErrorClip: {fileID: 8300000, guid: 249ea467fd9f4d141bb67b3a2112a92d, type: 3}
+  astraNotificationClip: {fileID: 8300000, guid: dccc0fe4f627fa742822e41e0a8f6783, type: 3}
+  moduleInstallClip: {fileID: 8300000, guid: 99c86b5a2f1b48e4a93cb44aa10491c9, type: 3}
+  moduleRemoveClip: {fileID: 8300000, guid: 696f70e5aea89ee428c73013476ea153, type: 3}
+  researchUnlockClip: {fileID: 8300000, guid: fec45a94e51403140b91382d8d8dc6b9, type: 3}
+  missionStartClip: {fileID: 8300000, guid: ba820ad3981423b4fbf82b058081a956, type: 3}
+  rocketIgnitionClip: {fileID: 8300000, guid: d3cbeef71ad7e4f468232fc160e975ef, type: 3}
+  dryRunCompleteClip: {fileID: 8300000, guid: a1da8fcd2377d5b4dbbd7b932dadca3c, type: 3}
+  missionSuccessClip: {fileID: 8300000, guid: 2c5794ec4fc6ad644bad781732703cf5, type: 3}
+  missionFailedClip: {fileID: 8300000, guid: 519f83b7d1237ce4da7c8e9f5fc2a659, type: 3}
+  commandExecutedClip: {fileID: 8300000, guid: 933b263de76606c458b72a5f8994a661, type: 3}
+  safeModeOnClip: {fileID: 8300000, guid: 1ce75acfb66f3754491ae701ced0955f, type: 3}
+  safeModeOffClip: {fileID: 8300000, guid: f580bfed070fc8049aac88de7364f6b4, type: 3}
+  commsRestoredClip: {fileID: 8300000, guid: aed634e7adce55a4a89148f3b6cf08e5, type: 3}
+  dataDownlinkClip: {fileID: 8300000, guid: a400ee03f9b4b3c49bb5f704efeaccc6, type: 3}
+  micrometeoroidEventClip: {fileID: 8300000, guid: d40962566de881040a3869e461b48c94, type: 3}
+  solarStormAlarmClip: {fileID: 8300000, guid: bb2fee24bca0f394f8cdc20131b5057d, type: 3}
+  systemWarningClip: {fileID: 8300000, guid: 7b7478eda3fedb549b2fd90f37fe6977, type: 3}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -1664,3 +1739,4 @@ SceneRoots:
   - {fileID: 800000002}
   - {fileID: 900000002}
   - {fileID: 74517467}
+  - {fileID: 850000002}
