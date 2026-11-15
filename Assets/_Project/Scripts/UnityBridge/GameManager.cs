@@ -55,7 +55,10 @@ namespace AstraLink.Core
 
         private bool _controllersInitialized;
         private bool _isLaunchingOrPreparingFlight;
+        private bool _hasShownInitialScreen;
         private GameObject _topNavBar;
+        private CanvasGroup _transitionOverlayGroup;
+        private Coroutine _screenTransitionCoroutine;
 
         public GameScreen CurrentScreen { get; private set; }
         public AgencyState CurrentAgencyState { get; private set; }
@@ -187,6 +190,36 @@ namespace AstraLink.Core
         {
             InitializeControllersAndEvents();
 
+            bool canAnimate = _hasShownInitialScreen
+                && Application.isPlaying
+                && gameObject.activeInHierarchy
+                && screen != CurrentScreen;
+
+            if (!canAnimate)
+            {
+                if (_screenTransitionCoroutine != null)
+                {
+                    StopCoroutine(_screenTransitionCoroutine);
+                    _screenTransitionCoroutine = null;
+                }
+                if (_transitionOverlayGroup != null)
+                {
+                    _transitionOverlayGroup.alpha = 0f;
+                }
+                ApplyScreenImmediate(screen);
+                _hasShownInitialScreen = true;
+                return;
+            }
+
+            if (_screenTransitionCoroutine != null)
+            {
+                StopCoroutine(_screenTransitionCoroutine);
+            }
+            _screenTransitionCoroutine = StartCoroutine(SmoothScreenTransitionRoutine(screen));
+        }
+
+        private void ApplyScreenImmediate(GameScreen screen)
+        {
             CurrentScreen = screen;
 
             if (screen == GameScreen.Flight || screen == GameScreen.Debrief)
@@ -205,6 +238,95 @@ namespace AstraLink.Core
 
             Debug.Log("[GameManager] Switched active screen to: " + screen);
             OnScreenChanged?.Invoke(screen);
+        }
+
+        private System.Collections.IEnumerator SmoothScreenTransitionRoutine(GameScreen targetScreen)
+        {
+            CanvasGroup overlay = EnsureTransitionOverlay();
+            if (overlay == null)
+            {
+                ApplyScreenImmediate(targetScreen);
+                _screenTransitionCoroutine = null;
+                yield break;
+            }
+
+            overlay.transform.SetAsLastSibling();
+            if (_topNavBar != null)
+            {
+                _topNavBar.transform.SetAsLastSibling();
+            }
+
+            float fadeOutDuration = 0.13f;
+            float startAlpha = overlay.alpha;
+            float elapsed = 0f;
+            while (elapsed < fadeOutDuration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / fadeOutDuration);
+                overlay.alpha = Mathf.Lerp(startAlpha, 1f, Mathf.SmoothStep(0f, 1f, t));
+                yield return null;
+            }
+            overlay.alpha = 1f;
+
+            ApplyScreenImmediate(targetScreen);
+            _hasShownInitialScreen = true;
+
+            float fadeInDuration = 0.20f;
+            elapsed = 0f;
+            while (elapsed < fadeInDuration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / fadeInDuration);
+                overlay.alpha = Mathf.Lerp(1f, 0f, Mathf.SmoothStep(0f, 1f, t));
+                yield return null;
+            }
+
+            overlay.alpha = 0f;
+            _screenTransitionCoroutine = null;
+        }
+
+        private CanvasGroup EnsureTransitionOverlay()
+        {
+            if (_transitionOverlayGroup != null)
+            {
+                return _transitionOverlayGroup;
+            }
+
+            Canvas canvas = FindObjectOfType<Canvas>();
+            if (canvas == null)
+            {
+                return null;
+            }
+
+            Transform existing = canvas.transform.Find("ScreenTransitionOverlay");
+            GameObject overlayObj;
+            if (existing != null)
+            {
+                overlayObj = existing.gameObject;
+            }
+            else
+            {
+                overlayObj = new GameObject("ScreenTransitionOverlay", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(CanvasGroup));
+                overlayObj.transform.SetParent(canvas.transform, false);
+                var rt = overlayObj.GetComponent<RectTransform>();
+                rt.anchorMin = Vector2.zero;
+                rt.anchorMax = Vector2.one;
+                rt.offsetMin = Vector2.zero;
+                rt.offsetMax = new Vector2(0f, -70f);
+            }
+
+            var img = overlayObj.GetComponent<Image>();
+            img.color = new Color(0.02f, 0.03f, 0.08f, 1f);
+            img.raycastTarget = false;
+
+            var cg = overlayObj.GetComponent<CanvasGroup>();
+            if (cg == null) cg = overlayObj.AddComponent<CanvasGroup>();
+            cg.alpha = 0f;
+            cg.interactable = false;
+            cg.blocksRaycasts = false;
+
+            _transitionOverlayGroup = cg;
+            return _transitionOverlayGroup;
         }
 
         public void ShowScreenByIndex(int screenIndex)
