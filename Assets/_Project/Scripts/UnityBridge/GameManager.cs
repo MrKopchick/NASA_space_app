@@ -59,7 +59,14 @@ namespace AstraLink.Core
         private bool _isLaunchingOrPreparingFlight;
         private bool _hasShownInitialScreen;
         private GameObject _topNavBar;
+        private GameObject _agencyUtilityBar;
+        private GameObject _utilityBackToMapBtnObj;
+        private Text _utilityLocationText;
+        private SaveManagerPanelUI _saveManagerPanel;
+        private Transform _canvasRoot;
         private CanvasGroup _transitionOverlayGroup;
+
+        public const float TopUtilityBarHeight = 44f;
         private Coroutine _screenTransitionCoroutine;
         private GameObject _navStatusToastObj;
         private Image _navStatusToastBg;
@@ -241,13 +248,22 @@ namespace AstraLink.Core
 
             RefreshControllerForScreen(screen);
             UpdateTopNavHighlight(screen);
+            SetPanelTopInset(hubPanel, TopUtilityBarHeight);
+            SetPanelTopInset(workshopPanel, TopUtilityBarHeight);
+            SetPanelTopInset(debriefPanel, TopUtilityBarHeight);
+            StretchPanelFullScreen(flightPanel);
+            RefreshUtilityBarState();
             SaveAgencyState();
 
-            if (Application.isPlaying && screen == GameScreen.Hub && _topNavBar != null && _topNavBar.transform.parent != null)
+            if (Application.isPlaying && screen == GameScreen.Hub)
             {
-                bool isFreshCampaign = CurrentAgencyState != null
-                    && (CurrentAgencyState.CompletedMissionIds == null || CurrentAgencyState.CompletedMissionIds.Count == 0);
-                OnboardingHelpUI.ShowIfFirstCampaign(_topNavBar.transform.parent, isFreshCampaign);
+                Transform canvasRoot = ResolveCanvasRoot();
+                if (canvasRoot != null)
+                {
+                    bool isFreshCampaign = CurrentAgencyState != null
+                        && (CurrentAgencyState.CompletedMissionIds == null || CurrentAgencyState.CompletedMissionIds.Count == 0);
+                    OnboardingHelpUI.ShowIfFirstCampaign(canvasRoot, isFreshCampaign);
+                }
             }
 
             Debug.Log("[GameManager] Switched active screen to: " + screen);
@@ -306,7 +322,7 @@ namespace AstraLink.Core
                 return _transitionOverlayGroup;
             }
 
-            Canvas canvas = FindObjectOfType<Canvas>();
+            Canvas canvas = ResolveMainCanvas();
             if (canvas == null)
             {
                 return null;
@@ -853,7 +869,7 @@ namespace AstraLink.Core
                 esObj.AddComponent<StandaloneInputModule>();
             }
 
-            Canvas canvas = FindObjectOfType<Canvas>();
+            Canvas canvas = ResolveMainCanvas();
             if (canvas == null)
             {
                 var canvasObj = new GameObject("MainCanvas");
@@ -890,13 +906,85 @@ namespace AstraLink.Core
                 globalNav.SetActive(false);
             }
             _topNavBar = null;
+            _canvasRoot = root;
 
-            StretchPanelFullScreen(hubPanel);
-            StretchPanelFullScreen(workshopPanel);
+            EnsureAgencyUtilityBar(root);
+            SetPanelTopInset(hubPanel, TopUtilityBarHeight);
+            SetPanelTopInset(workshopPanel, TopUtilityBarHeight);
             StretchPanelFullScreen(flightPanel);
-            StretchPanelFullScreen(debriefPanel);
+            SetPanelTopInset(debriefPanel, TopUtilityBarHeight);
 
             EnsureSaveManagerInMainScene(root);
+            RefreshUtilityBarState();
+        }
+
+        public static float GetReservedTopBarHeight(Transform panelTransform)
+        {
+            if (panelTransform == null || panelTransform.parent == null) return 0f;
+            Transform utilityBar = panelTransform.parent.Find("AgencyUtilityBar");
+            return utilityBar != null ? TopUtilityBarHeight : 0f;
+        }
+
+        private Canvas ResolveMainCanvas()
+        {
+            GameObject[] knownPanels = { hubPanel, workshopPanel, flightPanel, debriefPanel };
+            for (int i = 0; i < knownPanels.Length; i++)
+            {
+                if (knownPanels[i] == null) continue;
+                Canvas parentCanvas = knownPanels[i].GetComponentInParent<Canvas>(true);
+                if (parentCanvas != null && parentCanvas.GetComponent<TooltipSystem>() == null)
+                {
+                    return parentCanvas;
+                }
+            }
+
+            GameObject namedCanvas = GameObject.Find("MainCanvas");
+            if (namedCanvas != null)
+            {
+                Canvas c = namedCanvas.GetComponent<Canvas>();
+                if (c != null) return c;
+            }
+
+            Canvas[] allCanvases = FindObjectsOfType<Canvas>(true);
+            for (int i = 0; i < allCanvases.Length; i++)
+            {
+                Canvas c = allCanvases[i];
+                if (c != null
+                    && c.GetComponent<TooltipSystem>() == null
+                    && c.gameObject.scene.IsValid()
+                    && c.gameObject.scene.name != "DontDestroyOnLoad")
+                {
+                    return c;
+                }
+            }
+
+            return null;
+        }
+
+        private Transform ResolveCanvasRoot()
+        {
+            if (_canvasRoot != null && _canvasRoot.GetComponent<TooltipSystem>() == null)
+            {
+                return _canvasRoot;
+            }
+            Canvas canvas = ResolveMainCanvas();
+            if (canvas != null)
+            {
+                _canvasRoot = canvas.transform;
+                return _canvasRoot;
+            }
+            return null;
+        }
+
+        private static void SetPanelTopInset(GameObject panel, float topInset)
+        {
+            if (panel == null) return;
+            var rt = panel.GetComponent<RectTransform>();
+            if (rt != null && rt.anchorMin == Vector2.zero && rt.anchorMax == Vector2.one)
+            {
+                rt.offsetMin = Vector2.zero;
+                rt.offsetMax = new Vector2(0f, -topInset);
+            }
         }
 
         private static void StretchPanelFullScreen(GameObject panel)
@@ -953,7 +1041,7 @@ namespace AstraLink.Core
             rt.offsetMax = Vector2.zero;
 
             var txt = labelObj.GetComponent<Text>();
-            txt.font = Resources.GetBuiltinResource<Font>("TimesNewRoman.ttf") ?? Resources.GetBuiltinResource<Font>("Arial.ttf");
+            txt.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             txt.text = titleText + "\n[Switch screens: top buttons or keys 1 / 2 / 3 / 4]";
             txt.fontSize = 32;
             txt.alignment = TextAnchor.MiddleCenter;
@@ -1054,15 +1142,188 @@ namespace AstraLink.Core
                 savePanel = gameObject.AddComponent<SaveManagerPanelUI>();
             }
 
-            Font timesFont = Resources.GetBuiltinResource<Font>("TimesNewRoman.ttf") ?? Resources.GetBuiltinResource<Font>("Arial.ttf");
-            savePanel.Initialize(canvasRoot, timesFont);
+            Font uiFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            savePanel.Initialize(canvasRoot, uiFont);
             savePanel.OnLoadRequested -= HandleSaveLoadedInMainScene;
             savePanel.OnLoadRequested += HandleSaveLoadedInMainScene;
+            _saveManagerPanel = savePanel;
         }
 
         private void HandleSaveLoadedInMainScene(SaveSlotMetadata _)
         {
+            _saveManagerPanel?.Close();
             ReloadStateFromActiveSave();
+            RefreshUtilityBarState();
+            ShowNavStatusToast("Campaign save loaded.", false);
+        }
+
+        public void OpenSaveManagerModal()
+        {
+            Transform canvasRoot = ResolveCanvasRoot();
+            if (_saveManagerPanel == null && canvasRoot != null)
+            {
+                EnsureSaveManagerInMainScene(canvasRoot);
+            }
+            _saveManagerPanel?.Open();
+        }
+
+        private void EnsureAgencyUtilityBar(Transform canvasRoot)
+        {
+            if (canvasRoot == null) return;
+
+            Transform existing = canvasRoot.Find("AgencyUtilityBar");
+            if (existing != null)
+            {
+                _agencyUtilityBar = existing.gameObject;
+                _utilityBackToMapBtnObj = existing.Find("Btn_BackToSpaceCenter")?.gameObject;
+                _utilityLocationText = existing.Find("UtilityLocationText")?.GetComponent<Text>();
+                return;
+            }
+
+            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
+            _agencyUtilityBar = new GameObject("AgencyUtilityBar", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(HorizontalLayoutGroup));
+            _agencyUtilityBar.transform.SetParent(canvasRoot, false);
+
+            RectTransform barRt = _agencyUtilityBar.GetComponent<RectTransform>();
+            barRt.anchorMin = new Vector2(0f, 1f);
+            barRt.anchorMax = new Vector2(1f, 1f);
+            barRt.pivot = new Vector2(0.5f, 1f);
+            barRt.anchoredPosition = Vector2.zero;
+            barRt.sizeDelta = new Vector2(0f, TopUtilityBarHeight);
+
+            Image barBg = _agencyUtilityBar.GetComponent<Image>();
+            barBg.color = new Color(0.05f, 0.09f, 0.16f, 0.94f);
+
+            HorizontalLayoutGroup hl = _agencyUtilityBar.GetComponent<HorizontalLayoutGroup>();
+            hl.padding = new RectOffset(14, 14, 5, 5);
+            hl.spacing = 10f;
+            hl.childAlignment = TextAnchor.MiddleLeft;
+            hl.childControlWidth = true;
+            hl.childControlHeight = true;
+            hl.childForceExpandWidth = false;
+            hl.childForceExpandHeight = true;
+
+            Button backBtn = CreateUtilityButton(
+                _agencyUtilityBar.transform,
+                "Btn_BackToSpaceCenter",
+                "<< SPACE CENTER",
+                new Color(0.14f, 0.42f, 0.68f, 1f),
+                178f,
+                font,
+                () => SpaceCenterMapUI.Instance?.ShowMap());
+            _utilityBackToMapBtnObj = backBtn.gameObject;
+
+            GameObject titleObj = new GameObject("UtilityLocationText", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text), typeof(LayoutElement));
+            titleObj.transform.SetParent(_agencyUtilityBar.transform, false);
+            titleObj.GetComponent<LayoutElement>().flexibleWidth = 1f;
+            _utilityLocationText = titleObj.GetComponent<Text>();
+            _utilityLocationText.font = font;
+            _utilityLocationText.fontSize = 14;
+            _utilityLocationText.fontStyle = FontStyle.Bold;
+            _utilityLocationText.alignment = TextAnchor.MiddleLeft;
+            _utilityLocationText.color = new Color(0.78f, 0.90f, 1f, 1f);
+            _utilityLocationText.raycastTarget = false;
+
+            CreateUtilityButton(
+                _agencyUtilityBar.transform,
+                "Btn_Saves",
+                "SAVES",
+                new Color(0.14f, 0.34f, 0.52f, 1f),
+                116f,
+                font,
+                OpenSaveManagerModal);
+
+            CreateUtilityButton(
+                _agencyUtilityBar.transform,
+                "Btn_HowItWorks",
+                "? HOW IT WORKS",
+                new Color(0.16f, 0.52f, 0.34f, 1f),
+                168f,
+                font,
+                () => OnboardingHelpUI.Show(canvasRoot));
+        }
+
+        private static Button CreateUtilityButton(
+            Transform parent,
+            string name,
+            string label,
+            Color bgColor,
+            float width,
+            Font font,
+            UnityEngine.Events.UnityAction onClick)
+        {
+            GameObject btnObj = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button), typeof(LayoutElement));
+            btnObj.transform.SetParent(parent, false);
+            btnObj.GetComponent<LayoutElement>().preferredWidth = width;
+
+            Image bg = btnObj.GetComponent<Image>();
+            bg.color = bgColor;
+
+            Button btn = btnObj.GetComponent<Button>();
+            btn.targetGraphic = bg;
+            if (onClick != null) btn.onClick.AddListener(onClick);
+
+            GameObject txtObj = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+            txtObj.transform.SetParent(btnObj.transform, false);
+            RectTransform trt = txtObj.GetComponent<RectTransform>();
+            trt.anchorMin = Vector2.zero;
+            trt.anchorMax = Vector2.one;
+            trt.offsetMin = new Vector2(6f, 0f);
+            trt.offsetMax = new Vector2(-6f, 0f);
+
+            Text txt = txtObj.GetComponent<Text>();
+            txt.font = font;
+            txt.text = label;
+            txt.fontSize = 13;
+            txt.fontStyle = FontStyle.Bold;
+            txt.alignment = TextAnchor.MiddleCenter;
+            txt.color = Color.white;
+            txt.raycastTarget = false;
+
+            return btn;
+        }
+
+        public void RefreshUtilityBarState()
+        {
+            if (_agencyUtilityBar == null) return;
+
+            bool isMapOpen = SpaceCenterMapUI.Instance != null && SpaceCenterMapUI.Instance.IsMapOpen;
+            bool inFlightView = !isMapOpen && CurrentScreen == GameScreen.Flight;
+            _agencyUtilityBar.SetActive(!inFlightView);
+
+            if (inFlightView) return;
+
+            if (_utilityBackToMapBtnObj != null)
+            {
+                _utilityBackToMapBtnObj.SetActive(SpaceCenterMapUI.Instance != null && !isMapOpen);
+            }
+
+            if (_utilityLocationText != null)
+            {
+                if (isMapOpen)
+                {
+                    _utilityLocationText.text = "ASTRA-LINK SPACE CENTER  //  CLICK A FACILITY TO BEGIN";
+                }
+                else
+                {
+                    switch (CurrentScreen)
+                    {
+                        case GameScreen.Hub:
+                            _utilityLocationText.text = "MISSION CONTROL  //  CONTRACTS";
+                            break;
+                        case GameScreen.Workshop:
+                            _utilityLocationText.text = "SPACECRAFT HANGAR  //  BUILD & R&D";
+                            break;
+                        case GameScreen.Debrief:
+                            _utilityLocationText.text = "POST-FLIGHT DEBRIEF";
+                            break;
+                        default:
+                            _utilityLocationText.text = "ASTRA-LINK OPERATIONS";
+                            break;
+                    }
+                }
+            }
         }
 
         private void UpdateTopNavHighlight(GameScreen activeScreen)
@@ -1119,7 +1380,7 @@ namespace AstraLink.Core
             txtRt.offsetMax = Vector2.zero;
 
             var txt = txtObj.GetComponent<Text>();
-            txt.font = Resources.GetBuiltinResource<Font>("TimesNewRoman.ttf") ?? Resources.GetBuiltinResource<Font>("Arial.ttf");
+            txt.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             txt.text = label;
             txt.fontSize = 22;
             txt.alignment = TextAnchor.MiddleCenter;
@@ -1129,8 +1390,7 @@ namespace AstraLink.Core
         private void ShowNavStatusToast(string message, bool isWarning)
         {
             if (string.IsNullOrWhiteSpace(message)) return;
-            Canvas canvas = FindObjectOfType<Canvas>();
-            Transform canvasRoot = canvas != null ? canvas.transform : null;
+            Transform canvasRoot = ResolveCanvasRoot();
             if (canvasRoot == null) return;
 
             if (_navStatusToastObj == null)

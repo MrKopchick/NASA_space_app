@@ -223,7 +223,7 @@ namespace AstraLink.UI.Workshop
             rt.anchorMax = Vector2.one;
             rt.pivot = new Vector2(0.5f, 0.5f);
             rt.offsetMin = Vector2.zero;
-            rt.offsetMax = Vector2.zero;
+            rt.offsetMax = new Vector2(0f, -GameManager.GetReservedTopBarHeight(panelTransform));
             rt.localScale = Vector3.one;
         }
 

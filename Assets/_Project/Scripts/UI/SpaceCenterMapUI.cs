@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using AstraLink.Core;
 using AstraLink.UI.Hub;
+using AstraLink.UI.Workshop;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.Tilemaps;
@@ -48,6 +49,10 @@ namespace AstraLink.UI
         [SerializeField] private GameObject workshopPanel;
         [SerializeField] private GameObject flightPanel;
         [SerializeField] private GameObject debriefPanel;
+        [SerializeField] private GameObject spaceCenterGrid;
+
+        public static SpaceCenterMapUI Instance { get; private set; }
+        public bool IsMapOpen => _isMapOpen;
 
         private class BuildingBinding
         {
@@ -71,6 +76,7 @@ namespace AstraLink.UI
 
         private void Awake()
         {
+            Instance = this;
             // Upgrade old serialized yellow hover colors to blue automatically
             if (tilemapHoverColor.r > 0.9f && tilemapHoverColor.b < 0.65f)
             {
@@ -151,6 +157,10 @@ namespace AstraLink.UI
                 if (nav != null) _topNavBarObj = nav.gameObject;
             }
             SetPanelActive(_topNavBarObj, false);
+            if (spaceCenterGrid != null)
+            {
+                spaceCenterGrid.SetActive(true);
+            }
 
             gameObject.SetActive(true);
             if (_backToMapButtonObj != null)
@@ -161,6 +171,7 @@ namespace AstraLink.UI
             ResetAllHoverStates();
             ClearTooltip();
             UpdateProjectedButtonRectsAndHover();
+            GameManager.Instance?.RefreshUtilityBarState();
         }
 
         public void OpenMissionControl()
@@ -207,17 +218,24 @@ namespace AstraLink.UI
             LeaveMapForScreen();
             if (GameManager.Instance != null)
             {
-                GameManager.Instance.ShowHub();
+                GameManager.Instance.ShowWorkshop();
             }
             else
             {
-                SetPanelActive(hubPanel, true);
+                SetPanelActive(workshopPanel, true);
             }
 
-            RnDPanelUI rnd = FindObjectOfType<RnDPanelUI>(true);
-            if (rnd != null)
+            if (BuilderPanelUI.Instance != null)
             {
-                rnd.gameObject.SetActive(true);
+                BuilderPanelUI.Instance.OpenRnDOverlay();
+            }
+            else
+            {
+                RnDPanelUI rnd = FindObjectOfType<RnDPanelUI>(true);
+                if (rnd != null)
+                {
+                    rnd.gameObject.SetActive(true);
+                }
             }
         }
 
@@ -226,13 +244,21 @@ namespace AstraLink.UI
             _isMapOpen = false;
             ResetAllHoverStates();
             ClearTooltip();
-            SetPanelActive(_topNavBarObj, true);
+            if (spaceCenterGrid != null)
+            {
+                spaceCenterGrid.SetActive(false);
+            }
             gameObject.SetActive(false);
+            bool hasUtilityBar = transform.parent != null && transform.parent.Find("AgencyUtilityBar") != null;
             if (_backToMapButtonObj != null)
             {
-                _backToMapButtonObj.SetActive(true);
-                _backToMapButtonObj.transform.SetAsLastSibling();
+                _backToMapButtonObj.SetActive(!hasUtilityBar);
+                if (!hasUtilityBar)
+                {
+                    _backToMapButtonObj.transform.SetAsLastSibling();
+                }
             }
+            GameManager.Instance?.RefreshUtilityBarState();
         }
 
         private void HandleGameScreenChanged(GameScreen screen)
@@ -243,8 +269,13 @@ namespace AstraLink.UI
             }
             else if (_backToMapButtonObj != null)
             {
-                _backToMapButtonObj.SetActive(!_isMapOpen);
-                _backToMapButtonObj.transform.SetAsLastSibling();
+                bool hasUtilityBar = transform.parent != null && transform.parent.Find("AgencyUtilityBar") != null;
+                bool showStandalone = !_isMapOpen && !hasUtilityBar && screen != GameScreen.Flight;
+                _backToMapButtonObj.SetActive(showStandalone);
+                if (showStandalone)
+                {
+                    _backToMapButtonObj.transform.SetAsLastSibling();
+                }
             }
         }
 
@@ -254,6 +285,13 @@ namespace AstraLink.UI
 
         private void UpdateProjectedButtonRectsAndHover()
         {
+            if (IsOverlayBlockingMap())
+            {
+                ResetAllHoverStates();
+                ClearTooltip();
+                return;
+            }
+
             Camera cam = Camera.main;
             if (cam == null) return;
 
@@ -359,6 +397,30 @@ namespace AstraLink.UI
         // REFERENCE RESOLUTION & BUTTON WIRING
         // =====================================================================
 
+        private bool IsOverlayBlockingMap()
+        {
+            Transform parentCanvas = transform.parent;
+            if (parentCanvas == null) return false;
+
+            Transform helpOverlay = parentCanvas.Find("OnboardingHelpOverlay");
+            if (helpOverlay != null && helpOverlay.gameObject.activeInHierarchy) return true;
+
+            Transform saveOverlay = parentCanvas.Find("SaveManagerPanelOverlay");
+            if (saveOverlay != null && saveOverlay.gameObject.activeInHierarchy) return true;
+
+            Transform utilityBar = parentCanvas.Find("AgencyUtilityBar");
+            if (utilityBar != null && utilityBar.gameObject.activeInHierarchy)
+            {
+                RectTransform barRt = utilityBar as RectTransform;
+                if (barRt != null && RectTransformUtility.RectangleContainsScreenPoint(barRt, Input.mousePosition))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private void AutoResolveReferences()
         {
             Transform parentCanvas = transform.parent;
@@ -368,6 +430,19 @@ namespace AstraLink.UI
                 if (workshopPanel == null) workshopPanel = FindSibling(parentCanvas, "WorkshopPanel");
                 if (flightPanel == null) flightPanel = FindSibling(parentCanvas, "FlightPanel");
                 if (debriefPanel == null) debriefPanel = FindSibling(parentCanvas, "DebriefPanel");
+            }
+
+            if (spaceCenterGrid == null)
+            {
+                Grid[] grids = FindObjectsOfType<Grid>(true);
+                for (int i = 0; i < grids.Length; i++)
+                {
+                    if (grids[i] != null && grids[i].gameObject.scene.IsValid())
+                    {
+                        spaceCenterGrid = grids[i].gameObject;
+                        break;
+                    }
+                }
             }
 
             Transform buildingsLayer = transform.Find("BuildingsLayer");

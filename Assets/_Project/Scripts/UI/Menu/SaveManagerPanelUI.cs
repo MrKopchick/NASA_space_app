@@ -28,7 +28,7 @@ namespace AstraLink.UI
             if (_modalRoot != null) return;
             _uiFont = referenceFont != null
                 ? referenceFont
-                : (Resources.GetBuiltinResource<Font>("TimesNewRoman.ttf") ?? Resources.GetBuiltinResource<Font>("Arial.ttf"));
+                : Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
             BuildModalHierarchy(canvasTransform);
             _modalRoot.SetActive(false);
