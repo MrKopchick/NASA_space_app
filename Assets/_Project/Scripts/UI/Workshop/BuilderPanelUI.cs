@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using AstraLink.Core;
+using AstraLink.UI;
 using AstraLink.UI.Hub;
 using UnityEngine;
 using UnityEngine.UI;
@@ -689,6 +690,7 @@ namespace AstraLink.UI.Workshop
             {
                 StretchFull(existingRoot.GetComponent<RectTransform>());
                 BindExistingHierarchy(existingRoot, workshopRoot);
+                PixelUITheme.ApplyToHierarchy(existingRoot);
                 return;
             }
 
@@ -843,6 +845,8 @@ namespace AstraLink.UI.Workshop
             rndPanelUI.OnRnDStateChanged -= RefreshWorkshopUI;
             rndPanelUI.OnRnDStateChanged += RefreshWorkshopUI;
             rndOverlay.SetActive(false);
+
+            PixelUITheme.ApplyToHierarchy(rootObj.transform);
         }
 
         private void BindExistingHierarchy(Transform root, Transform workshopRoot)

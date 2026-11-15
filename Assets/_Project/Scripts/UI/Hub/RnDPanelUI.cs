@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using AstraLink.Core;
+using AstraLink.UI;
 using AstraLink.UI.Workshop;
 using UnityEngine;
 using UnityEngine.UI;
@@ -170,6 +171,7 @@ namespace AstraLink.UI.Hub
                     closeBtn.onClick.AddListener(CloseModal);
                 }
                 _branchesContainer = existingRoot.Find("TechTreeBranchesContainer");
+                PixelUITheme.ApplyToHierarchy(existingRoot);
                 return;
             }
 
@@ -232,6 +234,8 @@ namespace AstraLink.UI.Hub
             branchesLayout.childControlHeight = true;
             branchesLayout.childForceExpandWidth = true;
             branchesLayout.childForceExpandHeight = true;
+
+            PixelUITheme.ApplyToHierarchy(rootObj.transform);
         }
 
         private void RebuildTechTreeBranches()
@@ -290,6 +294,7 @@ namespace AstraLink.UI.Hub
 
             // Branch 6: Onboard Autopilot Chip Progression (2 Slots ───► 4 Slots ───► 6 Slots)
             BuildAutopilotChipBranch(_branchesContainer, font);
+            PixelUITheme.ApplyToHierarchy(_branchesContainer);
         }
 
         private static GameObject CreateBranchRowObject(string objName, string branchLabel, Transform parent, Font font)

@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using AstraLink.Core;
+using AstraLink.UI;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -700,6 +701,7 @@ namespace AstraLink.UI.Workshop
 
             CreateText("Title", cardObj.transform, font, prefix + msg.Title, 16, FontStyle.Bold, badgeCol, TextAnchor.MiddleLeft);
             CreateText("Advice", cardObj.transform, font, msg.Advice, 14, FontStyle.Normal, new Color(0.90f, 0.94f, 0.98f, 1f), TextAnchor.MiddleLeft);
+            PixelUITheme.ApplyToHierarchy(cardObj.transform);
         }
 
         public void EnsureDryRunUIHierarchy()
@@ -708,6 +710,7 @@ namespace AstraLink.UI.Workshop
             if (existing != null)
             {
                 BindExistingHierarchy(existing);
+                PixelUITheme.ApplyToHierarchy(existing);
                 return;
             }
 
@@ -868,6 +871,8 @@ namespace AstraLink.UI.Workshop
             _dryRunTelemetryText.supportRichText = true;
             LayoutElement telLe = _dryRunTelemetryText.gameObject.AddComponent<LayoutElement>();
             telLe.preferredHeight = 24f;
+
+            PixelUITheme.ApplyToHierarchy(rootObj.transform);
         }
 
         private void BindExistingHierarchy(Transform root)
