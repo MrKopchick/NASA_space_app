@@ -26,7 +26,10 @@ namespace AstraLink.UI
         public void Initialize(Transform canvasTransform, Font referenceFont)
         {
             if (_modalRoot != null) return;
-            _uiFont = referenceFont != null ? referenceFont : Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            _uiFont = referenceFont != null
+                ? referenceFont
+                : (Resources.GetBuiltinResource<Font>("TimesNewRoman.ttf") ?? Resources.GetBuiltinResource<Font>("Arial.ttf"));
+
             BuildModalHierarchy(canvasTransform);
             _modalRoot.SetActive(false);
         }
@@ -79,7 +82,6 @@ namespace AstraLink.UI
         private void HandleCreateNew()
         {
             string customName = _nameInput != null ? _nameInput.text : string.Empty;
-            // Створює новий чистий сейв (нова кампанія) або копіює поточний, якщо зараз активна гра
             string currentPayload = GameManager.Instance != null
                 ? PlayerPrefs.GetString(GameManager.AgencyStatePrefsKey, string.Empty)
                 : string.Empty;

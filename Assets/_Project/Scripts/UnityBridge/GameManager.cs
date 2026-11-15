@@ -905,7 +905,7 @@ namespace AstraLink.Core
             rt.offsetMax = Vector2.zero;
 
             var txt = labelObj.GetComponent<Text>();
-            txt.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            txt.font = Resources.GetBuiltinResource<Font>("TimesNewRoman.ttf") ?? Resources.GetBuiltinResource<Font>("Arial.ttf");
             txt.text = titleText + "\n[Switch screens: top buttons or keys 1 / 2 / 3 / 4]";
             txt.fontSize = 32;
             txt.alignment = TextAnchor.MiddleCenter;
@@ -965,10 +965,11 @@ namespace AstraLink.Core
             {
                 savePanel = gameObject.AddComponent<SaveManagerPanelUI>();
             }
-            savePanel.Initialize(canvasRoot, Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"));
+
+            Font timesFont = Resources.GetBuiltinResource<Font>("TimesNewRoman.ttf") ?? Resources.GetBuiltinResource<Font>("Arial.ttf");
+            savePanel.Initialize(canvasRoot, timesFont);
             savePanel.OnLoadRequested -= HandleSaveLoadedInMainScene;
             savePanel.OnLoadRequested += HandleSaveLoadedInMainScene;
-
         }
 
         private void HandleSaveLoadedInMainScene(SaveSlotMetadata _)
@@ -1030,7 +1031,7 @@ namespace AstraLink.Core
             txtRt.offsetMax = Vector2.zero;
 
             var txt = txtObj.GetComponent<Text>();
-            txt.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            txt.font = Resources.GetBuiltinResource<Font>("TimesNewRoman.ttf") ?? Resources.GetBuiltinResource<Font>("Arial.ttf");
             txt.text = label;
             txt.fontSize = 22;
             txt.alignment = TextAnchor.MiddleCenter;
