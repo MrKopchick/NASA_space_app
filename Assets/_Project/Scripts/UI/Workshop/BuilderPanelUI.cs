@@ -907,6 +907,14 @@ namespace AstraLink.UI.Workshop
                     Transform slotRow = leftCol.Find("SlotRow_" + i);
                     if (slotRow == null) continue;
 
+                    int tooltipSlot = i;
+                    string fallbackKey = new[] { "slot_bus", "slot_power", "slot_battery", "slot_comms", "slot_science" }[tooltipSlot];
+                    TooltipTrigger.AttachDynamic(slotRow.gameObject, () =>
+                    {
+                        SatelliteComponent selected = _selectedSlots[tooltipSlot];
+                        return selected != null ? DescriptionTips.GetComponentTip(selected) : DescriptionTips.Get(fallbackKey);
+                    });
+
                     _slotPartNameTexts[i] = FindChild<Text>(slotRow, "InfoBox/PartName");
                     _slotPartStatsTexts[i] = FindChild<Text>(slotRow, "InfoBox/PartStats");
                     slotIconImages[i] = FindChild<Image>(slotRow, "IconFrame/PartIconSprite");
@@ -931,6 +939,14 @@ namespace AstraLink.UI.Workshop
                 Transform rocketRow = leftCol.Find("RocketSelectorRow");
                 if (rocketRow != null)
                 {
+                    TooltipTrigger.AttachDynamic(rocketRow.gameObject, () =>
+                    {
+                        RocketOption selected = GetSelectedRocket();
+                        OrbitDefinition orbit = GetActiveOrbit(GetActiveMissionGoal());
+                        return selected != null
+                            ? DescriptionTips.GetRocketTip(selected, ResourceGaugesUI.GetMaxRocketMassForOrbit(selected, orbit))
+                            : DescriptionTips.Get("slot_rocket");
+                    });
                     _rocketNameText = FindChild<Text>(rocketRow, "InfoBox/RocketName");
                     _rocketStatsText = FindChild<Text>(rocketRow, "InfoBox/RocketStats");
                     rocketIconImage = FindChild<Image>(rocketRow, "IconFrame/RocketIconSprite");

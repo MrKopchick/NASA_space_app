@@ -489,6 +489,7 @@ namespace AstraLink.UI.Workshop
             if (existingRoot != null)
             {
                 BindExistingHierarchy(existingRoot);
+                BindUX6RuleTooltips(existingRoot);
                 return;
             }
 
@@ -572,6 +573,7 @@ namespace AstraLink.UI.Workshop
             {
                 _rowWidgets.Add(BuildRuleRow(i, rootObj.transform, legacyFont, tmpFont));
             }
+            BindUX6RuleTooltips(rootObj.transform);
         }
 
         private static void CreateColumnHeaderLabel(Transform parent, Font font, string text, float width, Color color)
@@ -647,6 +649,49 @@ namespace AstraLink.UI.Workshop
                 WireRowCallbacks(i, w);
                 _rowWidgets.Add(w);
             }
+        }
+
+        private static void BindUX6RuleTooltips(Transform root)
+        {
+            if (root == null) return;
+            for (int i = 0; i < 6; i++)
+            {
+                Transform row = root.Find("RuleRow_" + i);
+                if (row == null) continue;
+                TooltipTrigger.Attach(row.gameObject, "ap_priority");
+                BindTooltipChild(row, "ControlsRow/Toggle_Enabled", "ap_priority");
+                BindTooltipChild(row, "ControlsRow/ConditionBlock", "ap_condition");
+                BindTooltipChild(row, "ControlsRow/ConditionBlock/CondInnerRow/Dropdown_Operator", "ap_condition");
+                BindTooltipChild(row, "ControlsRow/ConditionBlock/CondInnerRow/Input_Threshold", "ap_condition");
+                BindTooltipChild(row, "ControlsRow/ThenBlock", "ap_then");
+                BindTooltipChild(row, "ControlsRow/ThenBlock/Dropdown_Then", "ap_then");
+                BindTooltipChild(row, "ControlsRow/ElseBlock", "ap_else");
+                BindTooltipChild(row, "ControlsRow/ElseBlock/Dropdown_Else", "ap_else");
+
+                Transform metricNode = row.Find("ControlsRow/ObjectBlock/Dropdown_Metric");
+                if (metricNode != null)
+                {
+                    TMP_Dropdown dropdown = metricNode.GetComponent<TMP_Dropdown>();
+                    if (dropdown != null)
+                    {
+                        TooltipTrigger.AttachDynamic(metricNode.gameObject, () =>
+                        {
+                            string[] keys = { "ap_solar", "ap_battery", "ap_ssd", "ap_radiation" };
+                            return DescriptionTips.Get(keys[Mathf.Clamp(dropdown.value, 0, keys.Length - 1)]);
+                        });
+                    }
+                }
+            }
+            BindTooltipChild(root, "HeaderBar/Btn_PresetEclipse", "ap_solar");
+            BindTooltipChild(root, "HeaderBar/Btn_PresetStorm", "ap_safemode");
+            BindTooltipChild(root, "HeaderBar/Btn_ClearRules", "ap_priority");
+            BindTooltipChild(root, "HeaderBar/Btn_OpenDryRun", "btn_dry_run");
+        }
+
+        private static void BindTooltipChild(Transform root, string path, string key)
+        {
+            Transform child = root.Find(path);
+            if (child != null) TooltipTrigger.Attach(child.gameObject, key);
         }
 
         private RuleRowWidgets BuildRuleRow(int index, Transform parent, Font legacyFont, TMP_FontAsset tmpFont)
