@@ -766,6 +766,7 @@ namespace AstraLink.UI.Flight.SpaceMap
             BuildTopCenterSpaceStationButton(font);
             BuildChartsPopup(font);
             BuildSystemsPopup(font);
+            BindUX6HUDTooltips();
 
             EnsureAudioSources();
             RefreshAudioUI();
@@ -775,6 +776,46 @@ namespace AstraLink.UI.Flight.SpaceMap
             SetChartsPopupOpen(true, playSound: false);
             SetSystemsPopupOpen(true, playSound: false);
             SetCollapsed(false, playSound: false);
+        }
+
+        private void BindUX6HUDTooltips()
+        {
+            BindHudImage(_sciSlotBg, "btn_manual_science");
+            BindHudImage(_commsSlotBg, "btn_manual_comms");
+            BindHudImage(_safeSlotBg, "btn_manual_safemode");
+            BindHudImage(_eclipseBadgeBg, "hud_eclipse");
+            BindHudImage(_commBadgeBg, "hud_comm");
+            BindHudImage(_safeBadgeBg, "hud_safe");
+            BindHudImage(_batteryFillImg, "hud_battery");
+            BindHudImage(_ssdFillImg, "hud_ssd");
+            BindHudImage(_healthFillImg, "hud_health");
+            BindHudImage(_scienceFillImg, "hud_science");
+            BindHudImage(_radiationFillImg, "hud_radiation");
+            BindHudImage(_signalDelayFillImg, "hud_signal_delay");
+            if (_telemetryChartRaw != null && _telemetryChartRaw.transform.parent != null)
+                TooltipTrigger.Attach(_telemetryChartRaw.transform.parent.gameObject, "hud_chart");
+            if (_timelineScrubber != null)
+                TooltipTrigger.Attach(_timelineScrubber.gameObject, "hud_timeline");
+            if (_baseBatteryText != null) TooltipTrigger.Attach(_baseBatteryText.gameObject, "hud_battery");
+            if (_baseScienceText != null) TooltipTrigger.Attach(_baseScienceText.gameObject, "hud_science");
+            if (_baseHealthText != null) TooltipTrigger.Attach(_baseHealthText.gameObject, "hud_health");
+            if (_baseRadiationText != null) TooltipTrigger.Attach(_baseRadiationText.gameObject, "hud_radiation");
+            if (_statusAlertText != null) TooltipTrigger.Attach(_statusAlertText.gameObject, "hud_event");
+            if (_speed1xBtn != null) TooltipTrigger.Attach(_speed1xBtn.gameObject, "btn_speed");
+            if (_speed5xBtn != null) TooltipTrigger.Attach(_speed5xBtn.gameObject, "btn_speed");
+            if (_speed10xBtn != null) TooltipTrigger.Attach(_speed10xBtn.gameObject, "btn_speed");
+        }
+
+        private static void BindHudImage(Image image, string key)
+        {
+            if (image == null) return;
+            // Bind to the entire bar track rather than the changing-width fill region.
+            Transform target = image.transform.parent != null && (image.transform.parent.name == "Track" || image.transform.parent.name == "SignalDelayTrack")
+                ? image.transform.parent : image.transform;
+            if (target.GetComponent<Graphic>() != null)
+                TooltipTrigger.Attach(target.gameObject, key);
+            else
+                TooltipTrigger.Attach(image.gameObject, key);
         }
 
         private void BuildSeparatePlanetInfoPanel(Font font)
