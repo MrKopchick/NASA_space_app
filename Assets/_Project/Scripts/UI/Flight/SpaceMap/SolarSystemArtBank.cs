@@ -85,6 +85,9 @@ namespace AstraLink.UI.Flight.SpaceMap
         public AudioClip missionStart;
         public AudioClip missionSuccess;
 
+        [Header("UI Fonts (Assets/_Project/Fonts)")]
+        public Font uiPixelFont;
+
         private static SolarSystemArtBank _cachedBank;
         private static readonly Dictionary<string, Sprite[]> _sheetFramesCache = new Dictionary<string, Sprite[]>(StringComparer.Ordinal);
         private static readonly Dictionary<int, Sprite> _slicedSpriteCache = new Dictionary<int, Sprite>();
@@ -120,6 +123,19 @@ namespace AstraLink.UI.Flight.SpaceMap
                 _cachedBank = Resources.Load<SolarSystemArtBank>("SolarSystem/SolarSystemArtBank");
             }
             return _cachedBank;
+        }
+
+        /// <summary>
+        /// Returns the shared Kenney Pixel UI font (falling back to LegacyRuntime if unassigned).
+        /// </summary>
+        public static Font GetPixelFont()
+        {
+            SolarSystemArtBank bank = Load();
+            if (bank != null && bank.uiPixelFont != null)
+            {
+                return bank.uiPixelFont;
+            }
+            return Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         }
 
         /// <summary>

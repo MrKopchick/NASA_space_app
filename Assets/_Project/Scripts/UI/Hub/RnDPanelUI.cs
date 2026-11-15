@@ -21,6 +21,21 @@ namespace AstraLink.UI.Hub
 
         private Text _capitalBadgeText;
         private Transform _branchesContainer;
+        private RectTransform _viewportRt;
+        private RectTransform _canvasRt;
+        private Text _zoomBadgeText;
+
+        private float _currentZoom = 0.82f;
+        private float _targetZoom = 0.82f;
+        private Vector2 _currentPan = Vector2.zero;
+        private Vector2 _targetPan = Vector2.zero;
+        private bool _isDragging;
+        private bool _didDragThisPress;
+        private float _dragDistance;
+        private bool _hasInitializedView;
+        private Vector2 _lastMousePos;
+        private const float MinZoom = 0.50f;
+        private const float MaxZoom = 2.20f;
 
         public event Action OnRnDStateChanged;
 
@@ -78,6 +93,10 @@ namespace AstraLink.UI.Hub
 
         private void OnEnable()
         {
+            _isDragging = false;
+            _didDragThisPress = false;
+            _dragDistance = 0f;
+            _hasInitializedView = false;
             if (_allComponents == null || _allComponents.Count == 0)
             {
                 AgencyState state = GameManager.Instance != null
@@ -89,6 +108,166 @@ namespace AstraLink.UI.Hub
             {
                 RefreshRnDView();
             }
+        }
+
+        private void Update()
+        {
+            if (_viewportRt == null || _canvasRt == null) return;
+
+            Camera uiCam = GetCanvasCamera();
+            bool pointerInViewport = RectTransformUtility.RectangleContainsScreenPoint(_viewportRt, Input.mousePosition, uiCam);
+
+            // 1. Scroll-wheel zoom toward cursor
+            float minZoom = GetMinZoom();
+            float scroll = Input.mouseScrollDelta.y;
+            if (pointerInViewport && Mathf.Abs(scroll) > 0.001f)
+            {
+                float oldTargetZoom = _targetZoom;
+                float factor = scroll > 0f ? 1.14f : (1f / 1.14f);
+                _targetZoom = Mathf.Clamp(_targetZoom * factor, minZoom, MaxZoom);
+
+                if (RectTransformUtility.ScreenPointToLocalPointInRectangle(_viewportRt, Input.mousePosition, uiCam, out Vector2 localCursor))
+                {
+                    float ratio = _targetZoom / Mathf.Max(0.01f, oldTargetZoom);
+                    _targetPan = localCursor - (localCursor - _targetPan) * ratio;
+                }
+            }
+
+            // 2. Drag to pan (Left, Middle, or Right mouse button inside viewport)
+            bool dragDown = Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1) || Input.GetMouseButtonDown(2);
+            bool dragHeld = Input.GetMouseButton(0) || Input.GetMouseButton(1) || Input.GetMouseButton(2);
+            if (dragDown && pointerInViewport)
+            {
+                _isDragging = true;
+                _didDragThisPress = false;
+                _dragDistance = 0f;
+                _lastMousePos = Input.mousePosition;
+            }
+            else if (!dragHeld)
+            {
+                _isDragging = false;
+            }
+
+            if (_isDragging && dragHeld)
+            {
+                Vector2 curMouse = Input.mousePosition;
+                Vector2 delta = curMouse - _lastMousePos;
+                _lastMousePos = curMouse;
+
+                if (delta.sqrMagnitude > 0.01f)
+                {
+                    _dragDistance += delta.magnitude;
+                    if (_dragDistance > 6f)
+                    {
+                        _didDragThisPress = true;
+                    }
+                    float scaleFactor = GetCanvasScaleFactor();
+                    Vector2 scaledDelta = delta / Mathf.Max(0.01f, scaleFactor);
+                    _targetPan += scaledDelta;
+                    ClampPan(ref _targetPan, _targetZoom);
+                    _currentPan = _targetPan;
+                }
+            }
+
+            // 3. Keyboard pan & zoom shortcuts
+            float panSpeed = 750f * Time.unscaledDeltaTime;
+            if (Input.GetKey(KeyCode.LeftArrow) || Input.GetKey(KeyCode.A)) _targetPan.x += panSpeed;
+            if (Input.GetKey(KeyCode.RightArrow) || Input.GetKey(KeyCode.D)) _targetPan.x -= panSpeed;
+            if (Input.GetKey(KeyCode.UpArrow) || Input.GetKey(KeyCode.W)) _targetPan.y -= panSpeed;
+            if (Input.GetKey(KeyCode.DownArrow) || Input.GetKey(KeyCode.S)) _targetPan.y += panSpeed;
+            if (Input.GetKeyDown(KeyCode.Equals) || Input.GetKeyDown(KeyCode.KeypadPlus)) AdjustZoom(0.20f);
+            if (Input.GetKeyDown(KeyCode.Minus) || Input.GetKeyDown(KeyCode.KeypadMinus)) AdjustZoom(-0.20f);
+            if (Input.GetKeyDown(KeyCode.F)) FitTreeToViewport();
+            if (Input.GetKeyDown(KeyCode.Alpha0) || Input.GetKeyDown(KeyCode.Keypad0)) ResetView();
+
+            ClampPan(ref _targetPan, _targetZoom);
+            ClampPan(ref _currentPan, _currentZoom);
+            _targetZoom = Mathf.Clamp(_targetZoom, minZoom, MaxZoom);
+
+            // 4. Smooth interpolation
+            float t = 1f - Mathf.Exp(-14f * Time.unscaledDeltaTime);
+            _currentZoom = Mathf.Lerp(_currentZoom, _targetZoom, t);
+            _currentPan = Vector2.Lerp(_currentPan, _targetPan, t);
+
+            _canvasRt.localScale = new Vector3(_currentZoom, _currentZoom, 1f);
+            _canvasRt.anchoredPosition = _currentPan;
+
+            if (_zoomBadgeText != null)
+            {
+                _zoomBadgeText.text = string.Format("{0:0}%", _currentZoom * 100f);
+            }
+        }
+
+        private Camera GetCanvasCamera()
+        {
+            Canvas c = GetComponentInParent<Canvas>();
+            if (c == null || c.renderMode == RenderMode.ScreenSpaceOverlay) return null;
+            return c.worldCamera;
+        }
+
+        private float GetCanvasScaleFactor()
+        {
+            Canvas c = GetComponentInParent<Canvas>();
+            return c != null ? c.scaleFactor : 1f;
+        }
+
+        private void ClampPan(ref Vector2 pan, float zoom)
+        {
+            if (_viewportRt == null || _canvasRt == null) return;
+            Rect vp = _viewportRt.rect;
+            Rect content = _canvasRt.rect;
+            if (vp.width <= 1f || vp.height <= 1f || content.width <= 1f || content.height <= 1f) return;
+            float scaledW = content.width * zoom;
+            float scaledH = content.height * zoom;
+            float maxPanX = scaledW > vp.width ? (scaledW - vp.width) * 0.5f + 24f : 0f;
+            float maxPanY = scaledH > vp.height ? (scaledH - vp.height) * 0.5f + 24f : 0f;
+            pan.x = Mathf.Clamp(pan.x, -maxPanX, maxPanX);
+            pan.y = Mathf.Clamp(pan.y, -maxPanY, maxPanY);
+        }
+
+        private float GetMinZoom()
+        {
+            if (_viewportRt == null || _canvasRt == null) return MinZoom;
+            Rect vp = _viewportRt.rect;
+            Rect content = _canvasRt.rect;
+            if (content.width > 10f && content.height > 10f && vp.width > 10f && vp.height > 10f)
+            {
+                float zx = (vp.width - 40f) / content.width;
+                float zy = (vp.height - 40f) / content.height;
+                return Mathf.Clamp(Mathf.Min(zx, zy), MinZoom, 1.15f);
+            }
+            return 0.78f;
+        }
+
+        public void AdjustZoom(float delta)
+        {
+            _targetZoom = Mathf.Clamp(_targetZoom + delta, GetMinZoom(), MaxZoom);
+        }
+
+        public void ResetView()
+        {
+            _targetZoom = Mathf.Max(1.0f, GetMinZoom());
+            _targetPan = Vector2.zero;
+        }
+
+        public void FitTreeToViewport()
+        {
+            if (_canvasRt != null)
+            {
+                LayoutRebuilder.ForceRebuildLayoutImmediate(_canvasRt);
+            }
+            _targetZoom = GetMinZoom();
+            _targetPan = Vector2.zero;
+        }
+
+        private void FocusOnRect(RectTransform targetRt, float desiredZoom = 1.25f)
+        {
+            if (_didDragThisPress || targetRt == null || _canvasRt == null) return;
+            LayoutRebuilder.ForceRebuildLayoutImmediate(_canvasRt);
+            Vector2 localCenter = _canvasRt.InverseTransformPoint(targetRt.TransformPoint(targetRt.rect.center));
+            _targetZoom = Mathf.Clamp(desiredZoom, GetMinZoom(), MaxZoom);
+            _targetPan = -localCenter * _targetZoom;
+            ClampPan(ref _targetPan, _targetZoom);
         }
 
         public static bool IsComponentUnlocked(SatelliteComponent comp, AgencyState state)
@@ -164,29 +343,39 @@ namespace AstraLink.UI.Hub
             Transform existingRoot = transform.Find("RnDContentRoot");
             if (existingRoot != null)
             {
-                _capitalBadgeText = FindChild<Text>(existingRoot, "TopBar/CapitalBadge");
-                Button closeBtn = FindChild<Button>(existingRoot, "TopBar/Btn_CloseRnD");
-                if (closeBtn != null)
+                Transform existingVp = existingRoot.Find("TechTreeViewport");
+                if (existingVp != null)
                 {
-                    closeBtn.onClick.RemoveAllListeners();
-                    closeBtn.onClick.AddListener(CloseModal);
+                    _capitalBadgeText = FindChild<Text>(existingRoot, "TopBar/CapitalGroup/CapitalBadge")
+                        ?? FindChild<Text>(existingRoot, "TopBar/CapitalBadge");
+                    _zoomBadgeText = FindChild<Text>(existingRoot, "TopBar/ZoomControls/Btn_ZoomReset/Text");
+                    Button closeBtn = FindChild<Button>(existingRoot, "TopBar/Btn_CloseRnD");
+                    if (closeBtn != null)
+                    {
+                        closeBtn.onClick.RemoveAllListeners();
+                        closeBtn.onClick.AddListener(CloseModal);
+                    }
+                    _viewportRt = existingVp.GetComponent<RectTransform>();
+                    _branchesContainer = existingVp.Find("TechTreeBranchesContainer");
+                    _canvasRt = _branchesContainer != null ? _branchesContainer.GetComponent<RectTransform>() : null;
+                    PixelUITheme.ApplyToHierarchy(existingRoot);
+                    return;
                 }
-                _branchesContainer = existingRoot.Find("TechTreeBranchesContainer");
-                PixelUITheme.ApplyToHierarchy(existingRoot);
-                return;
+                if (Application.isPlaying) Destroy(existingRoot.gameObject);
+                else DestroyImmediate(existingRoot.gameObject);
             }
 
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Font font = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
 
             Image rootBg = GetComponent<Image>();
             if (rootBg == null) rootBg = gameObject.AddComponent<Image>();
-            rootBg.color = new Color(0.04f, 0.07f, 0.13f, 0.99f);
+            rootBg.color = new Color(0.03f, 0.05f, 0.10f, 1f);
 
             GameObject rootObj = CreateUIObject("RnDContentRoot", transform);
             StretchFull(rootObj.GetComponent<RectTransform>());
 
             VerticalLayoutGroup rootLayout = rootObj.AddComponent<VerticalLayoutGroup>();
-            rootLayout.padding = new RectOffset(22, 22, 16, 16);
+            rootLayout.padding = new RectOffset(20, 20, 14, 14);
             rootLayout.spacing = 8f;
             rootLayout.childControlWidth = true;
             rootLayout.childControlHeight = true;
@@ -198,15 +387,18 @@ namespace AstraLink.UI.Hub
             Image topBg = topBar.AddComponent<Image>();
             topBg.color = new Color(0.08f, 0.14f, 0.24f, 1f);
             LayoutElement topLe = topBar.AddComponent<LayoutElement>();
+            topLe.minHeight = 54f;
             topLe.preferredHeight = 54f;
+            topLe.flexibleHeight = 0f;
 
             HorizontalLayoutGroup topLayout = topBar.AddComponent<HorizontalLayoutGroup>();
-            topLayout.padding = new RectOffset(28, 24, 10, 10);
-            topLayout.spacing = 16f;
+            topLayout.padding = new RectOffset(20, 18, 7, 7);
+            topLayout.spacing = 12f;
             topLayout.childAlignment = TextAnchor.MiddleLeft;
             topLayout.childControlWidth = true;
             topLayout.childControlHeight = true;
             topLayout.childForceExpandWidth = false;
+            topLayout.childForceExpandHeight = false;
 
             Text title = CreateText("Title", topBar.transform, font,
                 "R&D TECHNOLOGY TREE",
@@ -238,26 +430,89 @@ namespace AstraLink.UI.Hub
             }
 
             _capitalBadgeText = CreateText("CapitalBadge", capGroup.transform, font,
-                "AGENCY CAPITAL: $50k", 18, FontStyle.Bold,
+                "AGENCY CAPITAL: $50k", 17, FontStyle.Bold,
                 new Color(0.45f, 0.95f, 0.65f, 1f), TextAnchor.MiddleRight);
             LayoutElement capLe = _capitalBadgeText.gameObject.AddComponent<LayoutElement>();
             capLe.flexibleWidth = 1f;
 
-            CreateButton(topBar.transform, "Btn_CloseRnD", "BACK TO HANGAR [X]",
-                new Color(0.58f, 0.18f, 0.20f, 1f), 210f, 42f, font, CloseModal);
+            // Zoom Controls (- | 100% | + | FIT)
+            GameObject zoomGroup = CreateUIObject("ZoomControls", topBar.transform);
+            LayoutElement zoomGroupLe = zoomGroup.AddComponent<LayoutElement>();
+            zoomGroupLe.preferredHeight = 38f;
+            zoomGroupLe.flexibleHeight = 0f;
+            zoomGroupLe.flexibleWidth = 0f;
+            HorizontalLayoutGroup zoomHl = zoomGroup.AddComponent<HorizontalLayoutGroup>();
+            zoomHl.spacing = 5f;
+            zoomHl.childAlignment = TextAnchor.MiddleCenter;
+            zoomHl.childControlWidth = true;
+            zoomHl.childControlHeight = true;
+            zoomHl.childForceExpandWidth = false;
+            zoomHl.childForceExpandHeight = false;
 
-            // 2. Container for the 6 Horizontal Tech Tree Branches
-            GameObject branchesObj = CreateUIObject("TechTreeBranchesContainer", rootObj.transform);
+            CreateButton(zoomGroup.transform, "Btn_ZoomOut", "-",
+                new Color(0.14f, 0.24f, 0.38f, 1f), 40f, 38f, font, () => AdjustZoom(-0.22f));
+            Button resetZoomBtn = CreateButton(zoomGroup.transform, "Btn_ZoomReset", "82%",
+                new Color(0.11f, 0.19f, 0.32f, 1f), 68f, 38f, font, ResetView);
+            _zoomBadgeText = resetZoomBtn.GetComponentInChildren<Text>();
+            CreateButton(zoomGroup.transform, "Btn_ZoomIn", "+",
+                new Color(0.14f, 0.24f, 0.38f, 1f), 40f, 38f, font, () => AdjustZoom(0.22f));
+            CreateButton(zoomGroup.transform, "Btn_ZoomFit", "FIT",
+                new Color(0.16f, 0.42f, 0.32f, 1f), 58f, 38f, font, FitTreeToViewport);
+
+            CreateButton(topBar.transform, "Btn_CloseRnD", "BACK TO HANGAR [X]",
+                new Color(0.58f, 0.18f, 0.20f, 1f), 200f, 40f, font, CloseModal);
+
+            // 2. Pannable & Zoomable Viewport for the 6 Horizontal Tech Tree Branches
+            GameObject viewportObj = CreateUIObject("TechTreeViewport", rootObj.transform);
+            _viewportRt = viewportObj.GetComponent<RectTransform>();
+            LayoutElement vpLe = viewportObj.AddComponent<LayoutElement>();
+            vpLe.flexibleHeight = 1f;
+            Image vpBg = viewportObj.AddComponent<Image>();
+            vpBg.color = new Color(0.02f, 0.04f, 0.08f, 1f);
+            viewportObj.AddComponent<RectMask2D>();
+
+            GameObject starBgObj = CreateUIObject("RnDStarfieldBackdrop", viewportObj.transform);
+            StretchFull(starBgObj.GetComponent<RectTransform>());
+            AstraLink.UI.Flight.SpaceMap.PixelStarfieldLayer starLayer = starBgObj.AddComponent<AstraLink.UI.Flight.SpaceMap.PixelStarfieldLayer>();
+            starLayer.EnsureBuilt();
+
+            GameObject branchesObj = CreateUIObject("TechTreeBranchesContainer", viewportObj.transform);
             _branchesContainer = branchesObj.transform;
-            LayoutElement branchesLe = branchesObj.AddComponent<LayoutElement>();
-            branchesLe.flexibleHeight = 1f;
+            _canvasRt = branchesObj.GetComponent<RectTransform>();
+            _canvasRt.anchorMin = new Vector2(0.5f, 0.5f);
+            _canvasRt.anchorMax = new Vector2(0.5f, 0.5f);
+            _canvasRt.pivot = new Vector2(0.5f, 0.5f);
+            _canvasRt.anchoredPosition = Vector2.zero;
+
+            ContentSizeFitter csf = branchesObj.AddComponent<ContentSizeFitter>();
+            csf.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+            csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
             VerticalLayoutGroup branchesLayout = branchesObj.AddComponent<VerticalLayoutGroup>();
-            branchesLayout.spacing = 8f;
+            branchesLayout.padding = new RectOffset(28, 28, 24, 24);
+            branchesLayout.spacing = 14f;
             branchesLayout.childControlWidth = true;
             branchesLayout.childControlHeight = true;
             branchesLayout.childForceExpandWidth = true;
-            branchesLayout.childForceExpandHeight = true;
+            branchesLayout.childForceExpandHeight = false;
+
+            // Controls Hint Overlay
+            GameObject hintObj = CreateUIObject("ControlsHint", viewportObj.transform);
+            RectTransform hintRt = hintObj.GetComponent<RectTransform>();
+            hintRt.anchorMin = new Vector2(0f, 0f);
+            hintRt.anchorMax = new Vector2(0f, 0f);
+            hintRt.pivot = new Vector2(0f, 0f);
+            hintRt.anchoredPosition = new Vector2(14f, 12f);
+            hintRt.sizeDelta = new Vector2(620f, 28f);
+            Image hintBg = hintObj.AddComponent<Image>();
+            hintBg.color = new Color(0.04f, 0.08f, 0.15f, 0.85f);
+            hintBg.raycastTarget = false;
+            Text hintTxt = CreateText("HintText", hintObj.transform, font,
+                "DRAG: PAN  •  SCROLL: ZOOM  •  WASD: MOVE  •  CLICK BRANCH/CARD: FOCUS  •  F: FIT",
+                12, FontStyle.Bold, new Color(0.72f, 0.86f, 0.98f, 1f), TextAnchor.MiddleCenter);
+            hintTxt.horizontalOverflow = HorizontalWrapMode.Overflow;
+            hintTxt.raycastTarget = false;
+            StretchFull(hintTxt.GetComponent<RectTransform>());
 
             PixelUITheme.ApplyToHierarchy(rootObj.transform);
         }
@@ -280,7 +535,7 @@ namespace AstraLink.UI.Hub
                 }
             }
 
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Font font = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
 
             // Branches 1..5: Component Categories (sorted by unlock cost)
             for (int b = 0; b < BranchCategories.Length; b++)
@@ -319,54 +574,135 @@ namespace AstraLink.UI.Hub
             // Branch 6: Onboard Autopilot Chip Progression (2 Slots ───► 4 Slots ───► 6 Slots)
             BuildAutopilotChipBranch(_branchesContainer, font);
             PixelUITheme.ApplyToHierarchy(_branchesContainer);
+            ApplyRnDCardFrames(_branchesContainer);
+            if (_canvasRt != null)
+            {
+                LayoutRebuilder.ForceRebuildLayoutImmediate(_canvasRt);
+                if (!_hasInitializedView)
+                {
+                    _hasInitializedView = true;
+                    FitTreeToViewport();
+                    _currentZoom = _targetZoom;
+                    _currentPan = _targetPan;
+                    _canvasRt.localScale = new Vector3(_currentZoom, _currentZoom, 1f);
+                    _canvasRt.anchoredPosition = _currentPan;
+                }
+            }
         }
 
-        private static GameObject CreateBranchRowObject(string objName, string branchLabel, Transform parent, Font font)
+        private static void ApplyRnDCardFrames(Transform container)
+        {
+            if (container == null) return;
+            AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank art = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.Load();
+            if (art == null) return;
+
+            for (int i = 0; i < container.childCount; i++)
+            {
+                Transform row = container.GetChild(i);
+                if (art.inventoryPanel != null)
+                {
+                    Image rowImg = row.GetComponent<Image>();
+                    if (rowImg != null)
+                    {
+                        AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.ApplyPanelFrame(
+                            rowImg, art.inventoryPanel, new Vector4(12f, 12f, 12f, 12f), new Color(0.18f, 0.24f, 0.38f, 0.96f));
+                    }
+                }
+
+                Transform header = row.Find("BranchHeader");
+                if (header != null && art.dialogueBox != null)
+                {
+                    Image hdrImg = header.GetComponent<Image>();
+                    if (hdrImg != null)
+                    {
+                        AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.ApplyPanelFrame(
+                            hdrImg, art.dialogueBox, new Vector4(10f, 10f, 10f, 10f), new Color(0.16f, 0.28f, 0.48f, 0.98f));
+                    }
+                    Text hdrTxt = header.GetComponentInChildren<Text>();
+                    if (hdrTxt != null)
+                    {
+                        hdrTxt.color = new Color(0.84f, 0.95f, 1f, 1f);
+                    }
+                }
+
+                Transform track = row.Find("NodesTrack");
+                if (track == null || art.dialogueBox == null) continue;
+                for (int j = 0; j < track.childCount; j++)
+                {
+                    Transform node = track.GetChild(j);
+                    if (!node.name.StartsWith("TechNode_") && !node.name.StartsWith("ChipNode_")) continue;
+                    Image nodeImg = node.GetComponent<Image>();
+                    if (nodeImg == null) continue;
+
+                    Transform btnTr = node.Find("Btn_NodeAction") ?? node.Find("Btn_UpgradeChip_2") ?? node.Find("Btn_UpgradeChip_4") ?? node.Find("Btn_UpgradeChip_6");
+                    string btnLabel = btnTr != null ? (btnTr.GetComponentInChildren<Text>()?.text ?? string.Empty) : string.Empty;
+                    Color tint;
+                    if (btnLabel == "UNLOCKED")
+                        tint = new Color(0.14f, 0.38f, 0.28f, 0.98f);
+                    else if (btnLabel.StartsWith("RESEARCH") || btnLabel.StartsWith("UPGRADE"))
+                        tint = new Color(0.22f, 0.34f, 0.56f, 0.98f);
+                    else
+                        tint = new Color(0.12f, 0.15f, 0.24f, 0.94f);
+
+                    AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.ApplyPanelFrame(
+                        nodeImg, art.dialogueBox, new Vector4(10f, 10f, 10f, 10f), tint);
+                }
+            }
+        }
+
+        private GameObject CreateBranchRowObject(string objName, string branchLabel, Transform parent, Font font)
         {
             GameObject rowObj = CreateUIObject(objName, parent);
             Image rowBg = rowObj.AddComponent<Image>();
             rowBg.color = new Color(0.06f, 0.10f, 0.18f, 0.94f);
 
             LayoutElement rowLe = rowObj.AddComponent<LayoutElement>();
-            rowLe.preferredHeight = 136f;
-            rowLe.flexibleHeight = 1f;
+            rowLe.minHeight = 172f;
+            rowLe.preferredHeight = 172f;
+            rowLe.flexibleHeight = 0f;
 
             HorizontalLayoutGroup rowLayout = rowObj.AddComponent<HorizontalLayoutGroup>();
-            rowLayout.padding = new RectOffset(14, 14, 8, 8);
-            rowLayout.spacing = 12f;
+            rowLayout.padding = new RectOffset(16, 16, 10, 10);
+            rowLayout.spacing = 14f;
             rowLayout.childAlignment = TextAnchor.MiddleLeft;
             rowLayout.childControlWidth = true;
             rowLayout.childControlHeight = true;
             rowLayout.childForceExpandWidth = false;
 
-            // Left Branch Header Label
+            // Left Branch Header Label (click to focus branch)
             GameObject labelBox = CreateUIObject("BranchHeader", rowObj.transform);
             Image labelBg = labelBox.AddComponent<Image>();
             labelBg.color = new Color(0.09f, 0.16f, 0.28f, 1f);
+            Button labelBtn = labelBox.AddComponent<Button>();
+            labelBtn.targetGraphic = labelBg;
+            RectTransform rowRt = rowObj.GetComponent<RectTransform>();
+            labelBtn.onClick.AddListener(() => FocusOnRect(rowRt, 1.15f));
             LayoutElement labelLe = labelBox.AddComponent<LayoutElement>();
-            labelLe.preferredWidth = 225f;
+            labelLe.minWidth = 260f;
+            labelLe.preferredWidth = 260f;
+            labelLe.flexibleWidth = 0f;
 
             VerticalLayoutGroup labelV = labelBox.AddComponent<VerticalLayoutGroup>();
-            labelV.padding = new RectOffset(12, 12, 8, 8);
+            labelV.padding = new RectOffset(14, 14, 10, 10);
             labelV.childControlWidth = true;
             labelV.childControlHeight = true;
             labelV.childForceExpandWidth = true;
             labelV.childForceExpandHeight = true;
 
-            CreateText("BranchTitle", labelBox.transform, font, branchLabel, 15, FontStyle.Bold,
+            CreateText("BranchTitle", labelBox.transform, font, branchLabel, 17, FontStyle.Bold,
                 new Color(0.58f, 0.85f, 1f, 1f), TextAnchor.MiddleLeft);
 
             // Horizontal Track for Nodes + Connecting Lines
             GameObject trackObj = CreateUIObject("NodesTrack", rowObj.transform);
             LayoutElement trackLe = trackObj.AddComponent<LayoutElement>();
-            trackLe.flexibleWidth = 1f;
+            trackLe.flexibleWidth = 0f;
 
             HorizontalLayoutGroup trackLayout = trackObj.AddComponent<HorizontalLayoutGroup>();
-            trackLayout.spacing = 6f;
+            trackLayout.spacing = 8f;
             trackLayout.childAlignment = TextAnchor.MiddleLeft;
             trackLayout.childControlWidth = true;
             trackLayout.childControlHeight = true;
-            trackLayout.childForceExpandWidth = true;
+            trackLayout.childForceExpandWidth = false;
             trackLayout.childForceExpandHeight = true;
 
             return rowObj;
@@ -434,12 +770,19 @@ namespace AstraLink.UI.Hub
                 nodeBg.color = new Color(0.06f, 0.08f, 0.13f, 0.88f);
 
             LayoutElement nodeLe = nodeObj.AddComponent<LayoutElement>();
-            nodeLe.flexibleWidth = 1f;
-            nodeLe.preferredWidth = 340f;
+            nodeLe.flexibleWidth = 0f;
+            nodeLe.minWidth = 410f;
+            nodeLe.preferredWidth = 410f;
+
+            Button focusNodeBtn = nodeObj.AddComponent<Button>();
+            focusNodeBtn.targetGraphic = nodeBg;
+            focusNodeBtn.transition = Selectable.Transition.None;
+            RectTransform nodeRt = nodeObj.GetComponent<RectTransform>();
+            focusNodeBtn.onClick.AddListener(() => FocusOnRect(nodeRt, 1.45f));
 
             VerticalLayoutGroup nodeV = nodeObj.AddComponent<VerticalLayoutGroup>();
-            nodeV.padding = new RectOffset(12, 12, 10, 10);
-            nodeV.spacing = 4f;
+            nodeV.padding = new RectOffset(14, 14, 10, 10);
+            nodeV.spacing = 6f;
             nodeV.childControlWidth = true;
             nodeV.childControlHeight = true;
             nodeV.childForceExpandWidth = true;
@@ -448,18 +791,18 @@ namespace AstraLink.UI.Hub
             // Top row inside node: [Icon Slot] + [Name & Short Stats]
             GameObject topRow = CreateUIObject("NodeTopRow", nodeObj.transform);
             LayoutElement topLe = topRow.AddComponent<LayoutElement>();
-            topLe.preferredHeight = 50f;
+            topLe.preferredHeight = 72f;
             topLe.flexibleHeight = 1f;
 
             HorizontalLayoutGroup topH = topRow.AddComponent<HorizontalLayoutGroup>();
-            topH.spacing = 8f;
+            topH.spacing = 10f;
             topH.childAlignment = TextAnchor.MiddleLeft;
             topH.childControlWidth = true;
             topH.childControlHeight = true;
             topH.childForceExpandWidth = false;
 
             // Dedicated Icon Slot for Sprites (auto-resolved from project art)
-            CreateIconSlot(topRow.transform, "PartIconSlot_" + comp.Id, "ICON", 44f, font,
+            CreateIconSlot(topRow.transform, "PartIconSlot_" + comp.Id, "ICON", 54f, font,
                 isUnlocked ? new Color(0.14f, 0.36f, 0.24f, 1f) : new Color(0.10f, 0.15f, 0.24f, 1f),
                 PixelUITheme.ResolvePartIconSprite(comp.Id));
 
@@ -468,20 +811,20 @@ namespace AstraLink.UI.Hub
             infoLe.flexibleWidth = 1f;
 
             VerticalLayoutGroup infoV = infoCol.AddComponent<VerticalLayoutGroup>();
-            infoV.spacing = 2f;
+            infoV.spacing = 4f;
             infoV.childControlWidth = true;
             infoV.childControlHeight = true;
             infoV.childForceExpandWidth = true;
             infoV.childForceExpandHeight = false;
 
             CreateText("NodeTitle", infoCol.transform, font,
-                string.Format("T{0}: {1}", tierIndex, comp.Name), 13, FontStyle.Bold,
+                string.Format("T{0}: {1}", tierIndex, comp.Name), 16, FontStyle.Bold,
                 isUnlocked ? new Color(0.55f, 0.98f, 0.70f, 1f) : new Color(1f, 0.90f, 0.45f, 1f),
                 TextAnchor.MiddleLeft);
 
             CreateText("NodeStats", infoCol.transform, font,
-                BuilderPanelUI.FormatComponentShortStats(comp), 11, FontStyle.Normal,
-                new Color(0.80f, 0.88f, 0.96f, 1f), TextAnchor.UpperLeft);
+                BuilderPanelUI.FormatComponentShortStats(comp), 13, FontStyle.Normal,
+                new Color(0.84f, 0.91f, 0.98f, 1f), TextAnchor.UpperLeft);
 
             // Action Button at bottom of node
             string btnText;
@@ -509,7 +852,7 @@ namespace AstraLink.UI.Hub
 
             SatelliteComponent capturedComp = comp;
             SatelliteComponent capturedPrev = prevComp;
-            Button btn = CreateButton(nodeObj.transform, "Btn_NodeAction", btnText, btnColor, 0f, 26f, font,
+            Button btn = CreateButton(nodeObj.transform, "Btn_NodeAction", btnText, btnColor, 0f, 32f, font,
                 () => TryUnlockComponent(capturedComp, capturedPrev));
             btn.interactable = canResearchNow;
         }
@@ -561,11 +904,18 @@ namespace AstraLink.UI.Hub
                 : (prevUnlocked ? new Color(0.11f, 0.18f, 0.30f, 0.96f) : new Color(0.06f, 0.08f, 0.13f, 0.88f));
 
             LayoutElement nodeLe = nodeObj.AddComponent<LayoutElement>();
-            nodeLe.flexibleWidth = 1f;
-            nodeLe.preferredWidth = 340f;
+            nodeLe.flexibleWidth = 0f;
+            nodeLe.minWidth = 410f;
+            nodeLe.preferredWidth = 410f;
+
+            Button focusNodeBtn = nodeObj.AddComponent<Button>();
+            focusNodeBtn.targetGraphic = nodeBg;
+            focusNodeBtn.transition = Selectable.Transition.None;
+            RectTransform nodeRt = nodeObj.GetComponent<RectTransform>();
+            focusNodeBtn.onClick.AddListener(() => FocusOnRect(nodeRt, 1.45f));
 
             VerticalLayoutGroup nodeV = nodeObj.AddComponent<VerticalLayoutGroup>();
-            nodeV.padding = new RectOffset(10, 10, 8, 8);
+            nodeV.padding = new RectOffset(14, 14, 10, 10);
             nodeV.spacing = 6f;
             nodeV.childControlWidth = true;
             nodeV.childControlHeight = true;
@@ -574,17 +924,17 @@ namespace AstraLink.UI.Hub
 
             GameObject topRow = CreateUIObject("NodeTopRow", nodeObj.transform);
             LayoutElement topLe = topRow.AddComponent<LayoutElement>();
-            topLe.preferredHeight = 50f;
+            topLe.preferredHeight = 72f;
             topLe.flexibleHeight = 1f;
 
             HorizontalLayoutGroup topH = topRow.AddComponent<HorizontalLayoutGroup>();
-            topH.spacing = 8f;
+            topH.spacing = 10f;
             topH.childAlignment = TextAnchor.MiddleLeft;
             topH.childControlWidth = true;
             topH.childControlHeight = true;
             topH.childForceExpandWidth = false;
 
-            CreateIconSlot(topRow.transform, "ChipIconSlot_" + targetSlots, "CPU", 44f, font,
+            CreateIconSlot(topRow.transform, "ChipIconSlot_" + targetSlots, "CPU", 54f, font,
                 new Color(0.22f, 0.16f, 0.38f, 1f),
                 PixelUITheme.ResolvePartIconSprite("chip"));
 
@@ -593,18 +943,18 @@ namespace AstraLink.UI.Hub
             infoLe.flexibleWidth = 1f;
 
             VerticalLayoutGroup infoV = infoCol.AddComponent<VerticalLayoutGroup>();
-            infoV.spacing = 2f;
+            infoV.spacing = 4f;
             infoV.childControlWidth = true;
             infoV.childControlHeight = true;
             infoV.childForceExpandWidth = true;
             infoV.childForceExpandHeight = false;
 
-            CreateText("NodeTitle", infoCol.transform, font, title, 13, FontStyle.Bold,
+            CreateText("NodeTitle", infoCol.transform, font, title, 16, FontStyle.Bold,
                 isUnlocked ? new Color(0.55f, 0.98f, 0.70f, 1f) : new Color(1f, 0.90f, 0.45f, 1f),
                 TextAnchor.MiddleLeft);
 
-            CreateText("NodeDesc", infoCol.transform, font, desc, 11, FontStyle.Normal,
-                new Color(0.80f, 0.88f, 0.96f, 1f), TextAnchor.UpperLeft);
+            CreateText("NodeDesc", infoCol.transform, font, desc, 13, FontStyle.Normal,
+                new Color(0.84f, 0.91f, 0.98f, 1f), TextAnchor.UpperLeft);
 
             string btnText = isUnlocked
                 ? "UNLOCKED"
@@ -616,7 +966,7 @@ namespace AstraLink.UI.Hub
 
             int capturedTarget = targetSlots;
             int capturedCost = costThousands;
-            Button btn = CreateButton(nodeObj.transform, "Btn_UpgradeChip_" + targetSlots, btnText, btnColor, 0f, 26f, font,
+            Button btn = CreateButton(nodeObj.transform, "Btn_UpgradeChip_" + targetSlots, btnText, btnColor, 0f, 32f, font,
                 () => TryUnlockChipTier(capturedTarget, capturedCost));
             btn.interactable = canResearch;
         }
@@ -714,8 +1064,18 @@ namespace AstraLink.UI.Hub
             btn.onClick.AddListener(onClick);
 
             LayoutElement le = btnObj.AddComponent<LayoutElement>();
-            if (width > 0f) le.preferredWidth = width;
-            if (height > 0f) le.preferredHeight = height;
+            if (width > 0f)
+            {
+                le.minWidth = width;
+                le.preferredWidth = width;
+                le.flexibleWidth = 0f;
+            }
+            if (height > 0f)
+            {
+                le.minHeight = height;
+                le.preferredHeight = height;
+                le.flexibleHeight = 0f;
+            }
 
             Text txt = CreateText("Text", btnObj.transform, font, label, 13, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
             StretchFull(txt.GetComponent<RectTransform>());

@@ -253,6 +253,7 @@ namespace AstraLink.Core
             if (debriefPanel != null) debriefPanel.SetActive(screen == GameScreen.Debrief);
 
             RefreshControllerForScreen(screen);
+            ApplyScenePixelFontEverywhere();
             UpdateTopNavHighlight(screen);
             SetPanelTopInset(hubPanel, TopUtilityBarHeight);
             SetPanelTopInset(workshopPanel, TopUtilityBarHeight);
@@ -274,6 +275,36 @@ namespace AstraLink.Core
 
             Debug.Log("[GameManager] Switched active screen to: " + screen);
             OnScreenChanged?.Invoke(screen);
+        }
+
+        private static void ApplyScenePixelFontEverywhere()
+        {
+            Font uiFont = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
+            if (uiFont == null) return;
+
+            Text[] allTexts = FindObjectsOfType<Text>(true);
+            for (int i = 0; i < allTexts.Length; i++)
+            {
+                Text t = allTexts[i];
+                if (t == null || t.font == uiFont) continue;
+                if (IsInsideMainMenu(t.transform)) continue;
+                t.font = uiFont;
+            }
+        }
+
+        private static bool IsInsideMainMenu(Transform tr)
+        {
+            while (tr != null)
+            {
+                string n = tr.name;
+                if (n.IndexOf("MainMenu", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    string.Equals(n, "Menu", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+                tr = tr.parent;
+            }
+            return false;
         }
 
         private System.Collections.IEnumerator SmoothScreenTransitionRoutine(GameScreen targetScreen)
@@ -887,6 +918,7 @@ namespace AstraLink.Core
                 scaler.matchWidthOrHeight = 0.5f;
                 canvasObj.AddComponent<GraphicRaycaster>();
             }
+            canvas.pixelPerfect = true;
 
             Transform root = canvas.transform;
             if (hubPanel == null) hubPanel = FindOrCreatePanel(root, "HubPanel");
@@ -1047,7 +1079,7 @@ namespace AstraLink.Core
             rt.offsetMax = Vector2.zero;
 
             var txt = labelObj.GetComponent<Text>();
-            txt.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            txt.font = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
             txt.text = titleText + "\n[Switch screens: top buttons or keys 1 / 2 / 3 / 4]";
             txt.fontSize = 32;
             txt.alignment = TextAnchor.MiddleCenter;
@@ -1148,7 +1180,7 @@ namespace AstraLink.Core
                 savePanel = gameObject.AddComponent<SaveManagerPanelUI>();
             }
 
-            Font uiFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Font uiFont = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
             savePanel.Initialize(canvasRoot, uiFont);
             savePanel.OnLoadRequested -= HandleSaveLoadedInMainScene;
             savePanel.OnLoadRequested += HandleSaveLoadedInMainScene;
@@ -1198,7 +1230,7 @@ namespace AstraLink.Core
                 return;
             }
 
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Font font = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
 
             _agencyUtilityBar = new GameObject("AgencyUtilityBar", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(HorizontalLayoutGroup));
             _agencyUtilityBar.transform.SetParent(canvasRoot, false);
@@ -1398,7 +1430,7 @@ namespace AstraLink.Core
             txtRt.offsetMax = Vector2.zero;
 
             var txt = txtObj.GetComponent<Text>();
-            txt.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            txt.font = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
             txt.text = label;
             txt.fontSize = 22;
             txt.alignment = TextAnchor.MiddleCenter;
@@ -1436,7 +1468,7 @@ namespace AstraLink.Core
                 trt.offsetMax = new Vector2(-14f, -4f);
 
                 _navStatusToastText = textObj.GetComponent<Text>();
-                _navStatusToastText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                _navStatusToastText.font = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
                 _navStatusToastText.fontSize = 18;
                 _navStatusToastText.fontStyle = FontStyle.Bold;
                 _navStatusToastText.alignment = TextAnchor.MiddleCenter;

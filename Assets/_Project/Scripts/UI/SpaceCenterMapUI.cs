@@ -609,7 +609,7 @@ namespace AstraLink.UI
                 return;
             }
 
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Font font = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
 
             _tooltipBannerObj = new GameObject("BuildingTooltipBanner", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
             _tooltipBannerObj.transform.SetParent(hudParent, false);
@@ -650,7 +650,7 @@ namespace AstraLink.UI
                 return;
             }
 
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Font font = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
             _backToMapButtonObj = new GameObject("Btn_BackToSpaceCenter", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
             _backToMapButtonObj.transform.SetParent(canvasTransform, false);
 
