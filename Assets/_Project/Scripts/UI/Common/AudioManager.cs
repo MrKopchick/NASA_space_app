@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using AstraLink.UI.Flight;
+using AstraLink.UI.Flight.SpaceMap;
 using AstraLink.UI.Workshop;
 using TMPro;
 using UnityEngine;
@@ -108,6 +109,18 @@ namespace AstraLink.Core
                     _instance = FindObjectOfType<AudioManager>(true);
                     if (_instance == null)
                     {
+                        GameObject prefab = Resources.Load<GameObject>(AudioCatalog.AudioManagerResourcePath);
+                        if (prefab != null)
+                        {
+                            GameObject prefabInstance = Instantiate(prefab);
+                            prefabInstance.name = "AudioManager";
+                            DontDestroyOnLoad(prefabInstance);
+                            _instance = prefabInstance.GetComponent<AudioManager>();
+                        }
+                    }
+
+                    if (_instance == null)
+                    {
                         GameObject host = new GameObject("AudioManager");
                         DontDestroyOnLoad(host);
                         _instance = host.AddComponent<AudioManager>();
@@ -151,11 +164,17 @@ namespace AstraLink.Core
         {
             if (_instance != null && _instance != this)
             {
+                _instance.AdoptClipsFrom(this);
+                _instance.RebuildLookupMaps();
                 Destroy(gameObject);
                 return;
             }
 
             _instance = this;
+            if (transform.parent != null)
+            {
+                transform.SetParent(null);
+            }
             DontDestroyOnLoad(gameObject);
 
             AutoAssignClipsInEditorIfMissing();
@@ -260,6 +279,7 @@ namespace AstraLink.Core
             AudioClip clip;
             if (_sfxMap.TryGetValue(soundId, out clip) && clip != null)
             {
+                EnsureClipLoaded(clip);
                 if (IsLongEventSound(soundId) && _longSfxSource != null)
                 {
                     _longSfxSource.Stop();
@@ -277,6 +297,7 @@ namespace AstraLink.Core
 
             if (uiClickClip != null)
             {
+                EnsureClipLoaded(uiClickClip);
                 _sfxSource.PlayOneShot(uiClickClip, finalVolume);
             }
         }
@@ -313,6 +334,7 @@ namespace AstraLink.Core
             }
 
             EnsureAudioSources();
+            EnsureClipLoaded(clip);
             _sfxSource.PlayOneShot(clip, Mathf.Clamp01(sfxVolume * volumeScale));
         }
 
@@ -335,6 +357,8 @@ namespace AstraLink.Core
             {
                 return;
             }
+
+            EnsureClipLoaded(targetClip);
 
             if (_musicSource.clip == targetClip && _musicSource.isPlaying)
             {
@@ -423,13 +447,93 @@ namespace AstraLink.Core
         /// </summary>
         public void PlayMusicForScene(string sceneName)
         {
+            EnsureAudioSources();
+            RebuildLookupMaps();
+
+            MusicTrackId targetTrack = AudioCatalog.ResolveMusicForScene(sceneName);
             if (!IsMusicEnabled)
             {
+                StopExternalMenuAudioSources();
                 StopMusic();
                 return;
             }
 
-            PlayMusic(MusicTrackId.FlightMusic);
+            if (targetTrack == MusicTrackId.MenuMusic)
+            {
+                _isDryRunAmbienceActive = false;
+                if (_ambienceSource != null && _ambienceSource.isPlaying)
+                {
+                    _ambienceSource.Stop();
+                }
+                StopLongSfx();
+
+                if (TrySyncExternalMenuAudioSource())
+                {
+                    if (_musicSource != null && _musicSource.isPlaying)
+                    {
+                        _musicSource.Stop();
+                    }
+                    return;
+                }
+
+                PlayMusic(MusicTrackId.MenuMusic);
+                return;
+            }
+
+            PlayMusic(targetTrack);
+        }
+
+        private bool TrySyncExternalMenuAudioSource()
+        {
+            AudioSource[] sources = FindObjectsOfType<AudioSource>(true);
+            for (int i = 0; i < sources.Length; i++)
+            {
+                AudioSource source = sources[i];
+                if (source == null || source.transform.IsChildOf(transform))
+                {
+                    continue;
+                }
+
+                if (!source.gameObject.activeInHierarchy || !source.enabled)
+                {
+                    continue;
+                }
+
+                if (source.clip == null && menuMusicClip != null)
+                {
+                    source.clip = menuMusicClip;
+                }
+
+                if (source.clip != null)
+                {
+                    EnsureClipLoaded(source.clip);
+                    if (!source.isPlaying)
+                    {
+                        source.Play();
+                    }
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void StopExternalMenuAudioSources()
+        {
+            AudioSource[] sources = FindObjectsOfType<AudioSource>(true);
+            for (int i = 0; i < sources.Length; i++)
+            {
+                AudioSource source = sources[i];
+                if (source == null || source.transform.IsChildOf(transform))
+                {
+                    continue;
+                }
+
+                if (source.isPlaying)
+                {
+                    source.Stop();
+                }
+            }
         }
 
         /// <summary>
@@ -679,7 +783,18 @@ namespace AstraLink.Core
         private void HandleGameScreenChanged(GameScreen screen)
         {
             _isDryRunAmbienceActive = false;
-            StopLongSfx();
+            AutoBindSceneControls();
+            BindGameplayEventSources();
+
+            bool keepLaunchSfx = screen == GameScreen.Flight &&
+                                 _longSfxSource != null &&
+                                 _longSfxSource.isPlaying &&
+                                 _longSfxSource.clip == rocketIgnitionClip;
+            if (!keepLaunchSfx)
+            {
+                StopLongSfx();
+            }
+
             UpdateAmbiencePlayback();
 
             if (IsMusicEnabled)
@@ -719,12 +834,14 @@ namespace AstraLink.Core
 
         private void HandleSpaceEventStateChanged(string eventTitle, bool isActive)
         {
-            if (Time.unscaledTime - _lastButtonClickTime < 0.25f)
+            if (!isActive && Time.unscaledTime - _lastButtonClickTime < 0.25f)
             {
                 return;
             }
 
-            if (GameManager.Instance != null && GameManager.Instance.CurrentScreen != GameScreen.Flight)
+            if (GameManager.Instance != null &&
+                GameManager.Instance.CurrentScreen != GameScreen.Flight &&
+                !isActive)
             {
                 return;
             }
@@ -807,6 +924,11 @@ namespace AstraLink.Core
 
         private void RebuildLookupMaps()
         {
+            if (uiClickClip == null || flightMusicClip == null || menuMusicClip == null)
+            {
+                AutoAssignClipsInEditorIfMissing();
+            }
+
             _sfxMap = new Dictionary<SoundEffectId, AudioClip>
             {
                 { SoundEffectId.UiClick, uiClickClip },
@@ -904,7 +1026,9 @@ namespace AstraLink.Core
 
         private void AutoAssignClipsInEditorIfMissing()
         {
-#if UNITY_EDITOR
+            AdoptClipsFromPrefabIfAvailable();
+            AdoptClipsFromArtBankIfAvailable();
+
             if (menuMusicClip == null) menuMusicClip = LoadClip(MusicTrackId.MenuMusic);
             if (flightMusicClip == null) flightMusicClip = LoadClip(MusicTrackId.FlightMusic);
             if (missionControlAmbienceClip == null) missionControlAmbienceClip = LoadClip(MusicTrackId.MissionControlAmbience);
@@ -934,7 +1058,165 @@ namespace AstraLink.Core
             if (micrometeoroidEventClip == null) micrometeoroidEventClip = LoadClip(SoundEffectId.MicrometeoroidEvent);
             if (solarStormAlarmClip == null) solarStormAlarmClip = LoadClip(SoundEffectId.SolarStormAlarm);
             if (systemWarningClip == null) systemWarningClip = LoadClip(SoundEffectId.SystemWarning);
+
+            PreloadAllAssignedClips();
+        }
+
+        private void AdoptClipsFromPrefabIfAvailable()
+        {
+            GameObject prefab = Resources.Load<GameObject>(AudioCatalog.AudioManagerResourcePath);
+            if (prefab == null)
+            {
+                return;
+            }
+
+            AudioManager prefabManager = prefab.GetComponent<AudioManager>();
+            if (prefabManager != null && prefabManager != this)
+            {
+                AdoptClipsFrom(prefabManager);
+            }
+        }
+
+        private void AdoptClipsFromArtBankIfAvailable()
+        {
+            SolarSystemArtBank artBank = SolarSystemArtBank.Load();
+            if (artBank == null)
+            {
+                return;
+            }
+
+            if (flightMusicClip == null) flightMusicClip = artBank.flightMusic;
+            if (missionControlAmbienceClip == null) missionControlAmbienceClip = artBank.missionAmbience;
+            if (uiClickClip == null) uiClickClip = artBank.uiClick;
+            if (uiToggleClip == null) uiToggleClip = artBank.uiToggle;
+            if (astraNotificationClip == null) astraNotificationClip = artBank.astraNotification;
+            if (solarStormAlarmClip == null) solarStormAlarmClip = artBank.solarStormAlarm;
+            if (missionStartClip == null) missionStartClip = artBank.missionStart;
+            if (missionSuccessClip == null) missionSuccessClip = artBank.missionSuccess;
+        }
+
+        private void AdoptClipsFrom(AudioManager other)
+        {
+            if (other == null || other == this)
+            {
+                return;
+            }
+
+            if (menuMusicClip == null) menuMusicClip = other.menuMusicClip;
+            if (flightMusicClip == null) flightMusicClip = other.flightMusicClip;
+            if (missionControlAmbienceClip == null) missionControlAmbienceClip = other.missionControlAmbienceClip;
+
+            if (uiClickClip == null) uiClickClip = other.uiClickClip;
+            if (uiClickAlt1Clip == null) uiClickAlt1Clip = other.uiClickAlt1Clip;
+            if (uiClickAlt2Clip == null) uiClickAlt2Clip = other.uiClickAlt2Clip;
+            if (uiToggleClip == null) uiToggleClip = other.uiToggleClip;
+            if (uiErrorClip == null) uiErrorClip = other.uiErrorClip;
+            if (astraNotificationClip == null) astraNotificationClip = other.astraNotificationClip;
+
+            if (moduleInstallClip == null) moduleInstallClip = other.moduleInstallClip;
+            if (moduleRemoveClip == null) moduleRemoveClip = other.moduleRemoveClip;
+            if (researchUnlockClip == null) researchUnlockClip = other.researchUnlockClip;
+
+            if (missionStartClip == null) missionStartClip = other.missionStartClip;
+            if (rocketIgnitionClip == null) rocketIgnitionClip = other.rocketIgnitionClip;
+            if (dryRunCompleteClip == null) dryRunCompleteClip = other.dryRunCompleteClip;
+            if (missionSuccessClip == null) missionSuccessClip = other.missionSuccessClip;
+            if (missionFailedClip == null) missionFailedClip = other.missionFailedClip;
+
+            if (commandExecutedClip == null) commandExecutedClip = other.commandExecutedClip;
+            if (safeModeOnClip == null) safeModeOnClip = other.safeModeOnClip;
+            if (safeModeOffClip == null) safeModeOffClip = other.safeModeOffClip;
+            if (commsRestoredClip == null) commsRestoredClip = other.commsRestoredClip;
+            if (dataDownlinkClip == null) dataDownlinkClip = other.dataDownlinkClip;
+            if (micrometeoroidEventClip == null) micrometeoroidEventClip = other.micrometeoroidEventClip;
+            if (solarStormAlarmClip == null) solarStormAlarmClip = other.solarStormAlarmClip;
+            if (systemWarningClip == null) systemWarningClip = other.systemWarningClip;
+        }
+
+        private void PreloadAllAssignedClips()
+        {
+            if (!Application.isPlaying)
+            {
+                return;
+            }
+
+            EnsureClipLoaded(menuMusicClip);
+            EnsureClipLoaded(flightMusicClip);
+            EnsureClipLoaded(missionControlAmbienceClip);
+            EnsureClipLoaded(uiClickClip);
+            EnsureClipLoaded(uiClickAlt1Clip);
+            EnsureClipLoaded(uiClickAlt2Clip);
+            EnsureClipLoaded(uiToggleClip);
+            EnsureClipLoaded(uiErrorClip);
+            EnsureClipLoaded(astraNotificationClip);
+            EnsureClipLoaded(moduleInstallClip);
+            EnsureClipLoaded(moduleRemoveClip);
+            EnsureClipLoaded(researchUnlockClip);
+            EnsureClipLoaded(missionStartClip);
+            EnsureClipLoaded(rocketIgnitionClip);
+            EnsureClipLoaded(dryRunCompleteClip);
+            EnsureClipLoaded(missionSuccessClip);
+            EnsureClipLoaded(missionFailedClip);
+            EnsureClipLoaded(commandExecutedClip);
+            EnsureClipLoaded(safeModeOnClip);
+            EnsureClipLoaded(safeModeOffClip);
+            EnsureClipLoaded(commsRestoredClip);
+            EnsureClipLoaded(dataDownlinkClip);
+            EnsureClipLoaded(micrometeoroidEventClip);
+            EnsureClipLoaded(solarStormAlarmClip);
+            EnsureClipLoaded(systemWarningClip);
+        }
+
+        private static void EnsureClipLoaded(AudioClip clip)
+        {
+            if (clip != null && clip.loadState == AudioDataLoadState.Unloaded)
+            {
+                clip.LoadAudioData();
+            }
+        }
+
+        private static AudioClip LoadClip(SoundEffectId soundId)
+        {
+            string resourcePath = AudioCatalog.GetSfxResourcePath(soundId);
+            if (!string.IsNullOrEmpty(resourcePath))
+            {
+                AudioClip resourceClip = Resources.Load<AudioClip>(resourcePath);
+                if (resourceClip != null)
+                {
+                    return resourceClip;
+                }
+            }
+
+#if UNITY_EDITOR
+            string assetPath = AudioCatalog.GetSfxAssetPath(soundId);
+            if (!string.IsNullOrEmpty(assetPath))
+            {
+                return AssetDatabase.LoadAssetAtPath<AudioClip>(assetPath);
+            }
 #endif
+            return null;
+        }
+
+        private static AudioClip LoadClip(MusicTrackId trackId)
+        {
+            string resourcePath = AudioCatalog.GetMusicResourcePath(trackId);
+            if (!string.IsNullOrEmpty(resourcePath))
+            {
+                AudioClip resourceClip = Resources.Load<AudioClip>(resourcePath);
+                if (resourceClip != null)
+                {
+                    return resourceClip;
+                }
+            }
+
+#if UNITY_EDITOR
+            string assetPath = AudioCatalog.GetMusicAssetPath(trackId);
+            if (!string.IsNullOrEmpty(assetPath))
+            {
+                return AssetDatabase.LoadAssetAtPath<AudioClip>(assetPath);
+            }
+#endif
+            return null;
         }
 
 #if UNITY_EDITOR
@@ -954,18 +1236,6 @@ namespace AstraLink.Core
             AudioManager manager = Instance;
             manager.AutoAssignClipsInEditorIfMissing();
             EditorUtility.SetDirty(manager);
-        }
-
-        private static AudioClip LoadClip(SoundEffectId soundId)
-        {
-            string path = AudioCatalog.GetSfxAssetPath(soundId);
-            return string.IsNullOrEmpty(path) ? null : AssetDatabase.LoadAssetAtPath<AudioClip>(path);
-        }
-
-        private static AudioClip LoadClip(MusicTrackId trackId)
-        {
-            string path = AudioCatalog.GetMusicAssetPath(trackId);
-            return string.IsNullOrEmpty(path) ? null : AssetDatabase.LoadAssetAtPath<AudioClip>(path);
         }
 #endif
     }
