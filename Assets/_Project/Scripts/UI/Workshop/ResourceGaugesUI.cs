@@ -40,6 +40,11 @@ namespace AstraLink.UI.Workshop
             "Reliability • Shield"
         };
 
+        private static readonly string[] GaugeTipKeys =
+        {
+            "res_mass", "res_budget", "res_power", "res_data", "res_comms", "res_reliability"
+        };
+
         public void EnsureGaugesUIHierarchy()
         {
             Transform existingRoot = transform.Find("GaugesContentRoot");
@@ -126,6 +131,7 @@ namespace AstraLink.UI.Workshop
             {
                 Transform row = root.Find("GaugeRow_" + i);
                 if (row == null) continue;
+                TooltipTrigger.Attach(row.gameObject, GaugeTipKeys[i]);
 
                 var w = new GaugeRowWidgets
                 {
@@ -307,6 +313,7 @@ namespace AstraLink.UI.Workshop
         {
             GameObject rowObj = CreateUIObject("GaugeRow_" + index, parent);
             Image cardBg = rowObj.AddComponent<Image>();
+            TooltipTrigger.Attach(rowObj, GaugeTipKeys[index]);
             cardBg.color = new Color(0.05f, 0.08f, 0.14f, 0.86f);
 
             LayoutElement rowLe = rowObj.AddComponent<LayoutElement>();

@@ -19,6 +19,7 @@ namespace AstraLink.Core
         private bool _isPointerInside;
         private bool _isShowing;
         private float _hoverTimer;
+        private string _lastShownText = string.Empty;
 
         /// <summary>
         /// Gets or sets the static dictionary lookup key used by <see cref="DescriptionTips"/>.
@@ -119,8 +120,20 @@ namespace AstraLink.Core
                 return;
             }
 
-            if (!_isPointerInside || _isShowing)
+            if (!_isPointerInside) return;
+            if (_isShowing)
             {
+                // Refresh a dynamic slot/rocket tooltip while the pointer remains over its row.
+                if (_dynamicProvider != null)
+                {
+                    string updated = ResolveTooltipText();
+                    if (!string.Equals(updated, _lastShownText, StringComparison.Ordinal))
+                    {
+                        _lastShownText = updated;
+                        if (!string.IsNullOrWhiteSpace(updated)) TooltipSystem.Instance.Show(updated);
+                        else if (TooltipSystem.HasInstance) TooltipSystem.Instance.Hide();
+                    }
+                }
                 return;
             }
 
@@ -131,6 +144,7 @@ namespace AstraLink.Core
             {
                 _isShowing = true;
                 string resolvedText = ResolveTooltipText();
+                _lastShownText = resolvedText;
                 if (!string.IsNullOrWhiteSpace(resolvedText))
                 {
                     TooltipSystem.Instance.Show(resolvedText);
@@ -181,6 +195,7 @@ namespace AstraLink.Core
         {
             _isPointerInside = false;
             _hoverTimer = 0f;
+            _lastShownText = string.Empty;
 
             if (_isShowing)
             {

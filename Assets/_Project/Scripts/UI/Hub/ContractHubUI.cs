@@ -813,9 +813,10 @@ namespace AstraLink.UI.Hub
                 new Color(0.48f, 0.86f, 0.96f, 1f), TextAnchor.MiddleLeft);
 
             string payloadTag = string.IsNullOrEmpty(mission.RequiredSensorTag) ? "ANY" : mission.RequiredSensorTag.ToUpperInvariant();
+            int totalTicks = mission.RequiredOrbits * 20;
             CreateStatRow(statsBox.transform, textFont, "PAYLOAD", payloadTag, new Color(0.92f, 0.96f, 1f, 1f));
             CreateStatRow(statsBox.transform, textFont, "SCIENCE GOAL",
-                string.Format("{0:0} PTS ({1} ORB)", mission.TargetSciencePoints, mission.RequiredOrbits),
+                string.Format("{0:0} PTS ({1} ORB / {2}T)", mission.TargetSciencePoints, mission.RequiredOrbits, totalTicks),
                 new Color(0.55f, 0.92f, 0.98f, 1f));
             CreateStatRow(statsBox.transform, textFont, "MAX BUDGET",
                 string.Format("${0:0}K", mission.BudgetLimitThousands),
@@ -974,10 +975,10 @@ namespace AstraLink.UI.Hub
         {
             switch (orbitId)
             {
-                case "orbit_leo": return "LOW EARTH ORBIT • 400 KM";
-                case "orbit_lunar": return "LUNAR ORBIT • 100 KM";
-                case "orbit_mars": return "MARS ORBIT • 350 KM";
-                default: return "DEEP SPACE ORBIT";
+                case "orbit_leo": return "LOW EARTH ORBIT • 400 KM • 20 TICKS/ORBIT";
+                case "orbit_lunar": return "LUNAR ORBIT • 100 KM • 20 TICKS/ORBIT";
+                case "orbit_mars": return "MARS ORBIT • 350 KM • 20 TICKS/ORBIT";
+                default: return "DEEP SPACE ORBIT • 20 TICKS/ORBIT";
             }
         }
 

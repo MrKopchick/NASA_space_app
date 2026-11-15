@@ -151,6 +151,7 @@ namespace AstraLink.UI.Hub
 
             if (_capitalBadgeText != null)
             {
+                TooltipTrigger.Attach(_capitalBadgeText.gameObject, "rnd_capital");
                 _capitalBadgeText.text = string.Format("AGENCY CAPITAL: ${0:0}k   |   PASSIVE INCOME: +${1}k / mission",
                     _agencyState.CapitalThousands, _agencyState.TotalPassiveIncomeThousands);
             }
@@ -422,6 +423,7 @@ namespace AstraLink.UI.Hub
             bool canResearchNow = !isUnlocked && prevUnlocked && canAfford;
 
             GameObject nodeObj = CreateUIObject("TechNode_" + comp.Id, parent);
+            TooltipTrigger.AttachDynamic(nodeObj, () => DescriptionTips.GetComponentTip(comp));
             Image nodeBg = nodeObj.AddComponent<Image>();
 
             if (isUnlocked)
@@ -552,6 +554,7 @@ namespace AstraLink.UI.Hub
             bool canResearch = !isUnlocked && prevUnlocked && canAfford;
 
             GameObject nodeObj = CreateUIObject("ChipNode_" + targetSlots, parent);
+            TooltipTrigger.Attach(nodeObj, "rnd_chip_upgrade");
             Image nodeBg = nodeObj.AddComponent<Image>();
             nodeBg.color = isUnlocked
                 ? new Color(0.09f, 0.24f, 0.17f, 0.96f)

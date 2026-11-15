@@ -710,6 +710,7 @@ namespace AstraLink.UI.Workshop
             if (existing != null)
             {
                 BindExistingHierarchy(existing);
+                BindUX6DryRunTooltips(existing);
                 PixelUITheme.ApplyToHierarchy(existing);
                 return;
             }
@@ -872,7 +873,24 @@ namespace AstraLink.UI.Workshop
             LayoutElement telLe = _dryRunTelemetryText.gameObject.AddComponent<LayoutElement>();
             telLe.preferredHeight = 24f;
 
+            BindUX6DryRunTooltips(rootObj.transform);
             PixelUITheme.ApplyToHierarchy(rootObj.transform);
+        }
+
+        private static void BindUX6DryRunTooltips(Transform root)
+        {
+            if (root == null) return;
+            BindDryRunChild(root, "AstraHeaderRow/Btn_RefreshAudit", "dryrun_audit");
+            BindDryRunChild(root, "AstraHeaderRow/AstraSummaryBadge", "dryrun_audit");
+            BindDryRunChild(root, "DryRunBenchBox/DryRunControlsRow/Btn_RunDryRun", "dryrun_test");
+            BindDryRunChild(root, "DryRunBenchBox/CurveChartRow", "dryrun_chart");
+            BindDryRunChild(root, "DryRunBenchBox/DryRunTelemetryText", "dryrun_chart");
+        }
+
+        private static void BindDryRunChild(Transform root, string path, string key)
+        {
+            Transform child = root.Find(path);
+            if (child != null) TooltipTrigger.Attach(child.gameObject, key);
         }
 
         private void BindExistingHierarchy(Transform root)
