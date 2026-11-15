@@ -718,7 +718,7 @@ namespace AstraLink.UI.Flight
             _bodies.Clear();
             _bodyMap.Clear();
 
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Font font = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
             if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
 
             List<SolarSystemBodyCatalog.BodyDefinition> catalog = SolarSystemBodyCatalog.BuildStandardSolarSystem();
@@ -806,7 +806,7 @@ namespace AstraLink.UI.Flight
                 Text lblText = lblObj.AddComponent<Text>();
                 lblText.font = font;
                 lblText.text = spec.DisplayName.ToUpperInvariant();
-                lblText.fontSize = string.IsNullOrEmpty(spec.ParentId) ? 18 : 13;
+                lblText.fontSize = string.IsNullOrEmpty(spec.ParentId) ? 20 : 15;
                 lblText.fontStyle = FontStyle.Bold;
                 lblText.color = new Color(0.95f, 0.98f, 1f, 0.96f);
                 lblText.alignment = TextAnchor.UpperCenter;
