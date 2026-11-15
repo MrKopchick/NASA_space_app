@@ -262,7 +262,7 @@ namespace AstraLink.UI.Flight
                 return;
             }
 
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Font font = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
 
             popupBannerRoot = new GameObject("EventPopupBanner", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
             popupBannerRoot.transform.SetParent(rootRt, false);

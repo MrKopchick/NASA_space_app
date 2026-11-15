@@ -495,7 +495,7 @@ namespace AstraLink.UI.Workshop
                 return;
             }
 
-            Font legacyFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Font legacyFont = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
             TMP_FontAsset tmpFont = GetOrCreateTmpFont(legacyFont);
 
             // Modal Dark Backdrop

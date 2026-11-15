@@ -50,7 +50,7 @@ namespace AstraLink.UI.Workshop
             Transform existingRoot = transform.Find("GaugesContentRoot");
             if (existingRoot != null)
             {
-                if (existingRoot.Find("GaugesUI_v3") != null)
+                if (existingRoot.Find("GaugesUI_v4") != null)
                 {
                     BindExistingHierarchy(existingRoot);
                     return;
@@ -60,15 +60,15 @@ namespace AstraLink.UI.Workshop
                 else DestroyImmediate(existingRoot.gameObject);
             }
 
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Font font = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
 
             GameObject rootObj = CreateUIObject("GaugesContentRoot", transform);
             StretchFull(rootObj.GetComponent<RectTransform>());
-            CreateUIObject("GaugesUI_v3", rootObj.transform);
+            CreateUIObject("GaugesUI_v4", rootObj.transform).AddComponent<LayoutElement>().ignoreLayout = true;
 
             VerticalLayoutGroup rootLayout = rootObj.AddComponent<VerticalLayoutGroup>();
             rootLayout.padding = new RectOffset(22, 22, 18, 18);
-            rootLayout.spacing = 6f;
+            rootLayout.spacing = 10f;
             rootLayout.childControlWidth = true;
             rootLayout.childControlHeight = true;
             rootLayout.childForceExpandWidth = true;
@@ -76,7 +76,9 @@ namespace AstraLink.UI.Workshop
 
             GameObject headerRow = CreateUIObject("TelemetryHeaderRow", rootObj.transform);
             LayoutElement headerRowLe = headerRow.AddComponent<LayoutElement>();
-            headerRowLe.preferredHeight = 28f;
+            headerRowLe.minHeight = 36f;
+            headerRowLe.preferredHeight = 36f;
+            headerRowLe.flexibleHeight = 0f;
             HorizontalLayoutGroup headerH = headerRow.AddComponent<HorizontalLayoutGroup>();
             headerH.childAlignment = TextAnchor.MiddleLeft;
             headerH.childControlWidth = true;
@@ -84,21 +86,23 @@ namespace AstraLink.UI.Workshop
             headerH.childForceExpandWidth = false;
 
             Text header = CreateText("HeaderTitle", headerRow.transform, font,
-                "TELEMETRY", 18, FontStyle.Bold,
+                "TELEMETRY", 22, FontStyle.Bold,
                 new Color(0.45f, 0.85f, 1f, 1f), TextAnchor.MiddleLeft);
             LayoutElement headerLe = header.gameObject.AddComponent<LayoutElement>();
             headerLe.flexibleWidth = 1f;
 
             Text subHeader = CreateText("HeaderSub", headerRow.transform, font,
-                "6 NASA resources", 13, FontStyle.Normal,
+                "6 NASA resources", 15, FontStyle.Normal,
                 new Color(0.55f, 0.68f, 0.84f, 1f), TextAnchor.MiddleRight);
             LayoutElement subLe = subHeader.gameObject.AddComponent<LayoutElement>();
-            subLe.preferredWidth = 180f;
+            subLe.preferredWidth = 260f;
+
+            Transform gaugesListParent = CreateScrollListContent(rootObj.transform, "GaugesScroll", 12f);
 
             _gauges.Clear();
             for (int i = 0; i < 6; i++)
             {
-                _gauges.Add(CreateGaugeRow(i, GaugeTitles[i], rootObj.transform, font));
+                _gauges.Add(CreateGaugeRow(i, GaugeTitles[i], gaugesListParent, font));
             }
 
             // Validation Status Banner at bottom
@@ -106,30 +110,34 @@ namespace AstraLink.UI.Workshop
             _validationBannerBg = bannerObj.AddComponent<Image>();
             _validationBannerBg.color = new Color(0.45f, 1.0f, 0.55f, 1f);
             LayoutElement bannerLe = bannerObj.AddComponent<LayoutElement>();
-            bannerLe.preferredHeight = 42f;
+            bannerLe.minHeight = 46f;
+            bannerLe.preferredHeight = 48f;
+            bannerLe.flexibleHeight = 0f;
 
             VerticalLayoutGroup bannerLayout = bannerObj.AddComponent<VerticalLayoutGroup>();
-            bannerLayout.padding = new RectOffset(16, 16, 8, 8);
+            bannerLayout.padding = new RectOffset(16, 16, 6, 6);
+            bannerLayout.childAlignment = TextAnchor.MiddleCenter;
             bannerLayout.childControlWidth = true;
             bannerLayout.childControlHeight = true;
             bannerLayout.childForceExpandWidth = true;
             bannerLayout.childForceExpandHeight = true;
 
             _validationBannerText = CreateText("StatusText", bannerObj.transform, font,
-                "All 6 NASA systems nominal — ready for launch", 13, FontStyle.Bold, Color.white, TextAnchor.MiddleLeft);
+                "All 6 NASA systems nominal — ready for launch", 18, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
             _validationBannerText.resizeTextForBestFit = true;
-            _validationBannerText.resizeTextMinSize = 9;
-            _validationBannerText.resizeTextMaxSize = 13;
+            _validationBannerText.resizeTextMinSize = 13;
+            _validationBannerText.resizeTextMaxSize = 18;
 
             PixelUITheme.ApplyToHierarchy(rootObj.transform);
         }
 
         private void BindExistingHierarchy(Transform root)
         {
+            Transform gaugesContainer = root.Find("GaugesScroll/Viewport/Content") ?? root;
             _gauges.Clear();
             for (int i = 0; i < 6; i++)
             {
-                Transform row = root.Find("GaugeRow_" + i);
+                Transform row = gaugesContainer.Find("GaugeRow_" + i);
                 if (row == null) continue;
                 TooltipTrigger.Attach(row.gameObject, GaugeTipKeys[i]);
 
@@ -317,12 +325,13 @@ namespace AstraLink.UI.Workshop
             cardBg.color = new Color(0.05f, 0.08f, 0.14f, 0.86f);
 
             LayoutElement rowLe = rowObj.AddComponent<LayoutElement>();
-            rowLe.preferredHeight = 68f;
-            rowLe.flexibleHeight = 1f;
+            rowLe.minHeight = 112f;
+            rowLe.preferredHeight = 112f;
+            rowLe.flexibleHeight = 0f;
 
             HorizontalLayoutGroup rowH = rowObj.AddComponent<HorizontalLayoutGroup>();
-            rowH.padding = new RectOffset(10, 10, 8, 8);
-            rowH.spacing = 12f;
+            rowH.padding = new RectOffset(14, 14, 12, 12);
+            rowH.spacing = 14f;
             rowH.childAlignment = TextAnchor.MiddleLeft;
             rowH.childControlWidth = true;
             rowH.childControlHeight = true;
@@ -330,10 +339,10 @@ namespace AstraLink.UI.Workshop
 
             GameObject iconObj = CreateUIObject("TelemetryIcon_" + index, rowObj.transform);
             LayoutElement iconLe = iconObj.AddComponent<LayoutElement>();
-            iconLe.preferredWidth = 28f;
-            iconLe.preferredHeight = 28f;
-            iconLe.minWidth = 28f;
-            iconLe.minHeight = 28f;
+            iconLe.preferredWidth = 42f;
+            iconLe.preferredHeight = 42f;
+            iconLe.minWidth = 42f;
+            iconLe.minHeight = 42f;
             Image iconImg = iconObj.AddComponent<Image>();
             iconImg.preserveAspect = true;
             iconImg.raycastTarget = false;
@@ -346,7 +355,7 @@ namespace AstraLink.UI.Workshop
             colLe.flexibleWidth = 1f;
 
             VerticalLayoutGroup vLayout = barCol.AddComponent<VerticalLayoutGroup>();
-            vLayout.spacing = 6f;
+            vLayout.spacing = 10f;
             vLayout.childControlWidth = true;
             vLayout.childControlHeight = true;
             vLayout.childForceExpandWidth = true;
@@ -354,7 +363,7 @@ namespace AstraLink.UI.Workshop
 
             GameObject topRow = CreateUIObject("TopRow", barCol.transform);
             LayoutElement topLe = topRow.AddComponent<LayoutElement>();
-            topLe.preferredHeight = 22f;
+            topLe.preferredHeight = 34f;
 
             HorizontalLayoutGroup hLayout = topRow.AddComponent<HorizontalLayoutGroup>();
             hLayout.spacing = 8f;
@@ -362,21 +371,27 @@ namespace AstraLink.UI.Workshop
             hLayout.childControlHeight = true;
             hLayout.childForceExpandWidth = false;
 
-            Text titleTxt = CreateText("Title", topRow.transform, font, title, 14, FontStyle.Bold,
+            Text titleTxt = CreateText("Title", topRow.transform, font, title, 18, FontStyle.Bold,
                 new Color(0.86f, 0.92f, 1f, 1f), TextAnchor.MiddleLeft);
+            titleTxt.resizeTextForBestFit = true;
+            titleTxt.resizeTextMinSize = 14;
+            titleTxt.resizeTextMaxSize = 18;
             LayoutElement titleLe = titleTxt.gameObject.AddComponent<LayoutElement>();
             titleLe.flexibleWidth = 1f;
 
-            Text valueTxt = CreateText("Value", topRow.transform, font, "...", 13, FontStyle.Bold,
+            Text valueTxt = CreateText("Value", topRow.transform, font, "...", 17, FontStyle.Bold,
                 new Color(0.75f, 0.94f, 1f, 1f), TextAnchor.MiddleRight);
+            valueTxt.resizeTextForBestFit = true;
+            valueTxt.resizeTextMinSize = 13;
+            valueTxt.resizeTextMaxSize = 17;
             LayoutElement valLe = valueTxt.gameObject.AddComponent<LayoutElement>();
-            valLe.preferredWidth = 270f;
+            valLe.preferredWidth = 340f;
 
             GameObject barBg = CreateUIObject("BarBg", barCol.transform);
             Image bgImg = barBg.AddComponent<Image>();
             bgImg.color = new Color(0.02f, 0.04f, 0.08f, 1f);
             LayoutElement barLe = barBg.AddComponent<LayoutElement>();
-            barLe.preferredHeight = 14f;
+            barLe.preferredHeight = 20f;
 
             GameObject barFill = CreateUIObject("BarFill", barBg.transform);
             Image fillImg = barFill.AddComponent<Image>();
@@ -415,6 +430,84 @@ namespace AstraLink.UI.Workshop
             rt.anchorMax = Vector2.one;
             rt.offsetMin = Vector2.zero;
             rt.offsetMax = Vector2.zero;
+        }
+
+        private static Transform CreateScrollListContent(Transform parent, string name, float spacing)
+        {
+            GameObject scrollObj = CreateUIObject(name, parent);
+            LayoutElement scrollLe = scrollObj.AddComponent<LayoutElement>();
+            scrollLe.flexibleHeight = 1f;
+            scrollLe.minHeight = 200f;
+
+            ScrollRect sr = scrollObj.AddComponent<ScrollRect>();
+            sr.horizontal = false;
+            sr.vertical = true;
+            sr.movementType = ScrollRect.MovementType.Clamped;
+            sr.scrollSensitivity = 36f;
+
+            GameObject viewport = CreateUIObject("Viewport", scrollObj.transform);
+            RectTransform vpRt = viewport.GetComponent<RectTransform>();
+            StretchFull(vpRt);
+            vpRt.offsetMax = new Vector2(-14f, 0f);
+            Image vpImg = viewport.AddComponent<Image>();
+            vpImg.color = new Color(1f, 1f, 1f, 0.01f);
+            Mask vpMask = viewport.AddComponent<Mask>();
+            vpMask.showMaskGraphic = false;
+
+            GameObject content = CreateUIObject("Content", viewport.transform);
+            RectTransform cRt = content.GetComponent<RectTransform>();
+            cRt.anchorMin = new Vector2(0f, 1f);
+            cRt.anchorMax = new Vector2(1f, 1f);
+            cRt.pivot = new Vector2(0.5f, 1f);
+            cRt.offsetMin = Vector2.zero;
+            cRt.offsetMax = Vector2.zero;
+
+            VerticalLayoutGroup cVl = content.AddComponent<VerticalLayoutGroup>();
+            cVl.spacing = spacing;
+            cVl.padding = new RectOffset(2, 6, 4, 4);
+            cVl.childControlWidth = true;
+            cVl.childControlHeight = true;
+            cVl.childForceExpandWidth = true;
+            cVl.childForceExpandHeight = false;
+
+            ContentSizeFitter csf = content.AddComponent<ContentSizeFitter>();
+            csf.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            GameObject sbObj = CreateUIObject("Scrollbar", scrollObj.transform);
+            RectTransform sbRt = sbObj.GetComponent<RectTransform>();
+            sbRt.anchorMin = new Vector2(1f, 0f);
+            sbRt.anchorMax = new Vector2(1f, 1f);
+            sbRt.pivot = new Vector2(1f, 0.5f);
+            sbRt.sizeDelta = new Vector2(10f, 0f);
+            sbRt.anchoredPosition = Vector2.zero;
+            Image sbTrack = sbObj.AddComponent<Image>();
+            sbTrack.color = new Color(0.03f, 0.06f, 0.12f, 0.90f);
+
+            GameObject slidingArea = CreateUIObject("SlidingArea", sbObj.transform);
+            RectTransform saRt = slidingArea.GetComponent<RectTransform>();
+            StretchFull(saRt);
+            saRt.offsetMin = new Vector2(1f, 2f);
+            saRt.offsetMax = new Vector2(-1f, -2f);
+
+            GameObject handleObj = CreateUIObject("Handle", slidingArea.transform);
+            RectTransform hRt = handleObj.GetComponent<RectTransform>();
+            StretchFull(hRt);
+            Image handleImg = handleObj.AddComponent<Image>();
+            handleImg.color = new Color(0.28f, 0.72f, 0.96f, 0.95f);
+
+            Scrollbar sb = sbObj.AddComponent<Scrollbar>();
+            sb.direction = Scrollbar.Direction.BottomToTop;
+            sb.targetGraphic = handleImg;
+            sb.handleRect = hRt;
+
+            sr.viewport = vpRt;
+            sr.content = cRt;
+            sr.verticalScrollbar = sb;
+            sr.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
+            Canvas.ForceUpdateCanvases();
+            sr.verticalNormalizedPosition = 1f;
+            return content.transform;
         }
 
         private static Text CreateText(string name, Transform parent, Font font, string content, int size, FontStyle style, Color color, TextAnchor align)

@@ -479,7 +479,7 @@ namespace AstraLink.UI.Menu
 
         private void BuildCornerTelemetryBadges(Transform parent)
         {
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Font font = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
             if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
 
             // Top-Left Relay Status Badge
