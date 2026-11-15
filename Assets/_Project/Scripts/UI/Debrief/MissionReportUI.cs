@@ -1628,13 +1628,13 @@ namespace AstraLink.UI.Debrief
             }
             if (outcomeHeadlineText != null)
             {
-                outcomeHeadlineText.text = "WHY DID IT FAIL?  •  A.S.T.R.A. POST-FLIGHT ANOMALY INVESTIGATION";
+                outcomeHeadlineText.text = "MISSION FAILED  •  ANOMALY REPORT";
                 outcomeHeadlineText.color = new Color(1.0f, 0.48f, 0.46f, 1f);
             }
             if (outcomeSublineText != null)
             {
                 outcomeSublineText.text =
-                    "Review the exact orbital telemetry numbers below and return to the Hangar for free to update your satellite or autopilot rules.";
+                    "Check the root cause and telemetry below, then return to the Hangar for a free retry.";
                 outcomeSublineText.color = new Color(0.96f, 0.84f, 0.84f, 1f);
             }
 
@@ -2405,7 +2405,10 @@ namespace AstraLink.UI.Debrief
         private void BuildTopHeaderBar(Transform parent, Font font)
         {
             SolarSystemArtBank art = SolarSystemArtBank.Load();
-            GameObject headerBar = CreatePanel("HeaderBar", parent, new Color(0.92f, 0.96f, 1f, 0.96f), 68f);
+            GameObject headerBar = CreatePanel("HeaderBar", parent, new Color(0.92f, 0.96f, 1f, 0.96f), 64f);
+            LayoutElement hbLe = headerBar.GetComponent<LayoutElement>();
+            hbLe.minHeight = 64f;
+            hbLe.flexibleHeight = 0f;
             _topHeaderBarRoot = headerBar;
             if (art != null && art.inventoryPanel != null)
             {
@@ -2441,7 +2444,9 @@ namespace AstraLink.UI.Debrief
             titleStackLe.flexibleWidth = 1f;
 
             VerticalLayoutGroup titleStackLayout = titleStack.AddComponent<VerticalLayoutGroup>();
+            titleStackLayout.padding = new RectOffset(0, 0, 5, 1);
             titleStackLayout.spacing = 2f;
+            titleStackLayout.childAlignment = TextAnchor.MiddleLeft;
             titleStackLayout.childControlWidth = true;
             titleStackLayout.childControlHeight = true;
             titleStackLayout.childForceExpandWidth = true;
@@ -2634,8 +2639,11 @@ namespace AstraLink.UI.Debrief
         private void BuildOutcomeBanner(Transform parent, Font font)
         {
             SolarSystemArtBank art = SolarSystemArtBank.Load();
-            GameObject bannerObj = CreatePanel("OutcomeBanner", parent, new Color(0.16f, 0.45f, 0.30f, 0.96f), 0f);
-            bannerObj.AddComponent<LayoutElement>().minHeight = 68f;
+            GameObject bannerObj = CreatePanel("OutcomeBanner", parent, new Color(0.16f, 0.45f, 0.30f, 0.96f), 60f);
+            LayoutElement bannerLe = bannerObj.GetComponent<LayoutElement>();
+            bannerLe.minHeight = 60f;
+            bannerLe.preferredHeight = 60f;
+            bannerLe.flexibleHeight = 0f;
             outcomeBannerBackground = bannerObj.GetComponent<Image>();
             if (art != null && art.dialogueBox != null)
             {
@@ -2643,9 +2651,9 @@ namespace AstraLink.UI.Debrief
             }
 
             HorizontalLayoutGroup hLayout = bannerObj.AddComponent<HorizontalLayoutGroup>();
-            hLayout.padding = new RectOffset(18, 18, 10, 10);
-            hLayout.spacing = 14f;
-            hLayout.childAlignment = TextAnchor.MiddleLeft;
+            hLayout.padding = new RectOffset(18, 18, 6, 6);
+            hLayout.spacing = 12f;
+            hLayout.childAlignment = TextAnchor.MiddleCenter;
             hLayout.childControlWidth = true;
             hLayout.childControlHeight = true;
             hLayout.childForceExpandWidth = false;
@@ -2653,7 +2661,7 @@ namespace AstraLink.UI.Debrief
             if (art != null && art.holoProjector != null)
             {
                 GameObject icObj = CreateUIObject("OutcomeIcon", bannerObj.transform);
-                icObj.AddComponent<LayoutElement>().preferredWidth = 44f;
+                icObj.AddComponent<LayoutElement>().preferredWidth = 36f;
                 Image ic = icObj.AddComponent<Image>();
                 ic.sprite = art.holoProjector;
                 ic.preserveAspect = true;
@@ -2663,7 +2671,8 @@ namespace AstraLink.UI.Debrief
             GameObject txtStack = CreateUIObject("OutcomeTextStack", bannerObj.transform);
             txtStack.AddComponent<LayoutElement>().flexibleWidth = 1f;
             VerticalLayoutGroup bannerLayout = txtStack.AddComponent<VerticalLayoutGroup>();
-            bannerLayout.spacing = 4f;
+            bannerLayout.spacing = 2f;
+            bannerLayout.childAlignment = TextAnchor.MiddleCenter;
             bannerLayout.childControlWidth = true;
             bannerLayout.childControlHeight = true;
             bannerLayout.childForceExpandWidth = true;
@@ -2719,7 +2728,10 @@ namespace AstraLink.UI.Debrief
             leftLayout.childForceExpandHeight = false;
 
             GameObject hdrObj = CreateUIObject("MetricsHeaderRow", leftCol.transform);
-            hdrObj.AddComponent<LayoutElement>().preferredHeight = 34f;
+            LayoutElement hdrLe = hdrObj.AddComponent<LayoutElement>();
+            hdrLe.minHeight = 30f;
+            hdrLe.preferredHeight = 30f;
+            hdrLe.flexibleHeight = 0f;
             if (art != null && art.nameTab != null)
             {
                 SolarSystemArtBank.ApplyPanelFrame(hdrObj.AddComponent<Image>(), art.nameTab, new Vector4(8f, 6f, 8f, 6f), Color.white);
@@ -2839,9 +2851,11 @@ namespace AstraLink.UI.Debrief
             out Text detailText,
             out Image barFill)
         {
-            GameObject card = CreatePanel(name, parent, Color.white, 0f);
-            LayoutElement cardLe = card.AddComponent<LayoutElement>();
-            cardLe.minHeight = 108f;
+            GameObject card = CreatePanel(name, parent, Color.white, 82f);
+            LayoutElement cardLe = card.GetComponent<LayoutElement>();
+            cardLe.minHeight = 76f;
+            cardLe.preferredHeight = 82f;
+            cardLe.flexibleHeight = 0f;
             if (art != null && art.dialogueBox != null)
             {
                 SolarSystemArtBank.ApplyPanelFrame(card.GetComponent<Image>(), art.dialogueBox, new Vector4(10f, 10f, 10f, 10f), Color.white);
@@ -2852,8 +2866,8 @@ namespace AstraLink.UI.Debrief
             }
 
             HorizontalLayoutGroup outerHl = card.AddComponent<HorizontalLayoutGroup>();
-            outerHl.padding = new RectOffset(14, 16, 10, 10);
-            outerHl.spacing = 12f;
+            outerHl.padding = new RectOffset(12, 14, 7, 7);
+            outerHl.spacing = 10f;
             outerHl.childAlignment = TextAnchor.MiddleLeft;
             outerHl.childControlWidth = true;
             outerHl.childControlHeight = true;
@@ -2863,8 +2877,8 @@ namespace AstraLink.UI.Debrief
             {
                 GameObject slotObj = CreateUIObject("IconSlot", card.transform);
                 LayoutElement slotLe = slotObj.AddComponent<LayoutElement>();
-                slotLe.preferredWidth = 54f;
-                slotLe.preferredHeight = 54f;
+                slotLe.preferredWidth = 44f;
+                slotLe.preferredHeight = 44f;
                 Image slotBg = slotObj.AddComponent<Image>();
                 if (art != null && art.itemSlot != null)
                 {
@@ -2979,8 +2993,11 @@ namespace AstraLink.UI.Debrief
         private void BuildDispatcherJokeCard(Transform parent, Font font)
         {
             SolarSystemArtBank art = SolarSystemArtBank.Load();
-            GameObject card = CreatePanel("DispatcherJokeCard", parent, Color.white, 188f);
-            card.GetComponent<LayoutElement>().minHeight = 188f;
+            GameObject card = CreatePanel("DispatcherJokeCard", parent, Color.white, 112f);
+            LayoutElement cardLe = card.GetComponent<LayoutElement>();
+            cardLe.minHeight = 112f;
+            cardLe.preferredHeight = 112f;
+            cardLe.flexibleHeight = 0f;
             if (art != null && art.inventoryPanel != null)
             {
                 SolarSystemArtBank.ApplyPanelFrame(card.GetComponent<Image>(), art.inventoryPanel, new Vector4(12f, 12f, 12f, 12f), new Color(0.92f, 0.96f, 1f, 0.97f));
@@ -2991,21 +3008,21 @@ namespace AstraLink.UI.Debrief
             }
 
             HorizontalLayoutGroup hl = card.AddComponent<HorizontalLayoutGroup>();
-            hl.padding = new RectOffset(16, 16, 12, 12);
-            hl.spacing = 16f;
+            hl.padding = new RectOffset(14, 14, 8, 8);
+            hl.spacing = 12f;
             hl.childAlignment = TextAnchor.MiddleCenter;
             hl.childControlWidth = true;
             hl.childControlHeight = true;
             hl.childForceExpandWidth = false;
 
-            // Left-Center: Big Portrait + Name directly underneath
+            // Left-Center: Portrait + Name directly underneath
             GameObject portraitCol = CreateUIObject("PortraitAndNameCol", card.transform);
             LayoutElement pcLe = portraitCol.AddComponent<LayoutElement>();
-            pcLe.preferredWidth = 210f;
-            pcLe.minWidth = 190f;
+            pcLe.preferredWidth = 175f;
+            pcLe.minWidth = 165f;
 
             VerticalLayoutGroup pvl = portraitCol.AddComponent<VerticalLayoutGroup>();
-            pvl.spacing = 6f;
+            pvl.spacing = 3f;
             pvl.childAlignment = TextAnchor.MiddleCenter;
             pvl.childControlWidth = false;
             pvl.childControlHeight = false;
@@ -3014,7 +3031,7 @@ namespace AstraLink.UI.Debrief
 
             GameObject pSlot = CreateUIObject("DispatcherPortraitSlot", portraitCol.transform);
             RectTransform slotRt = pSlot.GetComponent<RectTransform>();
-            slotRt.sizeDelta = new Vector2(128f, 128f);
+            slotRt.sizeDelta = new Vector2(70f, 70f);
             Image pBg = pSlot.AddComponent<Image>();
             if (art != null && art.itemSlotSelected != null)
             {
@@ -3040,20 +3057,21 @@ namespace AstraLink.UI.Debrief
                 portraitCol.transform,
                 font,
                 "DISPATCHER ZORG-9",
-                14,
+                12,
                 FontStyle.Bold,
                 new Color(1.0f, 0.86f, 0.38f, 1f),
                 TextAnchor.MiddleCenter);
             _dispatcherNameText.resizeTextForBestFit = true;
-            _dispatcherNameText.resizeTextMinSize = 11;
-            _dispatcherNameText.resizeTextMaxSize = 14;
-            _dispatcherNameText.GetComponent<RectTransform>().sizeDelta = new Vector2(204f, 24f);
+            _dispatcherNameText.resizeTextMinSize = 9;
+            _dispatcherNameText.resizeTextMaxSize = 12;
+            _dispatcherNameText.GetComponent<RectTransform>().sizeDelta = new Vector2(170f, 18f);
 
             // Right Side: Dedicated Joke Panel
-            GameObject jokePanel = CreatePanel("DispatcherJokePanel", card.transform, Color.white, 0f);
-            LayoutElement jpLe = jokePanel.AddComponent<LayoutElement>();
+            GameObject jokePanel = CreatePanel("DispatcherJokePanel", card.transform, Color.white, 88f);
+            LayoutElement jpLe = jokePanel.GetComponent<LayoutElement>();
             jpLe.flexibleWidth = 1f;
-            jpLe.preferredHeight = 154f;
+            jpLe.minHeight = 84f;
+            jpLe.preferredHeight = 88f;
             if (art != null && art.dialogueBox != null)
             {
                 SolarSystemArtBank.ApplyPanelFrame(jokePanel.GetComponent<Image>(), art.dialogueBox, new Vector4(10f, 10f, 10f, 10f), new Color(0.86f, 0.94f, 1f, 0.98f));
@@ -3068,18 +3086,18 @@ namespace AstraLink.UI.Debrief
                 jokePanel.transform,
                 font,
                 "\"In space, nobody can hear you forget to turn on the solar panels.\"",
-                17,
+                15,
                 FontStyle.BoldAndItalic,
                 new Color(0.94f, 0.98f, 1.0f, 1f),
                 TextAnchor.MiddleCenter);
             _dispatcherJokeText.resizeTextForBestFit = true;
-            _dispatcherJokeText.resizeTextMinSize = 13;
-            _dispatcherJokeText.resizeTextMaxSize = 18;
-            _dispatcherJokeText.lineSpacing = 1.25f;
+            _dispatcherJokeText.resizeTextMinSize = 11;
+            _dispatcherJokeText.resizeTextMaxSize = 16;
+            _dispatcherJokeText.lineSpacing = 1.2f;
             RectTransform jkRt = _dispatcherJokeText.GetComponent<RectTransform>();
             StretchFull(jkRt);
-            jkRt.offsetMin = new Vector2(18f, 14f);
-            jkRt.offsetMax = new Vector2(-18f, -14f);
+            jkRt.offsetMin = new Vector2(16f, 10f);
+            jkRt.offsetMax = new Vector2(-16f, -10f);
 
             RandomizeDispatcherRofl();
         }
@@ -3143,7 +3161,10 @@ namespace AstraLink.UI.Debrief
 
             // Header Banner
             GameObject hdrObj = CreateUIObject("SuccessHeaderRow", successStateRoot.transform);
-            hdrObj.AddComponent<LayoutElement>().preferredHeight = 34f;
+            LayoutElement sHdrLe = hdrObj.AddComponent<LayoutElement>();
+            sHdrLe.minHeight = 30f;
+            sHdrLe.preferredHeight = 30f;
+            sHdrLe.flexibleHeight = 0f;
             if (art != null && art.nameTab != null)
             {
                 SolarSystemArtBank.ApplyPanelFrame(hdrObj.AddComponent<Image>(), art.nameTab, new Vector4(8f, 6f, 8f, 6f), new Color(0.75f, 1f, 0.88f, 1f));
@@ -3471,7 +3492,10 @@ namespace AstraLink.UI.Debrief
 
             // Header Banner with A.S.T.R.A. Portrait
             GameObject hdrObj = CreateUIObject("FailureHeaderRow", failureStateRoot.transform);
-            hdrObj.AddComponent<LayoutElement>().preferredHeight = 34f;
+            LayoutElement fHdrLe = hdrObj.AddComponent<LayoutElement>();
+            fHdrLe.minHeight = 30f;
+            fHdrLe.preferredHeight = 30f;
+            fHdrLe.flexibleHeight = 0f;
             if (art != null && art.nameTab != null)
             {
                 SolarSystemArtBank.ApplyPanelFrame(hdrObj.AddComponent<Image>(), art.nameTab, new Vector4(8f, 6f, 8f, 6f), new Color(1f, 0.72f, 0.72f, 1f));
@@ -3487,7 +3511,7 @@ namespace AstraLink.UI.Debrief
             if (art != null && art.countdownClock != null)
             {
                 GameObject icObj = CreateUIObject("FailClockIcon", hdrObj.transform);
-                icObj.AddComponent<LayoutElement>().preferredWidth = 22f;
+                icObj.AddComponent<LayoutElement>().preferredWidth = 20f;
                 Image ic = icObj.AddComponent<Image>();
                 ic.sprite = art.countdownClock;
                 ic.preserveAspect = true;
@@ -3498,57 +3522,17 @@ namespace AstraLink.UI.Debrief
                 "FailureHeader",
                 hdrObj.transform,
                 font,
-                "FAILURE ANALYSIS — A.S.T.R.A.",
-                16,
+                "ROOT CAUSE & FAILURE ANALYSIS",
+                15,
                 FontStyle.Bold,
                 Color.white,
                 TextAnchor.MiddleCenter).gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
 
-            Transform failBody = CreateDebriefScrollContent(failureStateRoot.transform, "FailureScroll", 10f);
+            Transform failBody = CreateDebriefScrollContent(failureStateRoot.transform, "FailureScroll", 8f);
 
-            // 1. FailureTitle Box
-            GameObject titleBox = CreatePanel("FailureTitleBox", failBody, new Color(0.65f, 0.22f, 0.26f, 0.98f), 0f);
-            titleBox.AddComponent<LayoutElement>().minHeight = 82f;
-            failureTitleBannerBg = titleBox.GetComponent<Image>();
-            if (art != null && art.dialogueBox != null)
-            {
-                SolarSystemArtBank.ApplyPanelFrame(failureTitleBannerBg, art.dialogueBox, new Vector4(10f, 10f, 10f, 10f), new Color(0.82f, 0.26f, 0.30f, 0.98f));
-            }
-
-            VerticalLayoutGroup titleBoxLayout = titleBox.AddComponent<VerticalLayoutGroup>();
-            titleBoxLayout.padding = new RectOffset(16, 16, 10, 10);
-            titleBoxLayout.spacing = 4f;
-            titleBoxLayout.childControlWidth = true;
-            titleBoxLayout.childControlHeight = true;
-            titleBoxLayout.childForceExpandWidth = true;
-            titleBoxLayout.childForceExpandHeight = false;
-
-            CreateText(
-                "FailureTitleTag",
-                titleBox.transform,
-                font,
-                "1. WHAT WENT WRONG:",
-                13,
-                FontStyle.Bold,
-                new Color(1.0f, 0.84f, 0.84f, 1f),
-                TextAnchor.MiddleCenter);
-
-            failureTitleText = CreateText(
-                "FailureTitleValue",
-                titleBox.transform,
-                font,
-                "Critical Battery Depletion (0%)",
-                21,
-                FontStyle.Bold,
-                Color.white,
-                TextAnchor.MiddleCenter);
-            failureTitleText.resizeTextForBestFit = true;
-            failureTitleText.resizeTextMinSize = 15;
-            failureTitleText.resizeTextMaxSize = 21;
-
-            // 2. FailureCause Box
+            // 1. ROOT CAUSE (Placed above A.S.T.R.A. review)
             GameObject causeBox = CreatePanel("FailureCauseBox", failBody, Color.white, 0f);
-            causeBox.AddComponent<LayoutElement>().minHeight = 115f;
+            causeBox.AddComponent<LayoutElement>().minHeight = 96f;
             if (art != null && art.dialogueBox != null)
             {
                 SolarSystemArtBank.ApplyPanelFrame(causeBox.GetComponent<Image>(), art.dialogueBox, new Vector4(10f, 10f, 10f, 10f), Color.white);
@@ -3559,8 +3543,8 @@ namespace AstraLink.UI.Debrief
             }
 
             VerticalLayoutGroup causeBoxLayout = causeBox.AddComponent<VerticalLayoutGroup>();
-            causeBoxLayout.padding = new RectOffset(16, 16, 10, 10);
-            causeBoxLayout.spacing = 6f;
+            causeBoxLayout.padding = new RectOffset(14, 14, 8, 8);
+            causeBoxLayout.spacing = 4f;
             causeBoxLayout.childControlWidth = true;
             causeBoxLayout.childControlHeight = true;
             causeBoxLayout.childForceExpandWidth = true;
@@ -3570,8 +3554,8 @@ namespace AstraLink.UI.Debrief
                 "FailureCauseTag",
                 causeBox.transform,
                 font,
-                "2. ROOT CAUSE:",
-                14,
+                "1. ROOT CAUSE:",
+                13,
                 FontStyle.Bold,
                 new Color(1.0f, 0.78f, 0.40f, 1f),
                 TextAnchor.MiddleCenter);
@@ -3581,15 +3565,55 @@ namespace AstraLink.UI.Debrief
                 causeBox.transform,
                 font,
                 "Satellite lost power on orbit 1 (tick 11). Power draw reached 27.0 W against 0.0 W generation, draining battery capacity (45.0 Wh) in eclipse.",
-                15,
+                14,
                 FontStyle.Normal,
                 new Color(0.95f, 0.97f, 1.0f, 1f),
                 TextAnchor.MiddleCenter);
-            failureCauseText.lineSpacing = 1.22f;
+            failureCauseText.lineSpacing = 1.18f;
 
-            // 3. FailureRecommendation Box with A.S.T.R.A. Portrait
+            // 2. WHAT WENT WRONG (Primary Anomaly)
+            GameObject titleBox = CreatePanel("FailureTitleBox", failBody, new Color(0.65f, 0.22f, 0.26f, 0.98f), 0f);
+            titleBox.AddComponent<LayoutElement>().minHeight = 68f;
+            failureTitleBannerBg = titleBox.GetComponent<Image>();
+            if (art != null && art.dialogueBox != null)
+            {
+                SolarSystemArtBank.ApplyPanelFrame(failureTitleBannerBg, art.dialogueBox, new Vector4(10f, 10f, 10f, 10f), new Color(0.82f, 0.26f, 0.30f, 0.98f));
+            }
+
+            VerticalLayoutGroup titleBoxLayout = titleBox.AddComponent<VerticalLayoutGroup>();
+            titleBoxLayout.padding = new RectOffset(14, 14, 8, 8);
+            titleBoxLayout.spacing = 3f;
+            titleBoxLayout.childControlWidth = true;
+            titleBoxLayout.childControlHeight = true;
+            titleBoxLayout.childForceExpandWidth = true;
+            titleBoxLayout.childForceExpandHeight = false;
+
+            CreateText(
+                "FailureTitleTag",
+                titleBox.transform,
+                font,
+                "2. ANOMALY CLASSIFICATION:",
+                12,
+                FontStyle.Bold,
+                new Color(1.0f, 0.84f, 0.84f, 1f),
+                TextAnchor.MiddleCenter);
+
+            failureTitleText = CreateText(
+                "FailureTitleValue",
+                titleBox.transform,
+                font,
+                "Critical Battery Depletion (0%)",
+                19,
+                FontStyle.Bold,
+                Color.white,
+                TextAnchor.MiddleCenter);
+            failureTitleText.resizeTextForBestFit = true;
+            failureTitleText.resizeTextMinSize = 14;
+            failureTitleText.resizeTextMaxSize = 19;
+
+            // 3. A.S.T.R.A. Review & Fix Box with Portrait
             GameObject recBox = CreatePanel("FailureRecommendationBox", failBody, Color.white, 0f);
-            recBox.AddComponent<LayoutElement>().minHeight = 128f;
+            recBox.AddComponent<LayoutElement>().minHeight = 104f;
             if (art != null && art.dialogueBox != null)
             {
                 SolarSystemArtBank.ApplyPanelFrame(recBox.GetComponent<Image>(), art.dialogueBox, new Vector4(10f, 10f, 10f, 10f), new Color(0.76f, 0.96f, 1f, 0.98f));
