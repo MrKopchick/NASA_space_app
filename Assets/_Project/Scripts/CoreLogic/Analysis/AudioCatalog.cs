@@ -50,6 +50,8 @@ namespace AstraLink.Core
     /// </summary>
     public static class AudioCatalog
     {
+        public const string AudioManagerResourcePath = "AudioManager";
+
         private static bool _sfxEnabled = true;
         private static bool _musicEnabled = true;
         private static bool _hoverEnabled = true;
@@ -300,6 +302,64 @@ namespace AstraLink.Core
         {
             string path;
             return MusicAssetPaths.TryGetValue(trackId, out path) ? path : string.Empty;
+        }
+
+        /// <summary>
+        /// Returns the <c>Resources.Load</c>-compatible path (without prefix or file extension) for the specified <see cref="SoundEffectId"/>.
+        /// </summary>
+        public static string GetSfxResourcePath(SoundEffectId soundId)
+        {
+            return ConvertAssetPathToResourcePath(GetSfxAssetPath(soundId));
+        }
+
+        /// <summary>
+        /// Returns the <c>Resources.Load</c>-compatible path (without prefix or file extension) for the specified <see cref="MusicTrackId"/>.
+        /// </summary>
+        public static string GetMusicResourcePath(MusicTrackId trackId)
+        {
+            return ConvertAssetPathToResourcePath(GetMusicAssetPath(trackId));
+        }
+
+        /// <summary>
+        /// Resolves the appropriate background music track for the given scene name.
+        /// </summary>
+        public static MusicTrackId ResolveMusicForScene(string sceneName)
+        {
+            if (!string.IsNullOrWhiteSpace(sceneName) && ContainsIgnoreCase(sceneName, "Menu"))
+            {
+                return MusicTrackId.MenuMusic;
+            }
+
+            return MusicTrackId.FlightMusic;
+        }
+
+        private static string ConvertAssetPathToResourcePath(string assetPath)
+        {
+            if (string.IsNullOrWhiteSpace(assetPath))
+            {
+                return string.Empty;
+            }
+
+            string normalized = assetPath.Trim().Replace('\\', '/');
+            const string projectPrefix = "Assets/_Project/";
+            const string resourcesPrefix = "Assets/_Project/Resources/";
+
+            if (normalized.StartsWith(resourcesPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                normalized = normalized.Substring(resourcesPrefix.Length);
+            }
+            else if (normalized.StartsWith(projectPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                normalized = normalized.Substring(projectPrefix.Length);
+            }
+
+            int dotIndex = normalized.LastIndexOf('.');
+            if (dotIndex > 0)
+            {
+                normalized = normalized.Substring(0, dotIndex);
+            }
+
+            return normalized;
         }
 
         /// <summary>
