@@ -20,15 +20,15 @@ namespace AstraLink.UI.Menu
         [SerializeField] private Text subtitleText;
         [SerializeField] private Text footerText;
 
-        [Header("Menu Buttons")]
-        [SerializeField] private Button startButton;
-        [SerializeField] private Text startButtonLabel;
-        [SerializeField] private Button newCampaignButton;
-        [SerializeField] private Text newCampaignButtonLabel;
+        [Header("Menu Buttons (Continue, Settings, Saves, Exit)")]
+        [SerializeField] private Button continueButton;
+        [SerializeField] private Text continueButtonLabel;
+        [SerializeField] private Button settingsButton;
+        [SerializeField] private Text settingsButtonLabel;
         [SerializeField] private Button savesButton;
         [SerializeField] private Text savesButtonLabel;
-        [SerializeField] private Button quitButton;
-        [SerializeField] private Text quitButtonLabel;
+        [SerializeField] private Button exitButton;
+        [SerializeField] private Text exitButtonLabel;
 
         [Header("Background Slideshow")]
         [SerializeField] private List<Sprite> backgroundSprites = new List<Sprite>();
@@ -66,28 +66,28 @@ namespace AstraLink.UI.Menu
         private Color _baseLogoColor;
         private string _baseSubtitleString;
 
-        private Vector2 _baseStartBtnPos;
-        private Vector2 _baseNewCampaignBtnPos;
+        private Vector2 _baseContinueBtnPos;
+        private Vector2 _baseSettingsBtnPos;
         private Vector2 _baseSavesBtnPos;
-        private Vector2 _baseQuitBtnPos;
-        private Color _baseStartBtnColor;
-        private Color _baseNewCampaignBtnColor;
+        private Vector2 _baseExitBtnPos;
+        private Color _baseContinueBtnColor;
+        private Color _baseSettingsBtnColor;
         private Color _baseSavesBtnColor;
-        private Color _baseQuitBtnColor;
-        private Color _baseStartLblColor;
-        private Color _baseNewCampaignLblColor;
+        private Color _baseExitBtnColor;
+        private Color _baseContinueLblColor;
+        private Color _baseSettingsLblColor;
         private Color _baseSavesLblColor;
-        private Color _baseQuitLblColor;
-        private string _baseStartLblString;
-        private string _baseNewCampaignLblString;
+        private Color _baseExitLblColor;
+        private string _baseContinueLblString;
+        private string _baseSettingsLblString;
         private string _baseSavesLblString;
-        private string _baseQuitLblString;
+        private string _baseExitLblString;
 
         private void Awake()
         {
             SaveManager.MigrateLegacySaveIfNeeded();
             BindSceneReferencesIfMissing();
-            EnsureSavesButtonExists();
+            EnsureFourButtonsExist();
             InitializeSaveManagerModal();
             if (enableAmbientDecor)
             {
@@ -132,41 +132,107 @@ namespace AstraLink.UI.Menu
                 _saveManagerPanel = gameObject.AddComponent<SaveManagerPanelUI>();
             }
 
-            Font refFont = startButtonLabel != null ? startButtonLabel.font : titleText?.font;
+            Font refFont = continueButtonLabel != null ? continueButtonLabel.font : (titleText?.font ?? Resources.GetBuiltinResource<Font>("Arial.ttf"));
             _saveManagerPanel.Initialize(canvasTransform, refFont);
             _saveManagerPanel.OnLoadRequested += _ => StartOrContinueGame();
             _saveManagerPanel.OnSavesChanged += RefreshMenuLabels;
         }
 
-        private void EnsureSavesButtonExists()
+        private void EnsureFourButtonsExist()
         {
-            if (savesButton != null) return;
+            Transform panelTransform = GameObject.Find("MenuCanvas/CenterCard/ButtonsPanel")?.transform;
+            if (panelTransform == null) return;
 
-            // Шукаємо кнопку в ієрархії, якщо вона вже є
-            Transform existing = GameObject.Find("MenuCanvas/CenterCard/ButtonsPanel/Btn_Saves")?.transform;
-            if (existing != null)
+            // 1. Continue Button (шукаємо старий Btn_StartGame або схожий)
+            if (continueButton == null)
             {
-                savesButton = existing.GetComponent<Button>();
-                savesButtonLabel = savesButton.GetComponentInChildren<Text>();
-                return;
+                Transform t = panelTransform.Find("Btn_Continue") ?? panelTransform.Find("Btn_StartGame");
+                if (t != null)
+                {
+                    t.name = "Btn_Continue";
+                    continueButton = t.GetComponent<Button>();
+                }
+                else
+                {
+                    continueButton = CreateButtonObject(panelTransform, "Btn_Continue", "CONTINUE");
+                }
             }
+            continueButtonLabel = continueButton.GetComponentInChildren<Text>();
 
-            // Якщо немає — клонуємо Btn_NewCampaign у тому ж ButtonsPanel
-            Button template = newCampaignButton != null ? newCampaignButton : startButton;
-            if (template == null) return;
-
-            GameObject clone = Instantiate(template.gameObject, template.transform.parent);
-            clone.name = "Btn_Saves";
-            clone.transform.SetSiblingIndex(template.transform.GetSiblingIndex() + 1);
-
-            savesButton = clone.GetComponent<Button>();
-            savesButtonLabel = clone.GetComponentInChildren<Text>();
-            if (savesButtonLabel != null)
+            // 2. Settings Button
+            if (settingsButton == null)
             {
-                savesButtonLabel.text = "SAVES";
+                Transform t = panelTransform.Find("Btn_Settings") ?? panelTransform.Find("Btn_NewCampaign");
+                if (t != null)
+                {
+                    t.name = "Btn_Settings";
+                    settingsButton = t.GetComponent<Button>();
+                }
+                else
+                {
+                    settingsButton = CreateButtonObject(panelTransform, "Btn_Settings", "SETTINGS");
+                }
             }
+            settingsButtonLabel = settingsButton.GetComponentInChildren<Text>();
 
-            LayoutFourMenuButtons(template.transform.parent as RectTransform);
+            // 3. Saves Button
+            if (savesButton == null)
+            {
+                Transform t = panelTransform.Find("Btn_Saves");
+                if (t != null)
+                {
+                    savesButton = t.GetComponent<Button>();
+                }
+                else
+                {
+                    savesButton = CreateButtonObject(panelTransform, "Btn_Saves", "SAVES");
+                }
+            }
+            savesButtonLabel = savesButton.GetComponentInChildren<Text>();
+
+            // 4. Exit Button
+            if (exitButton == null)
+            {
+                Transform t = panelTransform.Find("Btn_Exit") ?? panelTransform.Find("Btn_Quit");
+                if (t != null)
+                {
+                    t.name = "Btn_Exit";
+                    exitButton = t.GetComponent<Button>();
+                }
+                else
+                {
+                    exitButton = CreateButtonObject(panelTransform, "Btn_Exit", "EXIT");
+                }
+            }
+            exitButtonLabel = exitButton.GetComponentInChildren<Text>();
+
+            LayoutFourMenuButtons(panelTransform as RectTransform);
+        }
+
+        private Button CreateButtonObject(Transform parent, string name, string labelText)
+        {
+            GameObject btnObj = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+            btnObj.transform.SetParent(parent, false);
+
+            var img = btnObj.GetComponent<Image>();
+            img.color = new Color(0.16f, 0.27f, 0.44f, 1f);
+
+            var txtObj = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+            txtObj.transform.SetParent(btnObj.transform, false);
+            var txtRt = txtObj.GetComponent<RectTransform>();
+            txtRt.anchorMin = Vector2.zero;
+            txtRt.anchorMax = Vector2.one;
+            txtRt.offsetMin = Vector2.zero;
+            txtRt.offsetMax = Vector2.zero;
+
+            var txt = txtObj.GetComponent<Text>();
+            txt.font = Resources.GetBuiltinResource<Font>("TimesNewRoman.ttf") ?? Resources.GetBuiltinResource<Font>("Arial.ttf");
+            txt.text = labelText;
+            txt.fontSize = 20;
+            txt.alignment = TextAnchor.MiddleCenter;
+            txt.color = Color.white;
+
+            return btnObj.GetComponent<Button>();
         }
 
         private void LayoutFourMenuButtons(RectTransform panelRt)
@@ -177,10 +243,10 @@ namespace AstraLink.UI.Menu
                 panelRt.sizeDelta = new Vector2(panelRt.sizeDelta.x, 330f);
             }
 
-            SetButtonVerticalRect(startButton, 114f, 64f);
-            SetButtonVerticalRect(newCampaignButton, 38f, 60f);
+            SetButtonVerticalRect(continueButton, 114f, 60f);
+            SetButtonVerticalRect(settingsButton, 38f, 60f);
             SetButtonVerticalRect(savesButton, -38f, 60f);
-            SetButtonVerticalRect(quitButton, -114f, 58f);
+            SetButtonVerticalRect(exitButton, -114f, 60f);
         }
 
         private static void SetButtonVerticalRect(Button btn, float yPos, float height)
@@ -194,16 +260,16 @@ namespace AstraLink.UI.Menu
 
         private void BindButtonCallbacks()
         {
-            if (startButton != null)
+            if (continueButton != null)
             {
-                startButton.onClick.RemoveListener(StartOrContinueGame);
-                startButton.onClick.AddListener(StartOrContinueGame);
+                continueButton.onClick.RemoveListener(StartOrContinueGame);
+                continueButton.onClick.AddListener(StartOrContinueGame);
             }
 
-            if (newCampaignButton != null)
+            if (settingsButton != null)
             {
-                newCampaignButton.onClick.RemoveListener(StartNewCampaign);
-                newCampaignButton.onClick.AddListener(StartNewCampaign);
+                settingsButton.onClick.RemoveListener(OpenSettings);
+                settingsButton.onClick.AddListener(OpenSettings);
             }
 
             if (savesButton != null)
@@ -212,10 +278,10 @@ namespace AstraLink.UI.Menu
                 savesButton.onClick.AddListener(OpenSaveManager);
             }
 
-            if (quitButton != null)
+            if (exitButton != null)
             {
-                quitButton.onClick.RemoveListener(QuitGame);
-                quitButton.onClick.AddListener(QuitGame);
+                exitButton.onClick.RemoveListener(QuitGame);
+                exitButton.onClick.AddListener(QuitGame);
             }
         }
 
@@ -225,14 +291,27 @@ namespace AstraLink.UI.Menu
             _saveManagerPanel.Open();
         }
 
+        public void OpenSettings()
+        {
+            if (_isTransitioning) return;
+            Debug.Log("[MainMenuUI] Settings clicked (Placeholder for settings panel).");
+            // Тут ти зможеш підключити своє вікно налаштувань, коли воно буде готове
+        }
+
         public void RefreshMenuLabels()
         {
-            bool hasSave = PlayerPrefs.HasKey(GameManager.AgencyStatePrefsKey);
+            bool hasSave = PlayerPrefs.HasKey(GameManager.AgencyStatePrefsKey) || SaveManager.GetAllSaves().Count > 0;
 
-            if (startButtonLabel != null)
+            if (continueButtonLabel != null)
             {
-                startButtonLabel.text = hasSave ? "CONTINUE MISSION" : "START MISSION";
-                _baseStartLblString = startButtonLabel.text;
+                continueButtonLabel.text = hasSave ? "CONTINUE" : "NEW GAME";
+                _baseContinueLblString = continueButtonLabel.text;
+            }
+
+            if (settingsButtonLabel != null)
+            {
+                settingsButtonLabel.text = "SETTINGS";
+                _baseSettingsLblString = settingsButtonLabel.text;
             }
 
             if (savesButtonLabel != null)
@@ -242,17 +321,18 @@ namespace AstraLink.UI.Menu
                 _baseSavesLblString = savesButtonLabel.text;
             }
 
-            if (newCampaignButton != null)
+            if (exitButtonLabel != null)
             {
-                newCampaignButton.interactable = true;
+                exitButtonLabel.text = "EXIT";
+                _baseExitLblString = exitButtonLabel.text;
             }
 
-            if (quitButton != null)
+            if (exitButton != null)
             {
 #if UNITY_WEBGL && !UNITY_EDITOR
-                quitButton.gameObject.SetActive(false);
+                exitButton.gameObject.SetActive(false);
 #else
-                quitButton.gameObject.SetActive(true);
+                exitButton.gameObject.SetActive(true);
 #endif
             }
         }
@@ -273,24 +353,6 @@ namespace AstraLink.UI.Menu
             }
 
             StartOutroTransition(() => SceneManager.LoadScene(mainSceneName));
-        }
-
-        public void StartNewCampaign()
-        {
-            if (_isTransitioning) return;
-
-            if (string.IsNullOrEmpty(mainSceneName))
-            {
-                Debug.LogError("[MainMenuUI] Main scene name is not set.");
-                return;
-            }
-
-            StartOutroTransition(() =>
-            {
-                int nextNumber = SaveManager.GetAllSaves().Count + 1;
-                SaveManager.CreateNewSave($"CAMPAIGN {nextNumber:D2}", string.Empty);
-                SceneManager.LoadScene(mainSceneName);
-            });
         }
 
         public void QuitGame()
@@ -461,10 +523,10 @@ namespace AstraLink.UI.Menu
                 _baseLogoColor = logoImage.color;
             }
 
-            CacheButtonBaseState(startButton, startButtonLabel, ref _baseStartBtnPos, ref _baseStartBtnColor, ref _baseStartLblColor, ref _baseStartLblString);
-            CacheButtonBaseState(newCampaignButton, newCampaignButtonLabel, ref _baseNewCampaignBtnPos, ref _baseNewCampaignBtnColor, ref _baseNewCampaignLblColor, ref _baseNewCampaignLblString);
+            CacheButtonBaseState(continueButton, continueButtonLabel, ref _baseContinueBtnPos, ref _baseContinueBtnColor, ref _baseContinueLblColor, ref _baseContinueLblString);
+            CacheButtonBaseState(settingsButton, settingsButtonLabel, ref _baseSettingsBtnPos, ref _baseSettingsBtnColor, ref _baseSettingsLblColor, ref _baseSettingsLblString);
             CacheButtonBaseState(savesButton, savesButtonLabel, ref _baseSavesBtnPos, ref _baseSavesBtnColor, ref _baseSavesLblColor, ref _baseSavesLblString);
-            CacheButtonBaseState(quitButton, quitButtonLabel, ref _baseQuitBtnPos, ref _baseQuitBtnColor, ref _baseQuitLblColor, ref _baseQuitLblString);
+            CacheButtonBaseState(exitButton, exitButtonLabel, ref _baseExitBtnPos, ref _baseExitBtnColor, ref _baseExitLblColor, ref _baseExitLblString);
         }
 
         private static void CacheButtonBaseState(Button btn, Text lbl, ref Vector2 basePos, ref Color baseBtnColor, ref Color baseLblColor, ref string baseLblText)
@@ -505,10 +567,10 @@ namespace AstraLink.UI.Menu
                 logoImage.color = _baseLogoColor;
             }
 
-            RestoreButtonBaseState(startButton, startButtonLabel, _baseStartBtnPos, _baseStartBtnColor, _baseStartLblColor, _baseStartLblString);
-            RestoreButtonBaseState(newCampaignButton, newCampaignButtonLabel, _baseNewCampaignBtnPos, _baseNewCampaignBtnColor, _baseNewCampaignLblColor, _baseNewCampaignLblString);
+            RestoreButtonBaseState(continueButton, continueButtonLabel, _baseContinueBtnPos, _baseContinueBtnColor, _baseContinueLblColor, _baseContinueLblString);
+            RestoreButtonBaseState(settingsButton, settingsButtonLabel, _baseSettingsBtnPos, _baseSettingsBtnColor, _baseSettingsLblColor, _baseSettingsLblString);
             RestoreButtonBaseState(savesButton, savesButtonLabel, _baseSavesBtnPos, _baseSavesBtnColor, _baseSavesLblColor, _baseSavesLblString);
-            RestoreButtonBaseState(quitButton, quitButtonLabel, _baseQuitBtnPos, _baseQuitBtnColor, _baseQuitLblColor, _baseQuitLblString);
+            RestoreButtonBaseState(exitButton, exitButtonLabel, _baseExitBtnPos, _baseExitBtnColor, _baseExitLblColor, _baseExitLblString);
         }
 
         private static void RestoreButtonBaseState(Button btn, Text lbl, Vector2 basePos, Color baseBtnColor, Color baseLblColor, string baseLblText)
@@ -701,10 +763,10 @@ namespace AstraLink.UI.Menu
                 logoImage.color = logoC;
             }
 
-            ApplyButtonGlitch(startButton, startButtonLabel, _baseStartBtnPos, _baseStartBtnColor, _baseStartLblColor, _baseStartLblString, jitter, step);
-            ApplyButtonGlitch(newCampaignButton, newCampaignButtonLabel, _baseNewCampaignBtnPos, _baseNewCampaignBtnColor, _baseNewCampaignLblColor, _baseNewCampaignLblString, jitter, step + 1);
+            ApplyButtonGlitch(continueButton, continueButtonLabel, _baseContinueBtnPos, _baseContinueBtnColor, _baseContinueLblColor, _baseContinueLblString, jitter, step);
+            ApplyButtonGlitch(settingsButton, settingsButtonLabel, _baseSettingsBtnPos, _baseSettingsBtnColor, _baseSettingsLblColor, _baseSettingsLblString, jitter, step + 1);
             ApplyButtonGlitch(savesButton, savesButtonLabel, _baseSavesBtnPos, _baseSavesBtnColor, _baseSavesLblColor, _baseSavesLblString, jitter, step);
-            ApplyButtonGlitch(quitButton, quitButtonLabel, _baseQuitBtnPos, _baseQuitBtnColor, _baseQuitLblColor, _baseQuitLblString, jitter, step + 1);
+            ApplyButtonGlitch(exitButton, exitButtonLabel, _baseExitBtnPos, _baseExitBtnColor, _baseExitLblColor, _baseExitLblString, jitter, step + 1);
         }
 
         private static void ApplyButtonGlitch(Button btn, Text lbl, Vector2 basePos, Color baseBtnColor, Color baseLblColor, string baseLblText, float jitter, int step)
@@ -766,17 +828,17 @@ namespace AstraLink.UI.Menu
             if (subtitleText == null) subtitleText = FindChildComponent<Text>("MenuCanvas/CenterCard/SubtitleText");
             if (footerText == null) footerText = FindChildComponent<Text>("MenuCanvas/CenterCard/FooterText");
 
-            if (startButton == null) startButton = FindChildComponent<Button>("MenuCanvas/CenterCard/ButtonsPanel/Btn_StartGame");
-            if (startButtonLabel == null && startButton != null) startButtonLabel = startButton.GetComponentInChildren<Text>();
+            if (continueButton == null) continueButton = FindChildComponent<Button>("MenuCanvas/CenterCard/ButtonsPanel/Btn_Continue");
+            if (continueButtonLabel == null && continueButton != null) continueButtonLabel = continueButton.GetComponentInChildren<Text>();
 
-            if (newCampaignButton == null) newCampaignButton = FindChildComponent<Button>("MenuCanvas/CenterCard/ButtonsPanel/Btn_NewCampaign");
-            if (newCampaignButtonLabel == null && newCampaignButton != null) newCampaignButtonLabel = newCampaignButton.GetComponentInChildren<Text>();
+            if (settingsButton == null) settingsButton = FindChildComponent<Button>("MenuCanvas/CenterCard/ButtonsPanel/Btn_Settings");
+            if (settingsButtonLabel == null && settingsButton != null) settingsButtonLabel = settingsButton.GetComponentInChildren<Text>();
 
             if (savesButton == null) savesButton = FindChildComponent<Button>("MenuCanvas/CenterCard/ButtonsPanel/Btn_Saves");
             if (savesButtonLabel == null && savesButton != null) savesButtonLabel = savesButton.GetComponentInChildren<Text>();
 
-            if (quitButton == null) quitButton = FindChildComponent<Button>("MenuCanvas/CenterCard/ButtonsPanel/Btn_Quit");
-            if (quitButtonLabel == null && quitButton != null) quitButtonLabel = quitButton.GetComponentInChildren<Text>();
+            if (exitButton == null) exitButton = FindChildComponent<Button>("MenuCanvas/CenterCard/ButtonsPanel/Btn_Exit");
+            if (exitButtonLabel == null && exitButton != null) exitButtonLabel = exitButton.GetComponentInChildren<Text>();
 
             if (menuAudioSource == null) menuAudioSource = FindObjectOfType<AudioSource>();
         }

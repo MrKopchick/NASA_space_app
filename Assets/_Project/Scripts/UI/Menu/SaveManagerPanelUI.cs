@@ -23,12 +23,14 @@ namespace AstraLink.UI
         private string _selectedSlotId;
         private Font _uiFont;
 
+        public bool IsOpen => _modalRoot != null && _modalRoot.activeSelf;
+
         public void Initialize(Transform canvasTransform, Font referenceFont)
         {
             if (_modalRoot != null) return;
             _uiFont = referenceFont != null
                 ? referenceFont
-                : Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                : (Resources.GetBuiltinResource<Font>("TimesNewRoman.ttf") ?? Resources.GetBuiltinResource<Font>("Arial.ttf"));
 
             BuildModalHierarchy(canvasTransform);
             _modalRoot.SetActive(false);
