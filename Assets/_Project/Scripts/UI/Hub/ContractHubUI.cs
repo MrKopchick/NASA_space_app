@@ -416,7 +416,7 @@ namespace AstraLink.UI.Hub
             if (existingRoot != null)
             {
                 // Rebuild automatically if existing HubContentRoot is from an older layout version
-                if (existingRoot.Find("TopHeaderBar") != null && existingRoot.Find("LayoutV18Marker") != null)
+                if (existingRoot.Find("TopHeaderBar") != null && existingRoot.Find("LayoutV19Marker") != null)
                 {
                     StretchFull(existingRoot.GetComponent<RectTransform>());
                     BindExistingHierarchy(existingRoot);
@@ -429,14 +429,14 @@ namespace AstraLink.UI.Hub
                     DestroyImmediate(existingRoot.gameObject);
             }
 
-            Font fallbackFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            Font titleFont = headerFont != null ? headerFont : fallbackFont;
-            Font textFont = bodyFont != null ? bodyFont : titleFont;
+            Font uiFont = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
+            Font titleFont = uiFont != null ? uiFont : headerFont;
+            Font textFont = uiFont != null ? uiFont : bodyFont;
 
             GameObject rootObj = CreateUIObject("HubContentRoot", hubRoot);
             StretchFull(rootObj.GetComponent<RectTransform>());
 
-            GameObject marker = CreateUIObject("LayoutV18Marker", rootObj.transform);
+            GameObject marker = CreateUIObject("LayoutV19Marker", rootObj.transform);
             marker.AddComponent<LayoutElement>().ignoreLayout = true;
 
             VerticalLayoutGroup rootLayout = rootObj.AddComponent<VerticalLayoutGroup>();
@@ -766,16 +766,19 @@ namespace AstraLink.UI.Hub
             briefLayout.childForceExpandWidth = true;
             briefLayout.childForceExpandHeight = false;
 
-            Text briefHeader = CreateText("BriefHeader", briefBox.transform, titleFont, "MISSION BRIEF", 12, FontStyle.Bold,
+            Text briefHeader = CreateText("BriefHeader", briefBox.transform, titleFont, "MISSION BRIEF", 17, FontStyle.Bold,
                 new Color(0.48f, 0.86f, 0.96f, 1f), TextAnchor.MiddleLeft);
-            briefHeader.gameObject.AddComponent<LayoutElement>().preferredHeight = 20f;
+            briefHeader.gameObject.AddComponent<LayoutElement>().preferredHeight = 26f;
 
             string extendedBrief = BuildExtendedMissionBrief(mission, orbit);
-            Text briefTxt = CreateText("Brief", briefBox.transform, textFont, extendedBrief, 14, FontStyle.Normal,
-                new Color(0.92f, 0.95f, 1f, 1f), TextAnchor.UpperLeft);
-            briefTxt.lineSpacing = 1.28f;
+            Text briefTxt = CreateText("Brief", briefBox.transform, textFont, extendedBrief, 19, FontStyle.Normal,
+                new Color(0.94f, 0.97f, 1f, 1f), TextAnchor.UpperLeft);
+            briefTxt.lineSpacing = 1.24f;
             briefTxt.horizontalOverflow = HorizontalWrapMode.Wrap;
             briefTxt.verticalOverflow = VerticalWrapMode.Truncate;
+            briefTxt.resizeTextForBestFit = true;
+            briefTxt.resizeTextMinSize = 15;
+            briefTxt.resizeTextMaxSize = 20;
             LayoutElement briefTxtLe = briefTxt.gameObject.AddComponent<LayoutElement>();
             briefTxtLe.flexibleHeight = 1f;
 
@@ -888,14 +891,20 @@ namespace AstraLink.UI.Hub
             hlg.childForceExpandWidth = false;
             hlg.childForceExpandHeight = true;
 
-            Text lblTxt = CreateText("Label", row.transform, font, label, 14, FontStyle.Normal,
-                new Color(0.58f, 0.66f, 0.80f, 1f), TextAnchor.MiddleLeft);
+            Text lblTxt = CreateText("Label", row.transform, font, label, 17, FontStyle.Normal,
+                new Color(0.72f, 0.80f, 0.92f, 1f), TextAnchor.MiddleLeft);
+            lblTxt.resizeTextForBestFit = true;
+            lblTxt.resizeTextMinSize = 13;
+            lblTxt.resizeTextMaxSize = 17;
             LayoutElement lblLe = lblTxt.gameObject.AddComponent<LayoutElement>();
-            lblLe.preferredWidth = 148f;
-            lblLe.minWidth = 148f;
+            lblLe.preferredWidth = 172f;
+            lblLe.minWidth = 172f;
 
-            Text valTxt = CreateText("Value", row.transform, font, value, 15, FontStyle.Bold,
+            Text valTxt = CreateText("Value", row.transform, font, value, 18, FontStyle.Bold,
                 valueColor, TextAnchor.MiddleLeft);
+            valTxt.resizeTextForBestFit = true;
+            valTxt.resizeTextMinSize = 14;
+            valTxt.resizeTextMaxSize = 18;
             valTxt.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
         }
 
@@ -1161,6 +1170,10 @@ namespace AstraLink.UI.Hub
             txt.alignment = alignment;
             txt.horizontalOverflow = HorizontalWrapMode.Wrap;
             txt.verticalOverflow = VerticalWrapMode.Overflow;
+
+            Shadow shadow = txtObj.AddComponent<Shadow>();
+            shadow.effectColor = new Color(0.02f, 0.03f, 0.08f, 0.92f);
+            shadow.effectDistance = new Vector2(1.2f, -1.2f);
             return txt;
         }
 

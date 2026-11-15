@@ -176,7 +176,7 @@ namespace AstraLink.UI.Hub
                 return;
             }
 
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Font font = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
 
             Image rootBg = GetComponent<Image>();
             if (rootBg == null) rootBg = gameObject.AddComponent<Image>();
@@ -280,7 +280,7 @@ namespace AstraLink.UI.Hub
                 }
             }
 
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Font font = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
 
             // Branches 1..5: Component Categories (sorted by unlock cost)
             for (int b = 0; b < BranchCategories.Length; b++)

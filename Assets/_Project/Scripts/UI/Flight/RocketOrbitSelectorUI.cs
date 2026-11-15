@@ -359,7 +359,7 @@ namespace AstraLink.UI.Flight
             _orbitButtons.Clear();
             _orbitCardLabels.Clear();
 
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Font font = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
             int count = _orbits.Count;
 
             for (int i = 0; i < count; i++)
@@ -392,7 +392,7 @@ namespace AstraLink.UI.Flight
             _rocketButtons.Clear();
             _rocketCardLabels.Clear();
 
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Font font = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
             int count = _rockets.Count;
 
             for (int i = 0; i < count; i++)
@@ -435,7 +435,7 @@ namespace AstraLink.UI.Flight
                 bg.color = new Color(0.05f, 0.09f, 0.16f, 0.96f);
             }
 
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Font font = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
 
             // Section 1: Orbits Header & Container
             EnsureLabel(

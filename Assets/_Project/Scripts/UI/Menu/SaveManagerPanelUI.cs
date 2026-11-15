@@ -28,7 +28,7 @@ namespace AstraLink.UI
             if (_modalRoot != null) return;
             _uiFont = referenceFont != null
                 ? referenceFont
-                : Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                : AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
 
             BuildModalHierarchy(canvasTransform);
             _modalRoot.SetActive(false);
