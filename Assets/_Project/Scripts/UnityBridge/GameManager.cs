@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using AstraLink.UI;
 using AstraLink.UI.Debrief;
 using AstraLink.UI.Hub;
 using AstraLink.UI.Workshop;
@@ -521,7 +522,27 @@ namespace AstraLink.Core
             string json = JsonUtility.ToJson(CurrentAgencyState);
             PlayerPrefs.SetString(AgencyStatePrefsKey, json);
             PlayerPrefs.Save();
+
+            if (string.IsNullOrEmpty(SaveManager.ActiveSlotId))
+            {
+                SaveManager.CreateNewSave("CAMPAIGN 01", json);
+            }
+            else
+            {
+                SaveManager.SaveToSlot(SaveManager.ActiveSlotId, explicitJson: json);
+            }
         }
+
+        public void ReloadStateFromActiveSave()
+        {
+            LoadOrCreateAgencyState();
+            LastMissionReport = null;
+
+            contractHubUI?.Initialize(Repository, CurrentAgencyState);
+            builderPanelUI?.Initialize(Repository, Simulator, CurrentAgencyState, ActiveMission, Auditor);
+            ShowHub();
+        }
+        
 
         public void LoadOrCreateAgencyState()
         {
@@ -761,6 +782,7 @@ namespace AstraLink.Core
                 rt.localScale = Vector3.one;
             }
         }
+        
 
         private void RefreshControllerForScreen(GameScreen screen)
         {
@@ -836,6 +858,7 @@ namespace AstraLink.Core
             CleanupOrPopulatePanel(debriefPanel, missionReportUI != null, "4. ДЕБРИФІНГ МІСІЇ (DebriefPanel)", new Color(0.14f, 0.11f, 0.20f, 1f));
 
             EnsureTopNavBar(root);
+            EnsureSaveManagerInMainScene(root);
         }
 
         private static GameObject FindOrCreatePanel(Transform parent, string panelName)
@@ -933,6 +956,24 @@ namespace AstraLink.Core
                 CreateNavButton(navBar.transform, "Btn_Flight", "3. Політ (Flight)", ShowFlight);
                 CreateNavButton(navBar.transform, "Btn_Debrief", "4. Дебрифінг (Debrief)", ShowDebrief);
             }
+        }
+
+        private void EnsureSaveManagerInMainScene(Transform canvasRoot)
+        {
+            var savePanel = GetComponent<SaveManagerPanelUI>();
+            if (savePanel == null)
+            {
+                savePanel = gameObject.AddComponent<SaveManagerPanelUI>();
+            }
+            savePanel.Initialize(canvasRoot, Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"));
+            savePanel.OnLoadRequested -= HandleSaveLoadedInMainScene;
+            savePanel.OnLoadRequested += HandleSaveLoadedInMainScene;
+
+        }
+
+        private void HandleSaveLoadedInMainScene(SaveSlotMetadata _)
+        {
+            ReloadStateFromActiveSave();
         }
 
         private void UpdateTopNavHighlight(GameScreen activeScreen)
