@@ -185,8 +185,8 @@ namespace AstraLink.UI.Hub
             StretchFull(rootObj.GetComponent<RectTransform>());
 
             VerticalLayoutGroup rootLayout = rootObj.AddComponent<VerticalLayoutGroup>();
-            rootLayout.padding = new RectOffset(26, 26, 18, 18);
-            rootLayout.spacing = 10f;
+            rootLayout.padding = new RectOffset(22, 22, 16, 16);
+            rootLayout.spacing = 8f;
             rootLayout.childControlWidth = true;
             rootLayout.childControlHeight = true;
             rootLayout.childForceExpandWidth = true;
@@ -197,10 +197,10 @@ namespace AstraLink.UI.Hub
             Image topBg = topBar.AddComponent<Image>();
             topBg.color = new Color(0.08f, 0.14f, 0.24f, 1f);
             LayoutElement topLe = topBar.AddComponent<LayoutElement>();
-            topLe.preferredHeight = 58f;
+            topLe.preferredHeight = 54f;
 
             HorizontalLayoutGroup topLayout = topBar.AddComponent<HorizontalLayoutGroup>();
-            topLayout.padding = new RectOffset(18, 18, 8, 8);
+            topLayout.padding = new RectOffset(28, 24, 10, 10);
             topLayout.spacing = 16f;
             topLayout.childAlignment = TextAnchor.MiddleLeft;
             topLayout.childControlWidth = true;
@@ -208,16 +208,39 @@ namespace AstraLink.UI.Hub
             topLayout.childForceExpandWidth = false;
 
             Text title = CreateText("Title", topBar.transform, font,
-                "R&D TECHNOLOGY TREE — Research nodes sequentially from left to right along each branch",
-                20, FontStyle.Bold, new Color(1f, 0.88f, 0.42f, 1f), TextAnchor.MiddleLeft);
+                "R&D TECHNOLOGY TREE",
+                18, FontStyle.Bold, new Color(1f, 0.88f, 0.42f, 1f), TextAnchor.MiddleLeft);
             LayoutElement titleLe = title.gameObject.AddComponent<LayoutElement>();
             titleLe.flexibleWidth = 1f;
 
-            _capitalBadgeText = CreateText("CapitalBadge", topBar.transform, font,
+            GameObject capGroup = CreateUIObject("CapitalGroup", topBar.transform);
+            LayoutElement capGroupLe = capGroup.AddComponent<LayoutElement>();
+            capGroupLe.preferredWidth = 420f;
+            HorizontalLayoutGroup capH = capGroup.AddComponent<HorizontalLayoutGroup>();
+            capH.spacing = 8f;
+            capH.childAlignment = TextAnchor.MiddleRight;
+            capH.childControlWidth = true;
+            capH.childControlHeight = true;
+            capH.childForceExpandWidth = false;
+
+            PixelUITheme.EnsureAssetsLoaded();
+            if (PixelUITheme.CoinSprite != null)
+            {
+                GameObject coinObj = CreateUIObject("CapitalCoinIcon", capGroup.transform);
+                LayoutElement coinLe = coinObj.AddComponent<LayoutElement>();
+                coinLe.preferredWidth = 24f;
+                coinLe.preferredHeight = 24f;
+                Image coinImg = coinObj.AddComponent<Image>();
+                coinImg.sprite = PixelUITheme.CoinSprite;
+                coinImg.preserveAspect = true;
+                coinImg.raycastTarget = false;
+            }
+
+            _capitalBadgeText = CreateText("CapitalBadge", capGroup.transform, font,
                 "AGENCY CAPITAL: $50k", 18, FontStyle.Bold,
                 new Color(0.45f, 0.95f, 0.65f, 1f), TextAnchor.MiddleRight);
             LayoutElement capLe = _capitalBadgeText.gameObject.AddComponent<LayoutElement>();
-            capLe.preferredWidth = 420f;
+            capLe.flexibleWidth = 1f;
 
             CreateButton(topBar.transform, "Btn_CloseRnD", "BACK TO HANGAR [X]",
                 new Color(0.58f, 0.18f, 0.20f, 1f), 210f, 42f, font, CloseModal);
@@ -352,21 +375,38 @@ namespace AstraLink.UI.Hub
         {
             GameObject connObj = CreateUIObject("TreeConnectorLine", parent);
             LayoutElement le = connObj.AddComponent<LayoutElement>();
-            le.preferredWidth = 42f;
+            le.minWidth = 32f;
+            le.preferredWidth = 36f;
             le.flexibleWidth = 0f;
 
-            VerticalLayoutGroup vLayout = connObj.AddComponent<VerticalLayoutGroup>();
-            vLayout.childAlignment = TextAnchor.MiddleCenter;
-            vLayout.childControlWidth = true;
-            vLayout.childControlHeight = false;
+            HorizontalLayoutGroup hLayout = connObj.AddComponent<HorizontalLayoutGroup>();
+            hLayout.padding = new RectOffset(2, 2, 0, 0);
+            hLayout.spacing = 0f;
+            hLayout.childAlignment = TextAnchor.MiddleCenter;
+            hLayout.childControlWidth = true;
+            hLayout.childControlHeight = true;
+            hLayout.childForceExpandWidth = false;
+            hLayout.childForceExpandHeight = false;
 
             Color lineColor = targetUnlocked
                 ? new Color(0.25f, 0.82f, 0.45f, 1f)
-                : (prevUnlocked ? new Color(0.95f, 0.75f, 0.25f, 1f) : new Color(0.28f, 0.34f, 0.44f, 0.8f));
+                : (prevUnlocked ? new Color(0.95f, 0.75f, 0.25f, 1f) : new Color(0.32f, 0.38f, 0.48f, 0.9f));
 
-            Text arrow = CreateText("LineArrow", connObj.transform, font, "───►", 18, FontStyle.Bold, lineColor, TextAnchor.MiddleCenter);
-            RectTransform rt = arrow.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(42f, 30f);
+            GameObject lineObj = CreateUIObject("ConnectorBar", connObj.transform);
+            Image lineImg = lineObj.AddComponent<Image>();
+            lineImg.color = lineColor;
+            lineImg.raycastTarget = false;
+            LayoutElement lineLe = lineObj.AddComponent<LayoutElement>();
+            lineLe.flexibleWidth = 1f;
+            lineLe.minWidth = 14f;
+            lineLe.preferredHeight = 3f;
+
+            Text arrow = CreateText("LineArrow", connObj.transform, font, ">", 14, FontStyle.Bold, lineColor, TextAnchor.MiddleLeft);
+            arrow.horizontalOverflow = HorizontalWrapMode.Overflow;
+            arrow.verticalOverflow = VerticalWrapMode.Overflow;
+            LayoutElement arrowLe = arrow.gameObject.AddComponent<LayoutElement>();
+            arrowLe.preferredWidth = 10f;
+            arrowLe.preferredHeight = 16f;
         }
 
         private void BuildComponentTechNode(
@@ -396,8 +436,8 @@ namespace AstraLink.UI.Hub
             nodeLe.preferredWidth = 340f;
 
             VerticalLayoutGroup nodeV = nodeObj.AddComponent<VerticalLayoutGroup>();
-            nodeV.padding = new RectOffset(10, 10, 8, 8);
-            nodeV.spacing = 6f;
+            nodeV.padding = new RectOffset(12, 12, 10, 10);
+            nodeV.spacing = 4f;
             nodeV.childControlWidth = true;
             nodeV.childControlHeight = true;
             nodeV.childForceExpandWidth = true;
@@ -406,19 +446,20 @@ namespace AstraLink.UI.Hub
             // Top row inside node: [Icon Slot] + [Name & Short Stats]
             GameObject topRow = CreateUIObject("NodeTopRow", nodeObj.transform);
             LayoutElement topLe = topRow.AddComponent<LayoutElement>();
-            topLe.preferredHeight = 64f;
+            topLe.preferredHeight = 50f;
             topLe.flexibleHeight = 1f;
 
             HorizontalLayoutGroup topH = topRow.AddComponent<HorizontalLayoutGroup>();
-            topH.spacing = 10f;
+            topH.spacing = 8f;
             topH.childAlignment = TextAnchor.MiddleLeft;
             topH.childControlWidth = true;
             topH.childControlHeight = true;
             topH.childForceExpandWidth = false;
 
-            // Dedicated Icon Slot for Sprites (Night Sprint N-01)
-            CreateIconSlot(topRow.transform, "PartIconSlot_" + comp.Id, "ICON", 54f, font,
-                isUnlocked ? new Color(0.14f, 0.36f, 0.24f, 1f) : new Color(0.10f, 0.15f, 0.24f, 1f));
+            // Dedicated Icon Slot for Sprites (auto-resolved from project art)
+            CreateIconSlot(topRow.transform, "PartIconSlot_" + comp.Id, "ICON", 44f, font,
+                isUnlocked ? new Color(0.14f, 0.36f, 0.24f, 1f) : new Color(0.10f, 0.15f, 0.24f, 1f),
+                PixelUITheme.ResolvePartIconSprite(comp.Id));
 
             GameObject infoCol = CreateUIObject("NodeInfo", topRow.transform);
             LayoutElement infoLe = infoCol.AddComponent<LayoutElement>();
@@ -432,12 +473,12 @@ namespace AstraLink.UI.Hub
             infoV.childForceExpandHeight = false;
 
             CreateText("NodeTitle", infoCol.transform, font,
-                string.Format("T{0}: {1}", tierIndex, comp.Name), 15, FontStyle.Bold,
+                string.Format("T{0}: {1}", tierIndex, comp.Name), 13, FontStyle.Bold,
                 isUnlocked ? new Color(0.55f, 0.98f, 0.70f, 1f) : new Color(1f, 0.90f, 0.45f, 1f),
                 TextAnchor.MiddleLeft);
 
             CreateText("NodeStats", infoCol.transform, font,
-                BuilderPanelUI.FormatComponentShortStats(comp), 12, FontStyle.Normal,
+                BuilderPanelUI.FormatComponentShortStats(comp), 11, FontStyle.Normal,
                 new Color(0.80f, 0.88f, 0.96f, 1f), TextAnchor.UpperLeft);
 
             // Action Button at bottom of node
@@ -445,12 +486,12 @@ namespace AstraLink.UI.Hub
             Color btnColor;
             if (isUnlocked)
             {
-                btnText = "✓ UNLOCKED";
+                btnText = "UNLOCKED";
                 btnColor = new Color(0.15f, 0.44f, 0.26f, 1f);
             }
             else if (!prevUnlocked)
             {
-                btnText = "LOCKED (Requires T" + (tierIndex - 1) + ")";
+                btnText = "LOCKED (REQ T" + (tierIndex - 1) + ")";
                 btnColor = new Color(0.18f, 0.20f, 0.26f, 1f);
             }
             else if (canAfford)
@@ -460,13 +501,13 @@ namespace AstraLink.UI.Hub
             }
             else
             {
-                btnText = string.Format("NEED ${0}k CAPITAL", comp.UnlockCostThousands);
+                btnText = string.Format("NEED ${0}k", comp.UnlockCostThousands);
                 btnColor = new Color(0.32f, 0.22f, 0.22f, 1f);
             }
 
             SatelliteComponent capturedComp = comp;
             SatelliteComponent capturedPrev = prevComp;
-            Button btn = CreateButton(nodeObj.transform, "Btn_NodeAction", btnText, btnColor, 0f, 32f, font,
+            Button btn = CreateButton(nodeObj.transform, "Btn_NodeAction", btnText, btnColor, 0f, 26f, font,
                 () => TryUnlockComponent(capturedComp, capturedPrev));
             btn.interactable = canResearchNow;
         }
@@ -530,18 +571,19 @@ namespace AstraLink.UI.Hub
 
             GameObject topRow = CreateUIObject("NodeTopRow", nodeObj.transform);
             LayoutElement topLe = topRow.AddComponent<LayoutElement>();
-            topLe.preferredHeight = 64f;
+            topLe.preferredHeight = 50f;
             topLe.flexibleHeight = 1f;
 
             HorizontalLayoutGroup topH = topRow.AddComponent<HorizontalLayoutGroup>();
-            topH.spacing = 10f;
+            topH.spacing = 8f;
             topH.childAlignment = TextAnchor.MiddleLeft;
             topH.childControlWidth = true;
             topH.childControlHeight = true;
             topH.childForceExpandWidth = false;
 
-            CreateIconSlot(topRow.transform, "ChipIconSlot_" + targetSlots, "CPU", 54f, font,
-                new Color(0.22f, 0.16f, 0.38f, 1f));
+            CreateIconSlot(topRow.transform, "ChipIconSlot_" + targetSlots, "CPU", 44f, font,
+                new Color(0.22f, 0.16f, 0.38f, 1f),
+                PixelUITheme.ResolvePartIconSprite("chip"));
 
             GameObject infoCol = CreateUIObject("NodeInfo", topRow.transform);
             LayoutElement infoLe = infoCol.AddComponent<LayoutElement>();
@@ -554,16 +596,16 @@ namespace AstraLink.UI.Hub
             infoV.childForceExpandWidth = true;
             infoV.childForceExpandHeight = false;
 
-            CreateText("NodeTitle", infoCol.transform, font, title, 15, FontStyle.Bold,
+            CreateText("NodeTitle", infoCol.transform, font, title, 13, FontStyle.Bold,
                 isUnlocked ? new Color(0.55f, 0.98f, 0.70f, 1f) : new Color(1f, 0.90f, 0.45f, 1f),
                 TextAnchor.MiddleLeft);
 
-            CreateText("NodeDesc", infoCol.transform, font, desc, 13, FontStyle.Normal,
+            CreateText("NodeDesc", infoCol.transform, font, desc, 11, FontStyle.Normal,
                 new Color(0.80f, 0.88f, 0.96f, 1f), TextAnchor.UpperLeft);
 
             string btnText = isUnlocked
-                ? "✓ UNLOCKED"
-                : (!prevUnlocked ? "LOCKED (Requires Prev CPU)" : string.Format("UPGRADE (${0}k)", costThousands));
+                ? "UNLOCKED"
+                : (!prevUnlocked ? "LOCKED (REQ PREV)" : string.Format("UPGRADE (${0}k)", costThousands));
 
             Color btnColor = isUnlocked
                 ? new Color(0.15f, 0.44f, 0.26f, 1f)
@@ -571,16 +613,27 @@ namespace AstraLink.UI.Hub
 
             int capturedTarget = targetSlots;
             int capturedCost = costThousands;
-            Button btn = CreateButton(nodeObj.transform, "Btn_UpgradeChip_" + targetSlots, btnText, btnColor, 0f, 32f, font,
+            Button btn = CreateButton(nodeObj.transform, "Btn_UpgradeChip_" + targetSlots, btnText, btnColor, 0f, 26f, font,
                 () => TryUnlockChipTier(capturedTarget, capturedCost));
             btn.interactable = canResearch;
         }
 
-        private static GameObject CreateIconSlot(Transform parent, string name, string placeholderTag, float size, Font font, Color frameColor)
+        private static GameObject CreateIconSlot(Transform parent, string name, string placeholderTag, float size, Font font, Color frameColor, Sprite iconSprite = null)
         {
             GameObject iconFrame = CreateUIObject(name, parent);
             Image frameImg = iconFrame.AddComponent<Image>();
-            frameImg.color = frameColor;
+            PixelUITheme.EnsureAssetsLoaded();
+            if (PixelUITheme.SlotFrameSprite != null)
+            {
+                frameImg.sprite = PixelUITheme.SlotFrameSprite;
+                frameImg.type = Image.Type.Sliced;
+                frameImg.pixelsPerUnitMultiplier = 0.35f;
+                frameImg.color = Color.white;
+            }
+            else
+            {
+                frameImg.color = frameColor;
+            }
 
             LayoutElement le = iconFrame.AddComponent<LayoutElement>();
             le.preferredWidth = size;
@@ -588,16 +641,26 @@ namespace AstraLink.UI.Hub
             le.minWidth = size;
             le.minHeight = size;
 
-            // Child Image where artist/developer can drag-and-drop the actual Sprite in Inspector
+            // Child Image for module / CPU sprite
             GameObject spriteObj = CreateUIObject("IconSprite", iconFrame.transform);
-            StretchFull(spriteObj.GetComponent<RectTransform>());
+            RectTransform spriteRt = spriteObj.GetComponent<RectTransform>();
+            StretchFull(spriteRt);
+            spriteRt.offsetMin = new Vector2(6f, 6f);
+            spriteRt.offsetMax = new Vector2(-6f, -6f);
+
             Image spriteImg = spriteObj.AddComponent<Image>();
             spriteImg.preserveAspect = true;
-            spriteImg.color = new Color(1f, 1f, 1f, 0.15f);
+            spriteImg.raycastTarget = false;
+            spriteImg.sprite = iconSprite;
+            spriteImg.color = iconSprite != null ? Color.white : new Color(1f, 1f, 1f, 0.15f);
 
             Text tagTxt = CreateText("PlaceholderTag", iconFrame.transform, font, placeholderTag, 11, FontStyle.Bold,
                 new Color(0.75f, 0.88f, 1f, 0.65f), TextAnchor.MiddleCenter);
             StretchFull(tagTxt.GetComponent<RectTransform>());
+            if (iconSprite != null)
+            {
+                tagTxt.gameObject.SetActive(false);
+            }
             return iconFrame;
         }
 
