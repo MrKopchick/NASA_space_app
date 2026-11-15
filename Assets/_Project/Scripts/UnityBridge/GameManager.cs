@@ -124,6 +124,12 @@ namespace AstraLink.Core
 
         private void Update()
         {
+            // Якщо гра на паузі (час зупинено або відкрите меню паузи), блокуємо будь-які перемикання екранів та гарячі клавіші
+            if (Mathf.Approximately(Time.timeScale, 0f))
+            {
+                return;
+            }
+
             if (IsTextInputFocused())
             {
                 return;
@@ -946,7 +952,7 @@ namespace AstraLink.Core
             StretchPanelFullScreen(flightPanel);
             SetPanelTopInset(debriefPanel, TopUtilityBarHeight);
 
-            EnsureSaveManagerInMainScene(root);
+            EnsurePauseMenuInMainScene(root);
             RefreshUtilityBarState();
         }
 
@@ -1179,6 +1185,18 @@ namespace AstraLink.Core
             savePanel.OnLoadRequested -= HandleSaveLoadedInMainScene;
             savePanel.OnLoadRequested += HandleSaveLoadedInMainScene;
             _saveManagerPanel = savePanel;
+        }
+
+        private void EnsurePauseMenuInMainScene(Transform canvasRoot)
+        {
+            var pauseManager = GetComponent<PauseMenuManager>();
+            if (pauseManager == null)
+            {
+                pauseManager = gameObject.AddComponent<PauseMenuManager>();
+            }
+
+            Font uiFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            pauseManager.Initialize(canvasRoot, uiFont);
         }
 
         private void HandleSaveLoadedInMainScene(SaveSlotMetadata _)
@@ -1418,6 +1436,7 @@ namespace AstraLink.Core
             txt.alignment = TextAnchor.MiddleCenter;
             txt.color = Color.white;
         }
+        
 
         private void ShowNavStatusToast(string message, bool isWarning)
         {
