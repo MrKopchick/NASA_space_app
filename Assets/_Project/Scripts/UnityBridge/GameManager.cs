@@ -59,6 +59,10 @@ namespace AstraLink.Core
         private GameObject _topNavBar;
         private CanvasGroup _transitionOverlayGroup;
         private Coroutine _screenTransitionCoroutine;
+        private GameObject _navStatusToastObj;
+        private Image _navStatusToastBg;
+        private Text _navStatusToastText;
+        private Coroutine _navStatusToastCoroutine;
 
         public GameScreen CurrentScreen { get; private set; }
         public AgencyState CurrentAgencyState { get; private set; }
@@ -205,6 +209,7 @@ namespace AstraLink.Core
                 if (_transitionOverlayGroup != null)
                 {
                     _transitionOverlayGroup.alpha = 0f;
+                    _transitionOverlayGroup.blocksRaycasts = false;
                 }
                 ApplyScreenImmediate(screen);
                 _hasShownInitialScreen = true;
@@ -251,12 +256,9 @@ namespace AstraLink.Core
             }
 
             overlay.transform.SetAsLastSibling();
-            if (_topNavBar != null)
-            {
-                _topNavBar.transform.SetAsLastSibling();
-            }
+            overlay.blocksRaycasts = true;
 
-            float fadeOutDuration = 0.13f;
+            float fadeOutDuration = 0.28f;
             float startAlpha = overlay.alpha;
             float elapsed = 0f;
             while (elapsed < fadeOutDuration)
@@ -270,8 +272,10 @@ namespace AstraLink.Core
 
             ApplyScreenImmediate(targetScreen);
             _hasShownInitialScreen = true;
+            overlay.transform.SetAsLastSibling();
+            yield return null;
 
-            float fadeInDuration = 0.20f;
+            float fadeInDuration = 0.35f;
             elapsed = 0f;
             while (elapsed < fadeInDuration)
             {
@@ -282,6 +286,7 @@ namespace AstraLink.Core
             }
 
             overlay.alpha = 0f;
+            overlay.blocksRaycasts = false;
             _screenTransitionCoroutine = null;
         }
 
@@ -312,12 +317,12 @@ namespace AstraLink.Core
                 rt.anchorMin = Vector2.zero;
                 rt.anchorMax = Vector2.one;
                 rt.offsetMin = Vector2.zero;
-                rt.offsetMax = new Vector2(0f, -70f);
+                rt.offsetMax = Vector2.zero;
             }
 
             var img = overlayObj.GetComponent<Image>();
-            img.color = new Color(0.02f, 0.03f, 0.08f, 1f);
-            img.raycastTarget = false;
+            img.color = Color.black;
+            img.raycastTarget = true;
 
             var cg = overlayObj.GetComponent<CanvasGroup>();
             if (cg == null) cg = overlayObj.AddComponent<CanvasGroup>();
@@ -357,7 +362,16 @@ namespace AstraLink.Core
 
             if (LastMissionReport == null)
             {
-                TryLaunchActiveMission(transitionToFlight: true, stayInWorkshopOnInvalid: true);
+                ShowNavStatusToast("Перевірка збірки та запуск місії...", isWarning: false);
+                bool launched = TryLaunchActiveMission(transitionToFlight: true, stayInWorkshopOnInvalid: true);
+                if (!launched)
+                {
+                    ShowNavStatusToast("Запуск заблоковано: виправте конфігурацію в Ангарі.", isWarning: true);
+                }
+                else
+                {
+                    ShowNavStatusToast("Збірку підтверджено — перехід до польоту.", isWarning: false);
+                }
                 return;
             }
 
@@ -835,7 +849,32 @@ namespace AstraLink.Core
             CleanupOrPopulatePanel(flightPanel, missionReportUI != null, "3. ORBITAL FLIGHT (FlightPanel)", new Color(0.05f, 0.08f, 0.16f, 1f));
             CleanupOrPopulatePanel(debriefPanel, missionReportUI != null, "4. MISSION DEBRIEF (DebriefPanel)", new Color(0.14f, 0.11f, 0.20f, 1f));
 
-            EnsureTopNavBar(root);
+            Transform existingNav = root.Find("TopNavBar");
+            if (existingNav != null)
+            {
+                existingNav.gameObject.SetActive(false);
+            }
+            GameObject globalNav = GameObject.Find("TopNavBar");
+            if (globalNav != null)
+            {
+                globalNav.SetActive(false);
+            }
+            _topNavBar = null;
+
+            StretchPanelFullScreen(hubPanel);
+            StretchPanelFullScreen(workshopPanel);
+            StretchPanelFullScreen(flightPanel);
+            StretchPanelFullScreen(debriefPanel);
+        }
+
+        private static void StretchPanelFullScreen(GameObject panel)
+        {
+            if (panel == null) return;
+            var rt = panel.GetComponent<RectTransform>();
+            if (rt != null && rt.anchorMin == Vector2.zero && rt.anchorMax == Vector2.one && rt.offsetMax.y < -1f)
+            {
+                rt.offsetMax = Vector2.zero;
+            }
         }
 
         private static GameObject FindOrCreatePanel(Transform parent, string panelName)
@@ -849,7 +888,7 @@ namespace AstraLink.Core
             rt.anchorMin = Vector2.zero;
             rt.anchorMax = Vector2.one;
             rt.offsetMin = Vector2.zero;
-            rt.offsetMax = new Vector2(0f, -70f);
+            rt.offsetMax = Vector2.zero;
             return panelObj;
         }
 
@@ -994,6 +1033,71 @@ namespace AstraLink.Core
             txt.fontSize = 22;
             txt.alignment = TextAnchor.MiddleCenter;
             txt.color = Color.white;
+        }
+
+        private void ShowNavStatusToast(string message, bool isWarning)
+        {
+            if (string.IsNullOrWhiteSpace(message)) return;
+            Canvas canvas = FindObjectOfType<Canvas>();
+            Transform canvasRoot = canvas != null ? canvas.transform : null;
+            if (canvasRoot == null) return;
+
+            if (_navStatusToastObj == null)
+            {
+                _navStatusToastObj = new GameObject("NavStatusToast", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+                _navStatusToastObj.transform.SetParent(canvasRoot, false);
+
+                RectTransform rt = _navStatusToastObj.GetComponent<RectTransform>();
+                rt.anchorMin = new Vector2(0.5f, 1f);
+                rt.anchorMax = new Vector2(0.5f, 1f);
+                rt.pivot = new Vector2(0.5f, 1f);
+                rt.anchoredPosition = new Vector2(0f, -14f);
+                rt.sizeDelta = new Vector2(680f, 38f);
+
+                _navStatusToastBg = _navStatusToastObj.GetComponent<Image>();
+                _navStatusToastBg.raycastTarget = false;
+
+                var textObj = new GameObject("ToastText", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+                textObj.transform.SetParent(_navStatusToastObj.transform, false);
+                RectTransform trt = textObj.GetComponent<RectTransform>();
+                trt.anchorMin = Vector2.zero;
+                trt.anchorMax = Vector2.one;
+                trt.offsetMin = new Vector2(14f, 4f);
+                trt.offsetMax = new Vector2(-14f, -4f);
+
+                _navStatusToastText = textObj.GetComponent<Text>();
+                _navStatusToastText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                _navStatusToastText.fontSize = 18;
+                _navStatusToastText.fontStyle = FontStyle.Bold;
+                _navStatusToastText.alignment = TextAnchor.MiddleCenter;
+                _navStatusToastText.raycastTarget = false;
+            }
+
+            _navStatusToastObj.transform.SetAsLastSibling();
+            _navStatusToastObj.SetActive(true);
+            _navStatusToastBg.color = isWarning
+                ? new Color(0.45f, 0.14f, 0.14f, 0.94f)
+                : new Color(0.10f, 0.28f, 0.44f, 0.94f);
+            _navStatusToastText.color = isWarning
+                ? new Color(1f, 0.84f, 0.80f, 1f)
+                : new Color(0.86f, 0.97f, 1f, 1f);
+            _navStatusToastText.text = message;
+
+            if (_navStatusToastCoroutine != null)
+            {
+                StopCoroutine(_navStatusToastCoroutine);
+            }
+            _navStatusToastCoroutine = StartCoroutine(HideNavStatusToastAfterDelay(3.2f));
+        }
+
+        private System.Collections.IEnumerator HideNavStatusToastAfterDelay(float seconds)
+        {
+            yield return new WaitForSecondsRealtime(seconds);
+            if (_navStatusToastObj != null)
+            {
+                _navStatusToastObj.SetActive(false);
+            }
+            _navStatusToastCoroutine = null;
         }
     }
 }
