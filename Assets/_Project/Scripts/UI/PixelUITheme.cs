@@ -94,8 +94,9 @@ namespace AstraLink.UI
             if (id.Contains("rocket_heavy")) return "Assets/_Project/Art/Spacecraft/heavy_lift_rocket.png";
             if (id.Contains("rocket") || id.Contains("rkt")) return "Assets/_Project/Art/Spacecraft/small_rocket.png";
 
-            // Autopilot / CPU / Tools
+            // Autopilot / CPU / Tools / Safety / Radiation
             if (id.Contains("chip") || id.Contains("cpu")) return "Assets/_Project/Art/Icons/data_chip.png";
+            if (id.Contains("shield") || id.Contains("rad")) return "Assets/_Project/Art/Icons/shield_generator.png";
             if (id.Contains("reset") || id.Contains("wrench")) return "Assets/_Project/Art/Icons/repair_wrench.png";
 
             // Core Platform / Bus
