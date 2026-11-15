@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using AstraLink.Core;
+using AstraLink.UI;
 using AstraLink.UI.Hub;
 using UnityEngine;
 using UnityEngine.UI;
@@ -78,6 +79,8 @@ namespace AstraLink.UI.Workshop
         private int _selectedRocketIndex;
 
         // UI Widgets
+        private Image _contractPlanetIcon;
+        private Text _contractSubText;
         private Text _activeContractBannerText;
         private GameObject _launchErrorBannerObj;
         private Text _launchErrorBannerText;
@@ -86,10 +89,16 @@ namespace AstraLink.UI.Workshop
         private Text _agencyCapitalButtonText;
         private readonly Text[] _slotPartNameTexts = new Text[5];
         private readonly Text[] _slotPartStatsTexts = new Text[5];
+        private readonly Text[] _slotCounterTexts = new Text[5];
         private readonly Text[] _slotIconPlaceholderTexts = new Text[5];
+        private readonly Button[] _slotPrevButtons = new Button[5];
+        private readonly Button[] _slotNextButtons = new Button[5];
         private Text _rocketNameText;
         private Text _rocketStatsText;
+        private Text _rocketCounterText;
         private Text _rocketIconPlaceholderText;
+        private Button _rocketPrevButton;
+        private Button _rocketNextButton;
 
         public event Action<List<SatelliteComponent>, RocketOption, ResourceSummary> OnConfigurationChanged;
         public event Action OnLaunchMissionRequested;
@@ -214,7 +223,7 @@ namespace AstraLink.UI.Workshop
             rt.anchorMax = Vector2.one;
             rt.pivot = new Vector2(0.5f, 0.5f);
             rt.offsetMin = Vector2.zero;
-            rt.offsetMax = new Vector2(0f, -70f);
+            rt.offsetMax = Vector2.zero;
             rt.localScale = Vector3.one;
         }
 
@@ -452,26 +461,42 @@ namespace AstraLink.UI.Workshop
             RocketOption rocket = GetSelectedRocket();
             List<SatelliteComponent> selectedList = GetSelectedComponentsList();
 
-            if (_activeContractBannerText != null && activeGoal != null)
+            if (activeGoal != null)
             {
                 string reqSensor = string.IsNullOrEmpty(activeGoal.RequiredSensorTag) ? "Any" : activeGoal.RequiredSensorTag;
                 string orbitName = activeOrbit != null ? activeOrbit.Name : activeGoal.OrbitId;
                 float delaySec = activeOrbit != null ? activeOrbit.SignalDelaySeconds : 1.0f;
 
-                _activeContractBannerText.text = string.Format(
-                    "CONTRACT: <b>{0}</b>  |  Orbit: <b>{1}</b> ({2:0.0}s)  |  Budget: <b>${3:0}k</b>  |  Target: <b>{4:0} Sci</b> ({5})",
-                    activeGoal.Title, orbitName, delaySec, activeGoal.BudgetLimitThousands, activeGoal.TargetSciencePoints, reqSensor);
+                if (_contractPlanetIcon != null)
+                {
+                    Sprite missionSprite = PixelUITheme.ResolveMissionIconSprite(activeGoal.OrbitId + "_" + activeGoal.Id);
+                    _contractPlanetIcon.sprite = missionSprite;
+                    _contractPlanetIcon.color = missionSprite != null ? Color.white : new Color(1f, 1f, 1f, 0.15f);
+                }
+
+                if (_contractSubText != null)
+                {
+                    _contractSubText.text = string.Format("ACTIVE CONTRACT  •  {0}  •  BUDGET ${1:0}K",
+                        orbitName.ToUpperInvariant(), activeGoal.BudgetLimitThousands);
+                }
+
+                if (_activeContractBannerText != null)
+                {
+                    _activeContractBannerText.text = string.Format(
+                        "<b>{0}</b>   |   Goal {1:0} pts   |   {2}   |   {3:0.0}s delay",
+                        activeGoal.Title, activeGoal.TargetSciencePoints, reqSensor, delaySec);
+                }
             }
 
             if (_autopilotButtonText != null)
             {
                 int unlocked = Mathf.Clamp(_agencyState.AutopilotSlotsUnlocked, 2, 6);
-                _autopilotButtonText.text = string.Format("⚙ Autopilot ({0}/6)", unlocked);
+                _autopilotButtonText.text = string.Format("AUTOPILOT {0}/6", unlocked);
             }
 
             if (_agencyCapitalButtonText != null)
             {
-                _agencyCapitalButtonText.text = string.Format("R&D Tree (${0:0}k)", _agencyState.CapitalThousands);
+                _agencyCapitalButtonText.text = string.Format("R&D (${0:0}k)", _agencyState.CapitalThousands);
             }
 
             // Update 5 Component Slot Cards + Icon Slots
@@ -486,10 +511,17 @@ namespace AstraLink.UI.Workshop
                     _selectedSlots[i] = comp;
                 }
 
-                if (_slotPartNameTexts[i] != null && comp != null)
+                if (comp != null)
                 {
-                    int idx = unlockedInCat.FindIndex(c => c.Id == comp.Id) + 1;
-                    _slotPartNameTexts[i].text = string.Format("{0}  ({1}/{2})", comp.Name, Mathf.Max(1, idx), unlockedInCat.Count);
+                    int idx = Mathf.Max(1, unlockedInCat.FindIndex(c => c.Id == comp.Id) + 1);
+                    if (_slotPartNameTexts[i] != null)
+                    {
+                        _slotPartNameTexts[i].text = comp.Name;
+                    }
+                    if (_slotCounterTexts[i] != null)
+                    {
+                        _slotCounterTexts[i].text = string.Format("{0}/{1}", idx, unlockedInCat.Count);
+                    }
                 }
 
                 if (_slotPartStatsTexts[i] != null && comp != null)
@@ -502,6 +534,10 @@ namespace AstraLink.UI.Workshop
                     UpdateIconDisplay(slotIconImages != null && i < slotIconImages.Length ? slotIconImages[i] : null,
                         _slotIconPlaceholderTexts[i], comp.Id, SlotIconPlaceholders[i]);
                 }
+
+                bool canCycleSlot = unlockedInCat.Count > 1;
+                SetArrowButtonEnabled(_slotPrevButtons[i], canCycleSlot);
+                SetArrowButtonEnabled(_slotNextButtons[i], canCycleSlot);
             }
 
             // Update Rocket Selector + Rocket Icon Slot
@@ -510,16 +546,24 @@ namespace AstraLink.UI.Workshop
                 float maxMass = ResourceGaugesUI.GetMaxRocketMassForOrbit(rocket, activeOrbit);
                 if (_rocketNameText != null)
                 {
-                    _rocketNameText.text = string.Format("{0}  ({1}/{2})", rocket.Name, _selectedRocketIndex + 1, _allRockets.Count);
+                    _rocketNameText.text = rocket.Name;
+                }
+                if (_rocketCounterText != null)
+                {
+                    _rocketCounterText.text = string.Format("{0}/{1}", _selectedRocketIndex + 1, _allRockets.Count);
                 }
                 if (_rocketStatsText != null)
                 {
                     _rocketStatsText.text = string.Format(
-                        "Cost: ${0:0}k   |   Max Mass on Orbit: {1:0} kg   |   Base Reliability: {2:0}%",
+                        "Cost ${0:0}k  •  Max Orbit {1:0} kg  •  Rel {2:0}%",
                         rocket.CostThousands, maxMass, rocket.BaseReliability * 100f);
                 }
 
-                UpdateIconDisplay(rocketIconImage, _rocketIconPlaceholderText, rocket.Id, "ROCKET\nICON");
+                UpdateIconDisplay(rocketIconImage, _rocketIconPlaceholderText, rocket.Id, "ROCKET");
+
+                bool canCycleRocket = _allRockets.Count > 1;
+                SetArrowButtonEnabled(_rocketPrevButton, canCycleRocket);
+                SetArrowButtonEnabled(_rocketNextButton, canCycleRocket);
             }
 
             ResourceSummary summary = ComputeLiveResourceSummary(selectedList, rocket, activeOrbit, activeGoal);
@@ -586,11 +630,11 @@ namespace AstraLink.UI.Workshop
             }
 
             if (crits > 0)
-                _dryRunButtonText.text = string.Format("A.S.T.R.A. / Dry Run ({0} CRIT!)", crits);
+                _dryRunButtonText.text = string.Format("A.S.T.R.A. ({0} CRIT)", crits);
             else if (warns > 0)
-                _dryRunButtonText.text = string.Format("A.S.T.R.A. / Dry Run ({0} WARN)", warns);
+                _dryRunButtonText.text = string.Format("A.S.T.R.A. ({0} WARN)", warns);
             else
-                _dryRunButtonText.text = "▶ A.S.T.R.A. & Dry Run (OK)";
+                _dryRunButtonText.text = "A.S.T.R.A. (OK)";
         }
 
         private void UpdateIconDisplay(Image targetImage, Text placeholderText, string itemId, string fallbackLabel)
@@ -598,7 +642,13 @@ namespace AstraLink.UI.Workshop
             if (targetImage == null) return;
 
             Sprite mappedSprite = FindMappedSprite(itemId);
+            if (mappedSprite == null)
+            {
+                mappedSprite = PixelUITheme.ResolvePartIconSprite(itemId);
+            }
+
             targetImage.sprite = mappedSprite;
+            targetImage.preserveAspect = true;
 
             bool hasSprite = targetImage.sprite != null;
             targetImage.color = hasSprite ? Color.white : new Color(1f, 1f, 1f, 0.08f);
@@ -687,25 +737,33 @@ namespace AstraLink.UI.Workshop
             Transform existingRoot = workshopRoot.Find("WorkshopContentRoot");
             if (existingRoot != null)
             {
-                StretchFull(existingRoot.GetComponent<RectTransform>());
-                BindExistingHierarchy(existingRoot, workshopRoot);
-                return;
+                if (existingRoot.Find("HangarUI_v5") != null)
+                {
+                    StretchFull(existingRoot.GetComponent<RectTransform>());
+                    BindExistingHierarchy(existingRoot, workshopRoot);
+                    PixelUITheme.ApplyToHierarchy(existingRoot);
+                    return;
+                }
+
+                if (Application.isPlaying) Destroy(existingRoot.gameObject);
+                else DestroyImmediate(existingRoot.gameObject);
             }
 
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
             GameObject rootObj = CreateUIObject("WorkshopContentRoot", workshopRoot);
             StretchFull(rootObj.GetComponent<RectTransform>());
+            CreateUIObject("HangarUI_v5", rootObj.transform);
 
             VerticalLayoutGroup rootLayout = rootObj.AddComponent<VerticalLayoutGroup>();
-            rootLayout.padding = new RectOffset(24, 24, 14, 14);
+            rootLayout.padding = new RectOffset(22, 22, 12, 12);
             rootLayout.spacing = 12f;
             rootLayout.childControlWidth = true;
             rootLayout.childControlHeight = true;
             rootLayout.childForceExpandWidth = true;
             rootLayout.childForceExpandHeight = false;
 
-            // 1. TOP KSP-STYLE ACTIVE CONTRACT BAR + 3 MODAL BUTTONS (Autopilot, A.S.T.R.A./DryRun, R&D)
+            // 1. TOP BAR: Planet Icon + Contract Info + Compact Icon Action Buttons
             GameObject contractBar = CreateUIObject("ActiveContractBar", rootObj.transform);
             Image barBg = contractBar.AddComponent<Image>();
             barBg.color = new Color(0.06f, 0.11f, 0.20f, 0.96f);
@@ -714,63 +772,87 @@ namespace AstraLink.UI.Workshop
             barLe.preferredHeight = 60f;
 
             HorizontalLayoutGroup barLayout = contractBar.AddComponent<HorizontalLayoutGroup>();
-            barLayout.padding = new RectOffset(16, 16, 8, 8);
+            barLayout.padding = new RectOffset(14, 14, 8, 8);
             barLayout.spacing = 10f;
             barLayout.childAlignment = TextAnchor.MiddleLeft;
             barLayout.childControlWidth = true;
             barLayout.childControlHeight = true;
             barLayout.childForceExpandWidth = false;
-            barLayout.childForceExpandHeight = true;
+            barLayout.childForceExpandHeight = false;
 
-            _activeContractBannerText = CreateText("ContractBannerText", contractBar.transform, font,
-                "CONTRACT: 1. LEO Weather CubeSat", 15, FontStyle.Normal,
-                new Color(0.92f, 0.96f, 1f, 1f), TextAnchor.MiddleLeft);
+            GameObject planetObj = CreateUIObject("ContractPlanetIcon", contractBar.transform);
+            LayoutElement planetLe = planetObj.AddComponent<LayoutElement>();
+            planetLe.preferredWidth = 40f;
+            planetLe.preferredHeight = 40f;
+            planetLe.minWidth = 40f;
+            _contractPlanetIcon = planetObj.AddComponent<Image>();
+            _contractPlanetIcon.preserveAspect = true;
+            _contractPlanetIcon.raycastTarget = false;
+            _contractPlanetIcon.sprite = PixelUITheme.ResolveMissionIconSprite("leo");
+
+            GameObject titleCol = CreateUIObject("ContractTitleCol", contractBar.transform);
+            LayoutElement titleColLe = titleCol.AddComponent<LayoutElement>();
+            titleColLe.flexibleWidth = 1f;
+            VerticalLayoutGroup titleV = titleCol.AddComponent<VerticalLayoutGroup>();
+            titleV.spacing = 2f;
+            titleV.childAlignment = TextAnchor.MiddleLeft;
+            titleV.childControlWidth = true;
+            titleV.childControlHeight = true;
+            titleV.childForceExpandWidth = true;
+            titleV.childForceExpandHeight = false;
+
+            _contractSubText = CreateText("ContractSubText", titleCol.transform, font,
+                "ACTIVE CONTRACT  •  LEO 400 KM  •  BUDGET $120K", 11, FontStyle.Bold,
+                new Color(0.45f, 0.84f, 1f, 1f), TextAnchor.MiddleLeft);
+
+            _activeContractBannerText = CreateText("ContractBannerText", titleCol.transform, font,
+                "LEO Weather CubeSat", 14, FontStyle.Normal,
+                new Color(0.95f, 0.98f, 1f, 1f), TextAnchor.MiddleLeft);
             _activeContractBannerText.supportRichText = true;
-            LayoutElement bannerLe = _activeContractBannerText.gameObject.AddComponent<LayoutElement>();
-            bannerLe.flexibleWidth = 1f;
 
-            CreateButton(contractBar.transform, "Btn_ResetTemplate", "Reset M1",
-                new Color(0.20f, 0.34f, 0.52f, 1f), 115f, 44f, font, ApplyMission1StarterTemplate);
-
-            Button apBtn = CreateButton(contractBar.transform, "Btn_OpenAutopilot", "⚙ Autopilot (2/6)",
-                new Color(0.18f, 0.42f, 0.65f, 1f), 185f, 44f, font, OpenAutopilotOverlay);
-            _autopilotButtonText = apBtn.GetComponentInChildren<Text>();
-
-            Button drBtn = CreateButton(contractBar.transform, "Btn_OpenDryRun", "▶ A.S.T.R.A. & Dry Run",
-                new Color(0.14f, 0.50f, 0.34f, 1f), 235f, 44f, font, OpenDryRunOverlay);
+            Button drBtn = CreateIconButton(contractBar.transform, "Btn_OpenDryRun", "A.S.T.R.A.",
+                PixelUITheme.ResolvePartIconSprite("sci_radar_sar"),
+                new Color(0.18f, 0.42f, 0.65f, 1f), 152f, 38f, font, OpenDryRunOverlay);
             _dryRunButtonText = drBtn.GetComponentInChildren<Text>();
 
-            Button rndBtn = CreateButton(contractBar.transform, "Btn_OpenRnD", "R&D Tree ($50k)",
-                new Color(0.55f, 0.36f, 0.10f, 1f), 175f, 44f, font, OpenRnDOverlay);
+            Button apBtn = CreateIconButton(contractBar.transform, "Btn_OpenAutopilot", "AUTOPILOT 2/6",
+                PixelUITheme.ResolvePartIconSprite("chip"),
+                new Color(0.18f, 0.42f, 0.65f, 1f), 160f, 38f, font, OpenAutopilotOverlay);
+            _autopilotButtonText = apBtn.GetComponentInChildren<Text>();
+
+            Button rndBtn = CreateIconButton(contractBar.transform, "Btn_OpenRnD", "R&D ($50k)",
+                PixelUITheme.ResolveTelemetryIconSprite(1),
+                new Color(0.55f, 0.36f, 0.10f, 1f), 138f, 38f, font, OpenRnDOverlay);
             _agencyCapitalButtonText = rndBtn.GetComponentInChildren<Text>();
 
-            CreateButton(contractBar.transform, "Btn_LaunchMission", "LAUNCH >>",
-                new Color(0.14f, 0.62f, 0.28f, 1f), 165f, 44f, font, TriggerLaunchMission);
+            CreateIconButton(contractBar.transform, "Btn_ResetTemplate", "RESET",
+                PixelUITheme.ResolvePartIconSprite("reset"),
+                new Color(0.75f, 0.16f, 0.18f, 1f), 112f, 38f, font, ApplyMission1StarterTemplate);
 
             // Launch validation banner (shown only when pre-launch validation fails)
             _launchErrorBannerObj = CreateUIObject("LaunchValidationBanner", rootObj.transform);
             Image errImg = _launchErrorBannerObj.AddComponent<Image>();
             errImg.color = new Color(0.42f, 0.10f, 0.12f, 0.96f);
             LayoutElement errLe = _launchErrorBannerObj.AddComponent<LayoutElement>();
-            errLe.preferredHeight = 36f;
+            errLe.preferredHeight = 34f;
             _launchErrorBannerText = CreateText("ErrorText", _launchErrorBannerObj.transform, font,
-                string.Empty, 15, FontStyle.Bold, new Color(1f, 0.88f, 0.88f, 1f), TextAnchor.MiddleCenter);
+                string.Empty, 14, FontStyle.Bold, new Color(1f, 0.88f, 0.88f, 1f), TextAnchor.MiddleCenter);
             StretchFull(_launchErrorBannerText.GetComponent<RectTransform>());
             _launchErrorBannerObj.SetActive(false);
 
-            // 2. MAIN WORKSPACE COLUMNS (Clean 2-Column Hangar: 5 Module Slots + Rocket | 6 NASA Resource Gauges)
+            // 2. MAIN WORKSPACE COLUMNS (Left: Spacecraft Assembly | Right: Telemetry + Dry Run & Launch)
             GameObject columnsRow = CreateUIObject("MainColumns", rootObj.transform);
             LayoutElement colsLe = columnsRow.AddComponent<LayoutElement>();
             colsLe.flexibleHeight = 1f;
 
             HorizontalLayoutGroup colsLayout = columnsRow.AddComponent<HorizontalLayoutGroup>();
-            colsLayout.spacing = 20f;
+            colsLayout.spacing = 18f;
             colsLayout.childControlWidth = true;
             colsLayout.childControlHeight = true;
             colsLayout.childForceExpandWidth = false;
             colsLayout.childForceExpandHeight = true;
 
-            // LEFT COLUMN: 5 Spacecraft Slots + Rocket Selector (with Icon Frames)
+            // LEFT COLUMN: 5 Spacecraft Slots + Rocket Selector
             GameObject leftCol = CreateUIObject("SlotsColumn", columnsRow.transform);
             Image leftBg = leftCol.AddComponent<Image>();
             leftBg.color = new Color(0.06f, 0.10f, 0.17f, 0.94f);
@@ -779,18 +861,33 @@ namespace AstraLink.UI.Workshop
             leftLe.preferredWidth = 1020f;
 
             VerticalLayoutGroup leftLayout = leftCol.AddComponent<VerticalLayoutGroup>();
-            leftLayout.padding = new RectOffset(18, 18, 12, 12);
+            leftLayout.padding = new RectOffset(18, 18, 14, 14);
             leftLayout.spacing = 8f;
             leftLayout.childControlWidth = true;
             leftLayout.childControlHeight = true;
             leftLayout.childForceExpandWidth = true;
             leftLayout.childForceExpandHeight = false;
 
-            Text leftHeader = CreateText("SlotsHeader", leftCol.transform, font,
-                "SPACECRAFT ASSEMBLY — 5 FIXED MODULE SLOTS & LAUNCH VEHICLE", 19, FontStyle.Bold,
-                new Color(1f, 0.88f, 0.42f, 1f), TextAnchor.MiddleLeft);
-            LayoutElement lhLe = leftHeader.gameObject.AddComponent<LayoutElement>();
-            lhLe.preferredHeight = 26f;
+            GameObject leftHeaderRow = CreateUIObject("SlotsHeaderRow", leftCol.transform);
+            LayoutElement lhLe = leftHeaderRow.AddComponent<LayoutElement>();
+            lhLe.preferredHeight = 28f;
+            HorizontalLayoutGroup lhH = leftHeaderRow.AddComponent<HorizontalLayoutGroup>();
+            lhH.childAlignment = TextAnchor.MiddleLeft;
+            lhH.childControlWidth = true;
+            lhH.childControlHeight = true;
+            lhH.childForceExpandWidth = false;
+
+            Text leftHeader = CreateText("SlotsHeader", leftHeaderRow.transform, font,
+                "SPACECRAFT ASSEMBLY", 18, FontStyle.Bold,
+                new Color(0.45f, 0.85f, 1f, 1f), TextAnchor.MiddleLeft);
+            LayoutElement lhTitleLe = leftHeader.gameObject.AddComponent<LayoutElement>();
+            lhTitleLe.flexibleWidth = 1f;
+
+            Text leftSub = CreateText("SlotsSubHeader", leftHeaderRow.transform, font,
+                "5 modules + launch vehicle", 13, FontStyle.Normal,
+                new Color(0.55f, 0.68f, 0.84f, 1f), TextAnchor.MiddleRight);
+            LayoutElement lhSubLe = leftSub.gameObject.AddComponent<LayoutElement>();
+            lhSubLe.preferredWidth = 260f;
 
             if (slotIconImages == null || slotIconImages.Length != 5)
             {
@@ -804,16 +901,47 @@ namespace AstraLink.UI.Workshop
 
             BuildRocketSelectorRow(leftCol.transform, font);
 
-            // RIGHT COLUMN: 6 NASA Resource Gauges
-            GameObject rightCol = CreateUIObject("ResourceGaugesColumn", columnsRow.transform);
+            // RIGHT COLUMN: Telemetry Panel + Bottom Dry Run & Launch Buttons
+            GameObject rightWrap = CreateUIObject("RightColumn", columnsRow.transform);
+            LayoutElement rightWrapLe = rightWrap.AddComponent<LayoutElement>();
+            rightWrapLe.flexibleWidth = 1f;
+            rightWrapLe.preferredWidth = 820f;
+
+            VerticalLayoutGroup rightWrapV = rightWrap.AddComponent<VerticalLayoutGroup>();
+            rightWrapV.spacing = 10f;
+            rightWrapV.childControlWidth = true;
+            rightWrapV.childControlHeight = true;
+            rightWrapV.childForceExpandWidth = true;
+            rightWrapV.childForceExpandHeight = false;
+
+            GameObject rightCol = CreateUIObject("ResourceGaugesColumn", rightWrap.transform);
             Image rightBg = rightCol.AddComponent<Image>();
             rightBg.color = new Color(0.06f, 0.10f, 0.17f, 0.94f);
             LayoutElement rightLe = rightCol.AddComponent<LayoutElement>();
-            rightLe.flexibleWidth = 1f;
-            rightLe.preferredWidth = 820f;
+            rightLe.preferredHeight = 520f;
+            rightLe.flexibleHeight = 1f;
 
             resourceGaugesUI = rightCol.AddComponent<ResourceGaugesUI>();
             resourceGaugesUI.EnsureGaugesUIHierarchy();
+
+            GameObject footerRow = CreateUIObject("TelemetryFooter", rightWrap.transform);
+            LayoutElement footerLe = footerRow.AddComponent<LayoutElement>();
+            footerLe.minHeight = 56f;
+            footerLe.preferredHeight = 56f;
+            footerLe.flexibleHeight = 0f;
+            HorizontalLayoutGroup footerH = footerRow.AddComponent<HorizontalLayoutGroup>();
+            footerH.spacing = 12f;
+            footerH.childControlWidth = true;
+            footerH.childControlHeight = true;
+            footerH.childForceExpandWidth = true;
+            footerH.childForceExpandHeight = true;
+
+            Button launchFooterBtn = CreateButton(footerRow.transform, "Btn_LaunchMission", "LAUNCH MISSION  >>",
+                new Color(0.12f, 0.68f, 0.26f, 1f), 0f, 56f, font, TriggerLaunchMission);
+            LayoutElement lnFootLe = launchFooterBtn.GetComponent<LayoutElement>();
+            lnFootLe.flexibleWidth = 1f;
+            Text lnTxt = launchFooterBtn.GetComponentInChildren<Text>();
+            if (lnTxt != null) lnTxt.fontSize = 18;
 
             // 3. MODAL #1: CONSTRUCT-STYLE AUTOPILOT RULE EDITOR OVERLAY
             GameObject apOverlay = CreateUIObject("AutopilotModalOverlay", workshopRoot);
@@ -843,11 +971,15 @@ namespace AstraLink.UI.Workshop
             rndPanelUI.OnRnDStateChanged -= RefreshWorkshopUI;
             rndPanelUI.OnRnDStateChanged += RefreshWorkshopUI;
             rndOverlay.SetActive(false);
+
+            PixelUITheme.ApplyToHierarchy(rootObj.transform);
         }
 
         private void BindExistingHierarchy(Transform root, Transform workshopRoot)
         {
-            _activeContractBannerText = FindChild<Text>(root, "ActiveContractBar/ContractBannerText");
+            _contractPlanetIcon = FindChild<Image>(root, "ActiveContractBar/ContractPlanetIcon");
+            _contractSubText = FindChild<Text>(root, "ActiveContractBar/ContractTitleCol/ContractSubText");
+            _activeContractBannerText = FindChild<Text>(root, "ActiveContractBar/ContractTitleCol/ContractBannerText");
 
             Button resetBtn = FindChild<Button>(root, "ActiveContractBar/Btn_ResetTemplate");
             if (resetBtn != null)
@@ -880,7 +1012,14 @@ namespace AstraLink.UI.Workshop
                 _agencyCapitalButtonText = rndBtn.GetComponentInChildren<Text>();
             }
 
-            Button launchBtn = FindChild<Button>(root, "ActiveContractBar/Btn_LaunchMission");
+            Button drFootBtn = FindChild<Button>(root, "MainColumns/RightColumn/TelemetryFooter/Btn_DryRunFooter");
+            if (drFootBtn != null)
+            {
+                drFootBtn.onClick.RemoveAllListeners();
+                drFootBtn.onClick.AddListener(OpenDryRunOverlay);
+            }
+
+            Button launchBtn = FindChild<Button>(root, "MainColumns/RightColumn/TelemetryFooter/Btn_LaunchMission");
             if (launchBtn != null)
             {
                 launchBtn.onClick.RemoveAllListeners();
@@ -907,20 +1046,31 @@ namespace AstraLink.UI.Workshop
                     Transform slotRow = leftCol.Find("SlotRow_" + i);
                     if (slotRow == null) continue;
 
+                    int tooltipSlot = i;
+                    string fallbackKey = new[] { "slot_bus", "slot_power", "slot_battery", "slot_comms", "slot_science" }[tooltipSlot];
+                    TooltipTrigger.AttachDynamic(slotRow.gameObject, () =>
+                    {
+                        SatelliteComponent selected = _selectedSlots[tooltipSlot];
+                        return selected != null ? DescriptionTips.GetComponentTip(selected) : DescriptionTips.Get(fallbackKey);
+                    });
+
                     _slotPartNameTexts[i] = FindChild<Text>(slotRow, "InfoBox/PartName");
                     _slotPartStatsTexts[i] = FindChild<Text>(slotRow, "InfoBox/PartStats");
+                    _slotCounterTexts[i] = FindChild<Text>(slotRow, "SelectorBox/CounterText");
                     slotIconImages[i] = FindChild<Image>(slotRow, "IconFrame/PartIconSprite");
                     _slotIconPlaceholderTexts[i] = FindChild<Text>(slotRow, "IconFrame/PlaceholderTag");
 
                     int captured = i;
-                    Button prevBtn = FindChild<Button>(slotRow, "Btn_Prev");
+                    Button prevBtn = FindChild<Button>(slotRow, "SelectorBox/Btn_Prev");
+                    _slotPrevButtons[i] = prevBtn;
                     if (prevBtn != null)
                     {
                         prevBtn.onClick.RemoveAllListeners();
                         prevBtn.onClick.AddListener(() => CycleSlotComponent(captured, -1));
                     }
 
-                    Button nextBtn = FindChild<Button>(slotRow, "Btn_Next");
+                    Button nextBtn = FindChild<Button>(slotRow, "SelectorBox/Btn_Next");
+                    _slotNextButtons[i] = nextBtn;
                     if (nextBtn != null)
                     {
                         nextBtn.onClick.RemoveAllListeners();
@@ -931,19 +1081,30 @@ namespace AstraLink.UI.Workshop
                 Transform rocketRow = leftCol.Find("RocketSelectorRow");
                 if (rocketRow != null)
                 {
+                    TooltipTrigger.AttachDynamic(rocketRow.gameObject, () =>
+                    {
+                        RocketOption selected = GetSelectedRocket();
+                        OrbitDefinition orbit = GetActiveOrbit(GetActiveMissionGoal());
+                        return selected != null
+                            ? DescriptionTips.GetRocketTip(selected, ResourceGaugesUI.GetMaxRocketMassForOrbit(selected, orbit))
+                            : DescriptionTips.Get("slot_rocket");
+                    });
                     _rocketNameText = FindChild<Text>(rocketRow, "InfoBox/RocketName");
                     _rocketStatsText = FindChild<Text>(rocketRow, "InfoBox/RocketStats");
+                    _rocketCounterText = FindChild<Text>(rocketRow, "SelectorBox/CounterText");
                     rocketIconImage = FindChild<Image>(rocketRow, "IconFrame/RocketIconSprite");
                     _rocketIconPlaceholderText = FindChild<Text>(rocketRow, "IconFrame/PlaceholderTag");
 
-                    Button prevRkt = FindChild<Button>(rocketRow, "Btn_PrevRocket");
+                    Button prevRkt = FindChild<Button>(rocketRow, "SelectorBox/Btn_PrevRocket");
+                    _rocketPrevButton = prevRkt;
                     if (prevRkt != null)
                     {
                         prevRkt.onClick.RemoveAllListeners();
                         prevRkt.onClick.AddListener(() => CycleRocket(-1));
                     }
 
-                    Button nextRkt = FindChild<Button>(rocketRow, "Btn_NextRocket");
+                    Button nextRkt = FindChild<Button>(rocketRow, "SelectorBox/Btn_NextRocket");
+                    _rocketNextButton = nextRkt;
                     if (nextRkt != null)
                     {
                         nextRkt.onClick.RemoveAllListeners();
@@ -952,11 +1113,12 @@ namespace AstraLink.UI.Workshop
                 }
             }
 
-            Transform rightCol = root.Find("MainColumns/ResourceGaugesColumn");
+            Transform rightCol = root.Find("MainColumns/RightColumn/ResourceGaugesColumn");
             if (rightCol != null)
             {
                 resourceGaugesUI = rightCol.GetComponent<ResourceGaugesUI>();
                 if (resourceGaugesUI == null) resourceGaugesUI = rightCol.gameObject.AddComponent<ResourceGaugesUI>();
+                resourceGaugesUI.EnsureGaugesUIHierarchy();
             }
 
             Transform apModal = workshopRoot.Find("AutopilotModalOverlay") ?? transform.Find("AutopilotModalOverlay");
@@ -997,137 +1159,196 @@ namespace AstraLink.UI.Workshop
         {
             GameObject rowObj = CreateUIObject("SlotRow_" + slotIndex, parent);
             Image bg = rowObj.AddComponent<Image>();
-            bg.color = new Color(0.09f, 0.15f, 0.25f, 0.96f);
+            bg.color = new Color(0.08f, 0.13f, 0.22f, 0.94f);
 
             LayoutElement rowLe = rowObj.AddComponent<LayoutElement>();
-            rowLe.preferredHeight = 104f;
+            rowLe.preferredHeight = 92f;
+            rowLe.flexibleHeight = 1f;
 
             HorizontalLayoutGroup hLayout = rowObj.AddComponent<HorizontalLayoutGroup>();
-            hLayout.padding = new RectOffset(14, 14, 10, 10);
-            hLayout.spacing = 14f;
+            hLayout.padding = new RectOffset(18, 34, 8, 8);
+            hLayout.spacing = 12f;
             hLayout.childAlignment = TextAnchor.MiddleLeft;
             hLayout.childControlWidth = true;
             hLayout.childControlHeight = true;
             hLayout.childForceExpandWidth = false;
 
-            int captured = slotIndex;
-            CreateButton(rowObj.transform, "Btn_Prev", "< PREV",
-                new Color(0.18f, 0.34f, 0.56f, 1f), 90f, 78f, font,
-                () => CycleSlotComponent(captured, -1));
-
-            // Dedicated Module Icon Box (78x78) for easy Sprite drag-and-drop
+            // 1. Left: Icon inside item_slot frame
             GameObject iconFrame = CreateUIObject("IconFrame", rowObj.transform);
             Image frameBg = iconFrame.AddComponent<Image>();
             frameBg.color = new Color(0.05f, 0.09f, 0.16f, 1f);
             LayoutElement iconLe = iconFrame.AddComponent<LayoutElement>();
-            iconLe.preferredWidth = 78f;
-            iconLe.preferredHeight = 78f;
-            iconLe.minWidth = 78f;
-            iconLe.minHeight = 78f;
+            iconLe.preferredWidth = 68f;
+            iconLe.preferredHeight = 68f;
+            iconLe.minWidth = 68f;
+            iconLe.minHeight = 68f;
 
             GameObject spriteObj = CreateUIObject("PartIconSprite", iconFrame.transform);
-            StretchFull(spriteObj.GetComponent<RectTransform>());
+            RectTransform spriteRt = spriteObj.GetComponent<RectTransform>();
+            StretchFull(spriteRt);
+            spriteRt.offsetMin = new Vector2(6f, 6f);
+            spriteRt.offsetMax = new Vector2(-6f, -6f);
             Image partIconImg = spriteObj.AddComponent<Image>();
             partIconImg.preserveAspect = true;
+            partIconImg.raycastTarget = false;
             partIconImg.color = new Color(1f, 1f, 1f, 0.08f);
             slotIconImages[slotIndex] = partIconImg;
 
             _slotIconPlaceholderTexts[slotIndex] = CreateText("PlaceholderTag", iconFrame.transform, font,
-                iconPlaceholder, 12, FontStyle.Bold, new Color(0.65f, 0.84f, 1f, 0.7f), TextAnchor.MiddleCenter);
+                iconPlaceholder, 11, FontStyle.Bold, new Color(0.65f, 0.84f, 1f, 0.7f), TextAnchor.MiddleCenter);
             StretchFull(_slotIconPlaceholderTexts[slotIndex].GetComponent<RectTransform>());
 
-            // Info Box
+            // 2. Middle: Category + Part Name + Concise 1-line Stats
             GameObject infoBox = CreateUIObject("InfoBox", rowObj.transform);
             LayoutElement infoLe = infoBox.AddComponent<LayoutElement>();
             infoLe.flexibleWidth = 1f;
 
             VerticalLayoutGroup infoLayout = infoBox.AddComponent<VerticalLayoutGroup>();
-            infoLayout.spacing = 3f;
+            infoLayout.spacing = 2f;
+            infoLayout.childAlignment = TextAnchor.MiddleLeft;
             infoLayout.childControlWidth = true;
             infoLayout.childControlHeight = true;
             infoLayout.childForceExpandWidth = true;
             infoLayout.childForceExpandHeight = false;
 
-            CreateText("SlotCategoryTitle", infoBox.transform, font, slotTitle, 14, FontStyle.Bold,
-                new Color(0.55f, 0.82f, 1f, 1f), TextAnchor.MiddleLeft);
+            CreateText("SlotCategoryTitle", infoBox.transform, font, slotTitle, 11, FontStyle.Bold,
+                new Color(0.45f, 0.82f, 1f, 1f), TextAnchor.MiddleLeft);
 
-            _slotPartNameTexts[slotIndex] = CreateText("PartName", infoBox.transform, font, "Component Name", 19, FontStyle.Bold,
+            _slotPartNameTexts[slotIndex] = CreateText("PartName", infoBox.transform, font, "Component Name", 17, FontStyle.Bold,
                 Color.white, TextAnchor.MiddleLeft);
 
-            _slotPartStatsTexts[slotIndex] = CreateText("PartStats", infoBox.transform, font, "Component Stats", 15, FontStyle.Normal,
-                new Color(0.80f, 0.94f, 0.84f, 1f), TextAnchor.MiddleLeft);
+            _slotPartStatsTexts[slotIndex] = CreateText("PartStats", infoBox.transform, font, "Component Stats", 13, FontStyle.Normal,
+                new Color(0.78f, 0.90f, 0.84f, 1f), TextAnchor.MiddleLeft);
 
-            CreateButton(rowObj.transform, "Btn_Next", "NEXT >",
-                new Color(0.18f, 0.34f, 0.56f, 1f), 90f, 78f, font,
+            // 3. Right: Compact [ < ] 1/2 [ > ] Selector
+            GameObject selBox = CreateUIObject("SelectorBox", rowObj.transform);
+            LayoutElement selLe = selBox.AddComponent<LayoutElement>();
+            selLe.preferredWidth = 128f;
+            selLe.minWidth = 128f;
+
+            HorizontalLayoutGroup selH = selBox.AddComponent<HorizontalLayoutGroup>();
+            selH.spacing = 4f;
+            selH.childAlignment = TextAnchor.MiddleRight;
+            selH.childControlWidth = true;
+            selH.childControlHeight = true;
+            selH.childForceExpandWidth = false;
+            selH.childForceExpandHeight = false;
+
+            int captured = slotIndex;
+            Button prevSlotBtn = CreateButton(selBox.transform, "Btn_Prev", "<",
+                new Color(0.18f, 0.34f, 0.56f, 1f), 38f, 34f, font,
+                () => CycleSlotComponent(captured, -1));
+            ConfigureArrowButtonText(prevSlotBtn);
+            _slotPrevButtons[slotIndex] = prevSlotBtn;
+
+            _slotCounterTexts[slotIndex] = CreateText("CounterText", selBox.transform, font, "1/1", 13, FontStyle.Bold,
+                new Color(0.86f, 0.94f, 1f, 1f), TextAnchor.MiddleCenter);
+            LayoutElement cntLe = _slotCounterTexts[slotIndex].gameObject.AddComponent<LayoutElement>();
+            cntLe.preferredWidth = 42f;
+            cntLe.preferredHeight = 34f;
+
+            Button nextSlotBtn = CreateButton(selBox.transform, "Btn_Next", ">",
+                new Color(0.18f, 0.34f, 0.56f, 1f), 38f, 34f, font,
                 () => CycleSlotComponent(captured, 1));
+            ConfigureArrowButtonText(nextSlotBtn);
+            _slotNextButtons[slotIndex] = nextSlotBtn;
         }
 
         private void BuildRocketSelectorRow(Transform parent, Font font)
         {
             GameObject rowObj = CreateUIObject("RocketSelectorRow", parent);
             Image bg = rowObj.AddComponent<Image>();
-            bg.color = new Color(0.14f, 0.18f, 0.30f, 0.98f);
+            bg.color = new Color(0.18f, 0.14f, 0.08f, 0.96f);
 
             LayoutElement rowLe = rowObj.AddComponent<LayoutElement>();
-            rowLe.preferredHeight = 110f;
+            rowLe.preferredHeight = 96f;
             rowLe.flexibleHeight = 1f;
 
             HorizontalLayoutGroup hLayout = rowObj.AddComponent<HorizontalLayoutGroup>();
-            hLayout.padding = new RectOffset(14, 14, 10, 10);
-            hLayout.spacing = 14f;
+            hLayout.padding = new RectOffset(18, 34, 8, 8);
+            hLayout.spacing = 12f;
             hLayout.childAlignment = TextAnchor.MiddleLeft;
             hLayout.childControlWidth = true;
             hLayout.childControlHeight = true;
             hLayout.childForceExpandWidth = false;
 
-            CreateButton(rowObj.transform, "Btn_PrevRocket", "< ROCKET",
-                new Color(0.48f, 0.28f, 0.14f, 1f), 95f, 82f, font,
-                () => CycleRocket(-1));
-
-            // Dedicated Rocket Icon Box (82x82)
+            // 1. Left: Rocket Icon inside item_slot frame
             GameObject iconFrame = CreateUIObject("IconFrame", rowObj.transform);
             Image frameBg = iconFrame.AddComponent<Image>();
             frameBg.color = new Color(0.08f, 0.09f, 0.16f, 1f);
             LayoutElement iconLe = iconFrame.AddComponent<LayoutElement>();
-            iconLe.preferredWidth = 82f;
-            iconLe.preferredHeight = 82f;
-            iconLe.minWidth = 82f;
-            iconLe.minHeight = 82f;
+            iconLe.preferredWidth = 68f;
+            iconLe.preferredHeight = 68f;
+            iconLe.minWidth = 68f;
+            iconLe.minHeight = 68f;
 
             GameObject spriteObj = CreateUIObject("RocketIconSprite", iconFrame.transform);
-            StretchFull(spriteObj.GetComponent<RectTransform>());
+            RectTransform spriteRt = spriteObj.GetComponent<RectTransform>();
+            StretchFull(spriteRt);
+            spriteRt.offsetMin = new Vector2(6f, 6f);
+            spriteRt.offsetMax = new Vector2(-6f, -6f);
             rocketIconImage = spriteObj.AddComponent<Image>();
             rocketIconImage.preserveAspect = true;
+            rocketIconImage.raycastTarget = false;
             rocketIconImage.color = new Color(1f, 1f, 1f, 0.08f);
 
             _rocketIconPlaceholderText = CreateText("PlaceholderTag", iconFrame.transform, font,
-                "ROCKET\nICON", 12, FontStyle.Bold, new Color(1f, 0.82f, 0.50f, 0.75f), TextAnchor.MiddleCenter);
+                "ROCKET", 11, FontStyle.Bold, new Color(1f, 0.82f, 0.50f, 0.75f), TextAnchor.MiddleCenter);
             StretchFull(_rocketIconPlaceholderText.GetComponent<RectTransform>());
 
-            // Info Box
+            // 2. Middle: Info Box
             GameObject infoBox = CreateUIObject("InfoBox", rowObj.transform);
             LayoutElement infoLe = infoBox.AddComponent<LayoutElement>();
             infoLe.flexibleWidth = 1f;
 
             VerticalLayoutGroup infoLayout = infoBox.AddComponent<VerticalLayoutGroup>();
-            infoLayout.spacing = 4f;
+            infoLayout.spacing = 2f;
+            infoLayout.childAlignment = TextAnchor.MiddleLeft;
             infoLayout.childControlWidth = true;
             infoLayout.childControlHeight = true;
             infoLayout.childForceExpandWidth = true;
             infoLayout.childForceExpandHeight = false;
 
-            CreateText("RocketHeader", infoBox.transform, font, "LAUNCH VEHICLE (ROCKET SELECTION)", 14, FontStyle.Bold,
-                new Color(1f, 0.80f, 0.45f, 1f), TextAnchor.MiddleLeft);
+            CreateText("RocketHeader", infoBox.transform, font, "LAUNCH VEHICLE", 11, FontStyle.Bold,
+                new Color(1f, 0.78f, 0.36f, 1f), TextAnchor.MiddleLeft);
 
-            _rocketNameText = CreateText("RocketName", infoBox.transform, font, "Light Rocket 'Arrow-1'", 20, FontStyle.Bold,
+            _rocketNameText = CreateText("RocketName", infoBox.transform, font, "Light Rocket 'Arrow-1'", 17, FontStyle.Bold,
                 Color.white, TextAnchor.MiddleLeft);
 
-            _rocketStatsText = CreateText("RocketStats", infoBox.transform, font, "Rocket Stats", 15, FontStyle.Normal,
+            _rocketStatsText = CreateText("RocketStats", infoBox.transform, font, "Rocket Stats", 13, FontStyle.Normal,
                 new Color(0.95f, 0.88f, 0.72f, 1f), TextAnchor.MiddleLeft);
 
-            CreateButton(rowObj.transform, "Btn_NextRocket", "ROCKET >",
-                new Color(0.48f, 0.28f, 0.14f, 1f), 95f, 82f, font,
+            // 3. Right: Compact [ < ] 1/3 [ > ] Selector
+            GameObject selBox = CreateUIObject("SelectorBox", rowObj.transform);
+            LayoutElement selLe = selBox.AddComponent<LayoutElement>();
+            selLe.preferredWidth = 128f;
+            selLe.minWidth = 128f;
+
+            HorizontalLayoutGroup selH = selBox.AddComponent<HorizontalLayoutGroup>();
+            selH.spacing = 4f;
+            selH.childAlignment = TextAnchor.MiddleRight;
+            selH.childControlWidth = true;
+            selH.childControlHeight = true;
+            selH.childForceExpandWidth = false;
+            selH.childForceExpandHeight = false;
+
+            Button prevRktBtn = CreateButton(selBox.transform, "Btn_PrevRocket", "<",
+                new Color(0.18f, 0.34f, 0.56f, 1f), 38f, 34f, font,
+                () => CycleRocket(-1));
+            ConfigureArrowButtonText(prevRktBtn);
+            _rocketPrevButton = prevRktBtn;
+
+            _rocketCounterText = CreateText("CounterText", selBox.transform, font, "1/3", 13, FontStyle.Bold,
+                new Color(1f, 0.90f, 0.70f, 1f), TextAnchor.MiddleCenter);
+            LayoutElement rktCntLe = _rocketCounterText.gameObject.AddComponent<LayoutElement>();
+            rktCntLe.preferredWidth = 42f;
+            rktCntLe.preferredHeight = 34f;
+
+            Button nextRktBtn = CreateButton(selBox.transform, "Btn_NextRocket", ">",
+                new Color(0.18f, 0.34f, 0.56f, 1f), 38f, 34f, font,
                 () => CycleRocket(1));
+            ConfigureArrowButtonText(nextRktBtn);
+            _rocketNextButton = nextRktBtn;
         }
 
         public static string FormatComponentShortStats(SatelliteComponent c)
@@ -1135,21 +1356,21 @@ namespace AstraLink.UI.Workshop
             if (c == null) return "";
             var parts = new List<string>
             {
-                string.Format("Mass: {0:0.0} kg", c.MassKg),
-                string.Format("Cost: ${0:0}k", c.CostThousands)
+                string.Format("{0:0.0} kg", c.MassKg),
+                string.Format("${0:0}k", c.CostThousands)
             };
 
-            if (c.BasePowerDrawWatts > 0f) parts.Add(string.Format("Base Draw: {0:0}W", c.BasePowerDrawWatts));
-            if (c.ActivePowerDrawWatts > 0f) parts.Add(string.Format("Active Draw: {0:0}W", c.ActivePowerDrawWatts));
-            if (c.SolarWatts > 0f) parts.Add(string.Format("Solar: +{0:0}W", c.SolarWatts));
-            if (c.RtgWatts > 0f) parts.Add(string.Format("RTG: +{0:0}W (24/7)", c.RtgWatts));
-            if (c.BatteryCapacityWh > 0f) parts.Add(string.Format("Battery: {0:0} Wh", c.BatteryCapacityWh));
-            if (c.SsdCapacityGb > 0f) parts.Add(string.Format("SSD: {0:0} Gb", c.SsdCapacityGb));
-            if (c.DownlinkRateGbPerTick > 0f) parts.Add(string.Format("Downlink: {0:0.0} Gb/t", c.DownlinkRateGbPerTick));
-            if (c.SciencePointsPerTick > 0f) parts.Add(string.Format("Sci: +{0:0.0}/t ({1:0.00} Gb/t)", c.SciencePointsPerTick, c.DataGenGbPerTick));
-            if (!string.IsNullOrEmpty(c.SensorTag)) parts.Add("Tag: " + c.SensorTag);
-            if (c.RadiationShielding > 0f) parts.Add(string.Format("Shield: {0:0}", c.RadiationShielding));
-            parts.Add(string.Format("Rel: {0:0}%", c.BaseReliability * 100f));
+            if (c.BasePowerDrawWatts > 0f) parts.Add(string.Format("Draw {0:0}W", c.BasePowerDrawWatts));
+            if (c.ActivePowerDrawWatts > 0f) parts.Add(string.Format("Draw {0:0}W", c.ActivePowerDrawWatts));
+            if (c.SolarWatts > 0f) parts.Add(string.Format("+{0:0}W", c.SolarWatts));
+            if (c.RtgWatts > 0f) parts.Add(string.Format("RTG +{0:0}W", c.RtgWatts));
+            if (c.BatteryCapacityWh > 0f) parts.Add(string.Format("{0:0} Wh", c.BatteryCapacityWh));
+            if (c.SsdCapacityGb > 0f) parts.Add(string.Format("SSD {0:0}Gb", c.SsdCapacityGb));
+            if (c.DownlinkRateGbPerTick > 0f) parts.Add(string.Format("Down {0:0.0}Gb/t", c.DownlinkRateGbPerTick));
+            if (c.SciencePointsPerTick > 0f) parts.Add(string.Format("Sci +{0:0.0}/t", c.SciencePointsPerTick));
+            if (!string.IsNullOrEmpty(c.SensorTag)) parts.Add(c.SensorTag);
+            if (c.RadiationShielding > 0f) parts.Add(string.Format("Shield {0:0}", c.RadiationShielding));
+            parts.Add(string.Format("Rel {0:0}%", c.BaseReliability * 100f));
 
             return string.Join("  •  ", parts.ToArray());
         }
@@ -1274,6 +1495,88 @@ namespace AstraLink.UI.Workshop
             Text txt = CreateText("Text", btnObj.transform, font, label, 14, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
             StretchFull(txt.GetComponent<RectTransform>());
             return btn;
+        }
+
+        private static Button CreateIconButton(Transform parent, string name, string label, Sprite icon, Color bgColor, float width, float height, Font font, UnityEngine.Events.UnityAction onClick)
+        {
+            GameObject btnObj = CreateUIObject(name, parent);
+            Image img = btnObj.AddComponent<Image>();
+            img.color = bgColor;
+
+            Button btn = btnObj.AddComponent<Button>();
+            btn.targetGraphic = img;
+            btn.onClick.AddListener(onClick);
+
+            LayoutElement le = btnObj.AddComponent<LayoutElement>();
+            if (width > 0f) { le.minWidth = width; le.preferredWidth = width; }
+            if (height > 0f) { le.minHeight = height; le.preferredHeight = height; }
+
+            HorizontalLayoutGroup h = btnObj.AddComponent<HorizontalLayoutGroup>();
+            h.padding = new RectOffset(10, 10, 4, 4);
+            h.spacing = 6f;
+            h.childAlignment = TextAnchor.MiddleCenter;
+            h.childControlWidth = true;
+            h.childControlHeight = true;
+            h.childForceExpandWidth = false;
+            h.childForceExpandHeight = false;
+
+            if (icon != null)
+            {
+                GameObject iconObj = CreateUIObject("BtnIcon", btnObj.transform);
+                LayoutElement iconLe = iconObj.AddComponent<LayoutElement>();
+                iconLe.preferredWidth = 18f;
+                iconLe.preferredHeight = 18f;
+                iconLe.minWidth = 18f;
+                iconLe.minHeight = 18f;
+                Image iconImg = iconObj.AddComponent<Image>();
+                iconImg.sprite = icon;
+                iconImg.preserveAspect = true;
+                iconImg.raycastTarget = false;
+            }
+
+            Text txt = CreateText("Text", btnObj.transform, font, label, 13, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
+            LayoutElement txtLe = txt.gameObject.AddComponent<LayoutElement>();
+            txtLe.flexibleWidth = 1f;
+            return btn;
+        }
+
+        private static void ConfigureArrowButtonText(Button btn)
+        {
+            if (btn == null) return;
+            Text txt = btn.GetComponentInChildren<Text>();
+            if (txt != null)
+            {
+                txt.fontSize = 14;
+                txt.fontStyle = FontStyle.Bold;
+                txt.horizontalOverflow = HorizontalWrapMode.Overflow;
+                txt.verticalOverflow = VerticalWrapMode.Overflow;
+            }
+        }
+
+        private static void SetArrowButtonEnabled(Button btn, bool enabled)
+        {
+            if (btn == null) return;
+            btn.interactable = enabled;
+
+            PixelUITheme.EnsureAssetsLoaded();
+            Image img = btn.GetComponent<Image>();
+            if (img != null)
+            {
+                if (!enabled && PixelUITheme.ButtonDisabledSprite != null)
+                    img.sprite = PixelUITheme.ButtonDisabledSprite;
+                else if (enabled && PixelUITheme.ButtonNormalSprite != null)
+                    img.sprite = PixelUITheme.ButtonNormalSprite;
+
+                img.color = enabled ? Color.white : new Color(0.65f, 0.68f, 0.74f, 0.85f);
+            }
+
+            Text txt = btn.GetComponentInChildren<Text>(true);
+            if (txt != null)
+            {
+                txt.color = enabled
+                    ? new Color(0.06f, 0.12f, 0.18f, 1f)
+                    : new Color(0.75f, 0.78f, 0.84f, 0.70f);
+            }
         }
     }
 }

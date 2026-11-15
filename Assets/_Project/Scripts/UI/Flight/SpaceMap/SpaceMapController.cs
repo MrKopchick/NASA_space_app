@@ -20,7 +20,7 @@ namespace AstraLink.UI.Flight
     {
         public static SpaceMapController Instance { get; private set; }
 
-        private const int AsteroidCount = 110;
+        private const int AsteroidCount = 420;
         private const int TransferDotCount = 24;
         private const float MinZoom = 0.22f;
         private const float MaxZoom = 14.00f;
@@ -60,7 +60,7 @@ namespace AstraLink.UI.Flight
             public RectTransform Rect;
             public Image PlanetImage;
             public RectTransform OrbitRingRect;
-            public Image OrbitRingImage;
+            public Graphic OrbitRingGraphic;
             public Image SelectionReticle;
             public Text LabelText;
             public Sprite[] Frames;
@@ -196,8 +196,12 @@ namespace AstraLink.UI.Flight
 
         public event Action OnLaunchSequenceCompleted;
         public event Action<SolarSystemBodyCatalog.BodyDefinition> OnCelestialBodySelected;
+        public event Action<bool> OnOverviewModeChanged;
+
+        private bool _isSystemOverview;
 
         public bool IsLaunchPlaying => _isLaunchPlaying;
+        public bool IsSystemOverview => _isSystemOverview;
         public SolarSystemBodyCatalog.BodyDefinition SelectedBody =>
             _bodyMap.TryGetValue(_selectedBodyId, out CelestialRuntimeNode n) ? n.Spec : null;
 
@@ -367,9 +371,23 @@ namespace AstraLink.UI.Flight
             RefreshMissionVehicleSprites();
 
             _hasInitialOverviewFit = false;
-            FitOverviewOnFirstValidLayout();
-            SelectBodyById(_targetPlanetBodyId, focusCamera: false);
-            ResetCameraToSystemOverview();
+            if (!string.IsNullOrEmpty(_targetPlanetBodyId) && _bodyMap.ContainsKey(_targetPlanetBodyId))
+            {
+                SelectBodyById(_targetPlanetBodyId, focusCamera: true);
+                _currentZoom = _targetZoom;
+                _currentPanPx = _targetPanPx;
+                if (_stageRect != null)
+                {
+                    _stageRect.localScale = new Vector3(_currentZoom, _currentZoom, 1f);
+                    _stageRect.anchoredPosition = _currentPanPx;
+                }
+                _hasInitialOverviewFit = true;
+            }
+            else
+            {
+                FitOverviewOnFirstValidLayout();
+                ResetCameraToSystemOverview();
+            }
         }
 
         public void PlayLaunchSequence()
@@ -468,6 +486,7 @@ namespace AstraLink.UI.Flight
 
             if (focusCamera)
             {
+                SetOverviewMode(false);
                 _isFollowingSelected = !string.Equals(bodyId, "sun", StringComparison.Ordinal) && !node.Spec.IsAsteroidBelt;
                 float idealZoom = !string.IsNullOrEmpty(node.Spec.ParentId)
                     ? 7.50f
@@ -483,14 +502,28 @@ namespace AstraLink.UI.Flight
             OnCelestialBodySelected?.Invoke(node.Spec);
         }
 
+        public void FocusTargetMission()
+        {
+            string targetId = !string.IsNullOrEmpty(_targetPlanetBodyId) ? _targetPlanetBodyId : "earth";
+            SelectBodyById(targetId, focusCamera: true);
+        }
+
         public void ResetCameraToSystemOverview()
         {
             _isFollowingSelected = false;
             float vw = _mapViewportRect != null && _mapViewportRect.rect.width > 100f ? _mapViewportRect.rect.width : 1920f;
             float vh = _mapViewportRect != null && _mapViewportRect.rect.height > 100f ? _mapViewportRect.rect.height : 1010f;
             float fitDim = Mathf.Min(vw * 0.78f, vh * 0.94f);
-            _targetZoom = Mathf.Clamp(fitDim / 2580f, 0.24f, 0.72f);
-            _targetPanPx = new Vector2(-135f, 0f);
+            _targetZoom = Mathf.Clamp(fitDim / 1380f, 0.55f, 0.96f);
+            _targetPanPx = new Vector2(-40f, 0f);
+            SetOverviewMode(true);
+        }
+
+        private void SetOverviewMode(bool isOverview)
+        {
+            if (_isSystemOverview == isOverview) return;
+            _isSystemOverview = isOverview;
+            OnOverviewModeChanged?.Invoke(_isSystemOverview);
         }
 
         [ContextMenu("Generate SpaceMap UI In Scene")]
@@ -703,9 +736,9 @@ namespace AstraLink.UI.Flight
             {
                 SolarSystemBodyCatalog.BodyDefinition spec = catalog[i];
 
-                // Orbit ring
+                // Orbit ring (smooth anti-aliased vector ellipse)
                 RectTransform ringRt = null;
-                Image ringImg = null;
+                Graphic ringGraphic = null;
                 if (spec.OrbitRadiusPx > 1f || spec.SatelliteOrbitRadiusPx > 1f)
                 {
                     float a = spec.OrbitRadiusPx > 1f ? spec.OrbitRadiusPx : spec.SatelliteOrbitRadiusPx;
@@ -720,10 +753,13 @@ namespace AstraLink.UI.Flight
                     float tiltRad = spec.PerihelionAngleDeg * Mathf.Deg2Rad;
                     ringRt.anchoredPosition = new Vector2(focusShift * Mathf.Cos(tiltRad), focusShift * Mathf.Sin(tiltRad));
 
-                    ringImg = ringObj.AddComponent<Image>();
-                    ringImg.sprite = _procRingSprite;
-                    ringImg.color = spec.OrbitColor;
-                    ringImg.raycastTarget = false;
+                    ringObj.AddComponent<CanvasRenderer>();
+                    OrbitEllipseGraphic ellipse = ringObj.AddComponent<OrbitEllipseGraphic>();
+                    ellipse.color = spec.OrbitColor;
+                    ellipse.raycastTarget = false;
+                    ellipse.Thickness = string.IsNullOrEmpty(spec.ParentId) ? 2.6f : 1.6f;
+                    ellipse.Segments = 240;
+                    ringGraphic = ellipse;
                 }
 
                 // Planet / Sun / Belt marker node
@@ -764,18 +800,22 @@ namespace AstraLink.UI.Flight
                 lblRt.anchorMin = new Vector2(0.5f, 0f);
                 lblRt.anchorMax = new Vector2(0.5f, 0f);
                 lblRt.pivot = new Vector2(0.5f, 1f);
-                lblRt.anchoredPosition = new Vector2(0f, -4f);
-                lblRt.sizeDelta = new Vector2(140f, 18f);
+                lblRt.anchoredPosition = new Vector2(0f, -6f);
+                lblRt.sizeDelta = new Vector2(180f, 26f);
 
                 Text lblText = lblObj.AddComponent<Text>();
                 lblText.font = font;
                 lblText.text = spec.DisplayName.ToUpperInvariant();
-                lblText.fontSize = string.IsNullOrEmpty(spec.ParentId) ? 13 : 10;
+                lblText.fontSize = string.IsNullOrEmpty(spec.ParentId) ? 18 : 13;
                 lblText.fontStyle = FontStyle.Bold;
-                lblText.color = new Color(0.90f, 0.95f, 1f, 0.90f);
+                lblText.color = new Color(0.95f, 0.98f, 1f, 0.96f);
                 lblText.alignment = TextAnchor.UpperCenter;
                 lblText.horizontalOverflow = HorizontalWrapMode.Overflow;
+                lblText.verticalOverflow = VerticalWrapMode.Overflow;
                 lblText.raycastTarget = false;
+                Outline lblOutline = lblObj.AddComponent<Outline>();
+                lblOutline.effectColor = new Color(0.02f, 0.04f, 0.09f, 0.98f);
+                lblOutline.effectDistance = new Vector2(1.5f, -1.5f);
 
                 var proxy = nodeObj.AddComponent<SolarBodyHitProxy>();
                 proxy.Owner = this;
@@ -787,7 +827,7 @@ namespace AstraLink.UI.Flight
                     Rect = nodeRt,
                     PlanetImage = planetImg,
                     OrbitRingRect = ringRt,
-                    OrbitRingImage = ringImg,
+                    OrbitRingGraphic = ringGraphic,
                     SelectionReticle = retImg,
                     LabelText = lblText,
                     Frames = frames,
@@ -820,20 +860,20 @@ namespace AstraLink.UI.Flight
 
                 GameObject astObj = CreateUIObject("BeltAsteroid_" + i, _asteroidsLayerRect);
                 RectTransform rt = astObj.GetComponent<RectTransform>();
-                float size = UnityEngine.Random.Range(6f, 13.5f);
+                float size = UnityEngine.Random.Range(5.5f, 15.5f);
                 rt.sizeDelta = new Vector2(size, size);
 
                 Image img = astObj.AddComponent<Image>();
                 img.preserveAspect = true;
                 img.raycastTarget = false;
-                float shade = UnityEngine.Random.Range(0.75f, 1.0f);
-                img.color = new Color(shade, shade * 0.97f, shade, UnityEngine.Random.Range(0.78f, 1.0f));
+                float shade = UnityEngine.Random.Range(0.78f, 1.0f);
+                img.color = new Color(shade, shade * 0.97f, shade, UnityEngine.Random.Range(0.85f, 1.0f));
                 if (frames != null && frames.Length > 0)
                 {
                     img.sprite = frames[0];
                 }
 
-                float radius = UnityEngine.Random.Range(500f, 620f);
+                float radius = UnityEngine.Random.Range(485f, 635f);
                 float keplerSpeed = 2.4f * Mathf.Pow(560f / radius, 1.5f);
 
                 _asteroids.Add(new AsteroidRuntimeNode
@@ -923,7 +963,7 @@ namespace AstraLink.UI.Flight
             // Rocket during launch sequence
             GameObject rocketObj = CreateUIObject("LaunchRocket", _missionLayerRect);
             _rocketRootRect = rocketObj.GetComponent<RectTransform>();
-            _rocketRootRect.sizeDelta = new Vector2(26f, 36f);
+            _rocketRootRect.sizeDelta = new Vector2(8f, 11.5f);
             _rocketBodyImage = rocketObj.AddComponent<Image>();
             _rocketBodyImage.preserveAspect = true;
             _rocketBodyImage.raycastTarget = false;
@@ -933,7 +973,7 @@ namespace AstraLink.UI.Flight
             fRt.anchorMin = new Vector2(0.5f, 0f);
             fRt.anchorMax = new Vector2(0.5f, 0f);
             fRt.pivot = new Vector2(0.5f, 1f);
-            fRt.sizeDelta = new Vector2(16f, 18f);
+            fRt.sizeDelta = new Vector2(4.5f, 6f);
             _rocketFlameImage = flameObj.AddComponent<Image>();
             _rocketFlameImage.preserveAspect = true;
             _rocketFlameImage.raycastTarget = false;
@@ -941,7 +981,7 @@ namespace AstraLink.UI.Flight
 
             GameObject flashObj = CreateUIObject("SeparationFlash", _missionLayerRect);
             RectTransform flRt = flashObj.GetComponent<RectTransform>();
-            flRt.sizeDelta = new Vector2(54f, 54f);
+            flRt.sizeDelta = new Vector2(24f, 24f);
             _deployFlashImg = flashObj.AddComponent<Image>();
             _deployFlashImg.sprite = _procSolidGlowSprite;
             _deployFlashImg.color = new Color(0.75f, 0.98f, 1f, 0f);
@@ -1198,10 +1238,19 @@ namespace AstraLink.UI.Flight
             }
         }
 
+        private Vector2 GetTargetSatelliteOrbitPos(CelestialRuntimeNode targetNode)
+        {
+            if (targetNode == null) return Vector2.zero;
+            float bodyRadius = Mathf.Max(targetNode.Spec.VisualWidthPx, targetNode.Spec.VisualHeightPx) * 0.5f;
+            float orbitRadius = bodyRadius + Mathf.Clamp(bodyRadius * 0.42f, 5f, 11f);
+            float rad = _spacecraftOrbitDeg * Mathf.Deg2Rad;
+            return targetNode.CurrentStagePos + new Vector2(Mathf.Cos(rad), Mathf.Sin(rad)) * orbitRadius;
+        }
+
         private IEnumerator RunTransferLaunchRoutine()
         {
             Vector2 startPos = _bodyMap.TryGetValue("earth", out CelestialRuntimeNode earth) ? earth.CurrentStagePos : Vector2.zero;
-            Vector2 endPos = _bodyMap.TryGetValue(_targetPlanetBodyId, out CelestialRuntimeNode tgt) ? tgt.CurrentStagePos : startPos;
+            Vector2 endPos = _bodyMap.TryGetValue(_targetPlanetBodyId, out CelestialRuntimeNode tgt) ? GetTargetSatelliteOrbitPos(tgt) : startPos;
 
             if (_rocketRootRect != null) _rocketRootRect.gameObject.SetActive(true);
             if (_satelliteRootRect != null) _satelliteRootRect.gameObject.SetActive(false);
@@ -1216,15 +1265,15 @@ namespace AstraLink.UI.Flight
                 float eased = 1f - Mathf.Pow(1f - u, 2.2f);
 
                 if (_bodyMap.TryGetValue("earth", out CelestialRuntimeNode eNow)) startPos = eNow.CurrentStagePos;
-                if (_bodyMap.TryGetValue(_targetPlanetBodyId, out CelestialRuntimeNode tNow)) endPos = tNow.CurrentStagePos;
+                if (_bodyMap.TryGetValue(_targetPlanetBodyId, out CelestialRuntimeNode tNow)) endPos = GetTargetSatelliteOrbitPos(tNow);
 
                 Vector2 pos;
                 float tangentDeg;
                 if (string.Equals(_targetPlanetBodyId, "earth", StringComparison.Ordinal))
                 {
-                    Vector2 apex = startPos + new Vector2(0f, 44f);
-                    pos = Vector2.Lerp(startPos, apex, eased);
-                    tangentDeg = 0f;
+                    pos = Vector2.Lerp(startPos, endPos, eased);
+                    Vector2 dir = endPos - startPos;
+                    tangentDeg = dir.sqrMagnitude > 0.001f ? Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg - 90f : 0f;
                 }
                 else
                 {
@@ -1251,7 +1300,7 @@ namespace AstraLink.UI.Flight
 
             if (_rocketRootRect != null) _rocketRootRect.gameObject.SetActive(false);
 
-            // Brief stage separation flash
+            // Brief stage separation flash at the exact satellite deployment point
             float flashDur = Mathf.Max(0.15f, phase2SeparationDurationSeconds);
             float flashElapsed = 0f;
             while (flashElapsed < flashDur && !_skipRequested)
@@ -1260,7 +1309,7 @@ namespace AstraLink.UI.Flight
                 float p = Mathf.Clamp01(flashElapsed / flashDur);
                 if (_deployFlashImg != null && _bodyMap.TryGetValue(_targetPlanetBodyId, out CelestialRuntimeNode tgtNode))
                 {
-                    _deployFlashImg.rectTransform.anchoredPosition = tgtNode.CurrentStagePos;
+                    _deployFlashImg.rectTransform.anchoredPosition = GetTargetSatelliteOrbitPos(tgtNode);
                     _deployFlashImg.color = new Color(0.75f, 0.98f, 1f, Mathf.Sin(p * Mathf.PI) * 0.85f);
                 }
                 yield return null;
@@ -1281,8 +1330,17 @@ namespace AstraLink.UI.Flight
 
             if (_rocketRootRect != null) _rocketRootRect.gameObject.SetActive(false);
             if (_deployFlashImg != null) _deployFlashImg.color = new Color(0.75f, 0.98f, 1f, 0f);
-            if (_satelliteRootRect != null) _satelliteRootRect.gameObject.SetActive(true);
+            if (_satelliteRootRect != null)
+            {
+                if (_bodyMap.TryGetValue(_targetPlanetBodyId, out CelestialRuntimeNode tgtNode))
+                {
+                    _satelliteRootRect.anchoredPosition = GetTargetSatelliteOrbitPos(tgtNode);
+                    _satelliteRootRect.localEulerAngles = new Vector3(0f, 0f, _spacecraftOrbitDeg + 90f);
+                }
+                _satelliteRootRect.gameObject.SetActive(true);
+            }
 
+            SelectBodyById(_targetPlanetBodyId, focusCamera: true);
             OnLaunchSequenceCompleted?.Invoke();
         }
 
@@ -1325,7 +1383,14 @@ namespace AstraLink.UI.Flight
             if (_mapViewportRect.rect.width < 120f || _mapViewportRect.rect.height < 120f) return;
 
             _hasInitialOverviewFit = true;
-            ResetCameraToSystemOverview();
+            if (!string.IsNullOrEmpty(_targetPlanetBodyId) && _bodyMap.ContainsKey(_targetPlanetBodyId))
+            {
+                SelectBodyById(_targetPlanetBodyId, focusCamera: true);
+            }
+            else
+            {
+                ResetCameraToSystemOverview();
+            }
             _currentZoom = _targetZoom;
             _currentPanPx = _targetPanPx;
             if (_stageRect != null)
@@ -1412,12 +1477,12 @@ namespace AstraLink.UI.Flight
         {
             if (_procRingSprite == null)
             {
-                const int size = 512;
+                const int size = 1024;
                 Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-                tex.filterMode = FilterMode.Point;
+                tex.filterMode = FilterMode.Bilinear;
                 Color[] px = new Color[size * size];
                 float half = size * 0.5f;
-                float rMid = half - 3f;
+                float rMid = half - 5f;
                 for (int y = 0; y < size; y++)
                 {
                     for (int x = 0; x < size; x++)
@@ -1426,12 +1491,10 @@ namespace AstraLink.UI.Flight
                         float dy = y + 0.5f - half;
                         float dist = Mathf.Sqrt(dx * dx + dy * dy);
                         float diff = Mathf.Abs(dist - rMid);
-                        if (diff < 1.35f)
+                        if (diff < 2.6f)
                         {
-                            float angle = Mathf.Atan2(dy, dx);
-                            bool dashOn = Mathf.Sin(angle * 48f) > -0.35f;
-                            float alpha = dashOn ? Mathf.Clamp01(1.35f - diff) : 0.20f;
-                            px[y * size + x] = new Color(1f, 1f, 1f, alpha);
+                            float alpha = Mathf.Clamp01(1f - diff / 2.6f);
+                            px[y * size + x] = new Color(1f, 1f, 1f, alpha * alpha);
                         }
                         else
                         {
@@ -1578,6 +1641,65 @@ namespace AstraLink.UI.Flight
             rt.anchorMax = Vector2.one;
             rt.offsetMin = Vector2.zero;
             rt.offsetMax = Vector2.zero;
+        }
+    }
+
+    [RequireComponent(typeof(CanvasRenderer))]
+    internal sealed class OrbitEllipseGraphic : MaskableGraphic
+    {
+        public float Thickness = 2.4f;
+        public float Feather = 1.1f;
+        public int Segments = 240;
+
+        protected override void OnPopulateMesh(VertexHelper vh)
+        {
+            vh.Clear();
+            Rect rect = GetPixelAdjustedRect();
+            float rx = rect.width * 0.5f;
+            float ry = rect.height * 0.5f;
+            if (rx <= 1f || ry <= 1f) return;
+
+            int segs = Mathf.Clamp(Segments, 32, 360);
+            float halfCore = Mathf.Max(0.4f, Thickness * 0.5f);
+            float outerPad = halfCore + Mathf.Max(0.2f, Feather);
+            float innerPad = halfCore;
+
+            Color c = color;
+            Color32 coreCol = c;
+            Color32 edgeCol = new Color32(coreCol.r, coreCol.g, coreCol.b, 0);
+            Vector2 center = rect.center;
+
+            for (int i = 0; i <= segs; i++)
+            {
+                float a = (i / (float)segs) * Mathf.PI * 2f;
+                float cos = Mathf.Cos(a);
+                float sin = Mathf.Sin(a);
+
+                Vector2 p = new Vector2(center.x + rx * cos, center.y + ry * sin);
+                Vector2 n = new Vector2(cos / rx, sin / ry);
+                float nLen = n.magnitude;
+                Vector2 dir = nLen > 1e-6f ? n / nLen : new Vector2(cos, sin);
+
+                vh.AddVert(p - dir * outerPad, edgeCol, Vector2.zero);
+                vh.AddVert(p - dir * innerPad, coreCol, Vector2.zero);
+                vh.AddVert(p + dir * innerPad, coreCol, Vector2.zero);
+                vh.AddVert(p + dir * outerPad, edgeCol, Vector2.zero);
+            }
+
+            for (int i = 0; i < segs; i++)
+            {
+                int b0 = i * 4;
+                int b1 = (i + 1) * 4;
+                for (int s = 0; s < 3; s++)
+                {
+                    int v0 = b0 + s;
+                    int v1 = b0 + s + 1;
+                    int v2 = b1 + s + 1;
+                    int v3 = b1 + s;
+                    vh.AddTriangle(v0, v1, v2);
+                    vh.AddTriangle(v2, v3, v0);
+                }
+            }
         }
     }
 }

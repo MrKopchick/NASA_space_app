@@ -32,12 +32,17 @@ namespace AstraLink.UI.Workshop
 
         private static readonly string[] GaugeTitles = new string[]
         {
-            "1. MASS & LAUNCH VEHICLE LIMIT",
-            "2. MISSION BUILD BUDGET",
-            "3. POWER BALANCE & BATTERY",
-            "4. SCIENCE DATA & SSD STORAGE",
-            "5. COMMUNICATIONS & SIGNAL DELAY",
-            "6. RELIABILITY & RAD SHIELDING"
+            "Mass / Rocket Limit",
+            "Assembly Budget",
+            "Power Balance",
+            "Science Data • SSD",
+            "Comms Link",
+            "Reliability • Shield"
+        };
+
+        private static readonly string[] GaugeTipKeys =
+        {
+            "res_mass", "res_budget", "res_power", "res_data", "res_comms", "res_reliability"
         };
 
         public void EnsureGaugesUIHierarchy()
@@ -45,28 +50,50 @@ namespace AstraLink.UI.Workshop
             Transform existingRoot = transform.Find("GaugesContentRoot");
             if (existingRoot != null)
             {
-                BindExistingHierarchy(existingRoot);
-                return;
+                if (existingRoot.Find("GaugesUI_v3") != null)
+                {
+                    BindExistingHierarchy(existingRoot);
+                    return;
+                }
+
+                if (Application.isPlaying) Destroy(existingRoot.gameObject);
+                else DestroyImmediate(existingRoot.gameObject);
             }
 
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
             GameObject rootObj = CreateUIObject("GaugesContentRoot", transform);
             StretchFull(rootObj.GetComponent<RectTransform>());
+            CreateUIObject("GaugesUI_v3", rootObj.transform);
 
             VerticalLayoutGroup rootLayout = rootObj.AddComponent<VerticalLayoutGroup>();
-            rootLayout.padding = new RectOffset(18, 18, 16, 16);
-            rootLayout.spacing = 10f;
+            rootLayout.padding = new RectOffset(22, 22, 18, 18);
+            rootLayout.spacing = 6f;
             rootLayout.childControlWidth = true;
             rootLayout.childControlHeight = true;
             rootLayout.childForceExpandWidth = true;
             rootLayout.childForceExpandHeight = false;
 
-            Text header = CreateText("HeaderTitle", rootObj.transform, font,
-                "NASA 6-RESOURCE TELEMETRY", 20, FontStyle.Bold,
-                new Color(0.55f, 0.85f, 1f, 1f), TextAnchor.MiddleLeft);
+            GameObject headerRow = CreateUIObject("TelemetryHeaderRow", rootObj.transform);
+            LayoutElement headerRowLe = headerRow.AddComponent<LayoutElement>();
+            headerRowLe.preferredHeight = 28f;
+            HorizontalLayoutGroup headerH = headerRow.AddComponent<HorizontalLayoutGroup>();
+            headerH.childAlignment = TextAnchor.MiddleLeft;
+            headerH.childControlWidth = true;
+            headerH.childControlHeight = true;
+            headerH.childForceExpandWidth = false;
+
+            Text header = CreateText("HeaderTitle", headerRow.transform, font,
+                "TELEMETRY", 18, FontStyle.Bold,
+                new Color(0.45f, 0.85f, 1f, 1f), TextAnchor.MiddleLeft);
             LayoutElement headerLe = header.gameObject.AddComponent<LayoutElement>();
-            headerLe.preferredHeight = 30f;
+            headerLe.flexibleWidth = 1f;
+
+            Text subHeader = CreateText("HeaderSub", headerRow.transform, font,
+                "6 NASA resources", 13, FontStyle.Normal,
+                new Color(0.55f, 0.68f, 0.84f, 1f), TextAnchor.MiddleRight);
+            LayoutElement subLe = subHeader.gameObject.AddComponent<LayoutElement>();
+            subLe.preferredWidth = 180f;
 
             _gauges.Clear();
             for (int i = 0; i < 6; i++)
@@ -77,20 +104,24 @@ namespace AstraLink.UI.Workshop
             // Validation Status Banner at bottom
             GameObject bannerObj = CreateUIObject("ValidationBanner", rootObj.transform);
             _validationBannerBg = bannerObj.AddComponent<Image>();
-            _validationBannerBg.color = new Color(0.10f, 0.36f, 0.22f, 0.96f);
+            _validationBannerBg.color = new Color(0.45f, 1.0f, 0.55f, 1f);
             LayoutElement bannerLe = bannerObj.AddComponent<LayoutElement>();
-            bannerLe.preferredHeight = 54f;
-            bannerLe.flexibleHeight = 1f;
+            bannerLe.preferredHeight = 42f;
 
             VerticalLayoutGroup bannerLayout = bannerObj.AddComponent<VerticalLayoutGroup>();
-            bannerLayout.padding = new RectOffset(14, 14, 8, 8);
+            bannerLayout.padding = new RectOffset(16, 16, 8, 8);
             bannerLayout.childControlWidth = true;
             bannerLayout.childControlHeight = true;
             bannerLayout.childForceExpandWidth = true;
             bannerLayout.childForceExpandHeight = true;
 
             _validationBannerText = CreateText("StatusText", bannerObj.transform, font,
-                "STATUS: ALL NASA SYSTEMS WITHIN LIMITS", 16, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter);
+                "All 6 NASA systems nominal — ready for launch", 13, FontStyle.Bold, Color.white, TextAnchor.MiddleLeft);
+            _validationBannerText.resizeTextForBestFit = true;
+            _validationBannerText.resizeTextMinSize = 9;
+            _validationBannerText.resizeTextMaxSize = 13;
+
+            PixelUITheme.ApplyToHierarchy(rootObj.transform);
         }
 
         private void BindExistingHierarchy(Transform root)
@@ -100,13 +131,14 @@ namespace AstraLink.UI.Workshop
             {
                 Transform row = root.Find("GaugeRow_" + i);
                 if (row == null) continue;
+                TooltipTrigger.Attach(row.gameObject, GaugeTipKeys[i]);
 
                 var w = new GaugeRowWidgets
                 {
                     CardBackground = row.GetComponent<Image>(),
-                    TitleText = FindChild<Text>(row, "TopRow/Title"),
-                    ValueText = FindChild<Text>(row, "TopRow/Value"),
-                    FillImage = FindChild<Image>(row, "BarBg/BarFill")
+                    TitleText = FindChild<Text>(row, "BarColumn/TopRow/Title"),
+                    ValueText = FindChild<Text>(row, "BarColumn/TopRow/Value"),
+                    FillImage = FindChild<Image>(row, "BarColumn/BarBg/BarFill")
                 };
                 _gauges.Add(w);
             }
@@ -175,7 +207,7 @@ namespace AstraLink.UI.Workshop
             float powerRatio = Mathf.Clamp01(totalGenW / Mathf.Max(1f, activeDrawW * 1.5f));
             bool powerLow = totalGenW < activeDrawW;
             SetGauge(2,
-                string.Format("Gen: {0:0}W vs Draw: {1:0}W • Bat: {2:0} Wh", totalGenW, activeDrawW, summary.MaxBatteryWh),
+                string.Format("{0:0}W / {1:0}W • {2:0} Wh", totalGenW, activeDrawW, summary.MaxBatteryWh),
                 powerRatio,
                 powerLow ? new Color(0.92f, 0.62f, 0.18f, 1f) : new Color(0.95f, 0.80f, 0.22f, 1f),
                 false);
@@ -183,7 +215,7 @@ namespace AstraLink.UI.Workshop
             // 4. DATA & SSD
             float ssdRatio = Mathf.Clamp01(summary.MaxSsdGb / 50f);
             SetGauge(3,
-                string.Format("SSD: {0:0} Gb • +{1:0.0} Sci/tick ({2})", summary.MaxSsdGb, sciencePerTick, sensorTag),
+                string.Format("{0:0} Gb • +{1:0.0}/t ({2})", summary.MaxSsdGb, sciencePerTick, sensorTag),
                 Mathf.Max(0.12f, ssdRatio),
                 new Color(0.58f, 0.42f, 0.92f, 1f),
                 false);
@@ -191,7 +223,7 @@ namespace AstraLink.UI.Workshop
             // 5. COMMS & SIGNAL DELAY
             float commsRatio = Mathf.Clamp01(summary.DownlinkGbPerTick / 18f);
             SetGauge(4,
-                string.Format("Downlink: {0:0.0} Gb/t • Delay: {1:0.0} s", summary.DownlinkGbPerTick, signalDelay),
+                string.Format("{0:0.0} Gb/t • {1:0.0} s delay", summary.DownlinkGbPerTick, signalDelay),
                 Mathf.Max(0.12f, commsRatio),
                 new Color(0.28f, 0.78f, 0.78f, 1f),
                 false);
@@ -199,7 +231,7 @@ namespace AstraLink.UI.Workshop
             // 6. RELIABILITY & SHIELDING
             float relPercent = summary.OverallReliability * 100f;
             SetGauge(5,
-                string.Format("Reliability: {0:0.0}% • Shielding: {1:0}", relPercent, summary.TotalShielding),
+                string.Format("{0:0.0}% • Shield {1:0}", relPercent, summary.TotalShielding),
                 Mathf.Clamp01(summary.OverallReliability),
                 relPercent >= 85f ? new Color(0.25f, 0.80f, 0.48f, 1f) : new Color(0.90f, 0.65f, 0.20f, 1f),
                 false);
@@ -216,23 +248,27 @@ namespace AstraLink.UI.Workshop
             {
                 if (!summary.IsMassValid)
                 {
-                    _validationBannerBg.color = new Color(0.58f, 0.14f, 0.14f, 0.96f);
-                    _validationBannerText.text = "CRITICAL: SPACECRAFT MASS EXCEEDS ROCKET CAPACITY FOR THIS ORBIT!";
+                    _validationBannerBg.color = new Color(1.0f, 0.42f, 0.42f, 1f);
+                    _validationBannerText.color = new Color(1f, 0.72f, 0.72f, 1f);
+                    _validationBannerText.text = "CRITICAL: MASS EXCEEDS ROCKET CAPACITY";
                 }
                 else if (!summary.IsBudgetValid)
                 {
-                    _validationBannerBg.color = new Color(0.58f, 0.14f, 0.14f, 0.96f);
-                    _validationBannerText.text = "CRITICAL: BUILD COST EXCEEDS MISSION CONTRACT BUDGET LIMIT!";
+                    _validationBannerBg.color = new Color(1.0f, 0.42f, 0.42f, 1f);
+                    _validationBannerText.color = new Color(1f, 0.72f, 0.72f, 1f);
+                    _validationBannerText.text = "CRITICAL: COST EXCEEDS MISSION BUDGET";
                 }
                 else if (!sensorValid)
                 {
-                    _validationBannerBg.color = new Color(0.62f, 0.36f, 0.10f, 0.96f);
-                    _validationBannerText.text = "WARNING: CONTRACT REQUIRES PAYLOAD SENSOR: " + reqSensor.ToUpperInvariant();
+                    _validationBannerBg.color = new Color(1.0f, 0.78f, 0.40f, 1f);
+                    _validationBannerText.color = new Color(1f, 0.88f, 0.55f, 1f);
+                    _validationBannerText.text = "WARNING: REQUIRES SENSOR: " + reqSensor.ToUpperInvariant();
                 }
                 else
                 {
-                    _validationBannerBg.color = new Color(0.10f, 0.38f, 0.22f, 0.96f);
-                    _validationBannerText.text = "ALL 6 NASA RESOURCES VALID — READY FOR AUTOPILOT & LAUNCH";
+                    _validationBannerBg.color = new Color(0.45f, 1.0f, 0.55f, 1f);
+                    _validationBannerText.color = new Color(0.65f, 1f, 0.78f, 1f);
+                    _validationBannerText.text = "ALL 6 NASA SYSTEMS NOMINAL — READY";
                 }
             }
         }
@@ -259,8 +295,8 @@ namespace AstraLink.UI.Workshop
             if (g.CardBackground != null)
             {
                 g.CardBackground.color = isAlert
-                    ? new Color(0.28f, 0.10f, 0.12f, 0.95f)
-                    : new Color(0.07f, 0.11f, 0.18f, 0.94f);
+                    ? new Color(1.0f, 0.52f, 0.52f, 1f)
+                    : Color.white;
             }
             if (g.FillImage != null)
             {
@@ -277,22 +313,48 @@ namespace AstraLink.UI.Workshop
         {
             GameObject rowObj = CreateUIObject("GaugeRow_" + index, parent);
             Image cardBg = rowObj.AddComponent<Image>();
-            cardBg.color = new Color(0.07f, 0.11f, 0.18f, 0.94f);
+            TooltipTrigger.Attach(rowObj, GaugeTipKeys[index]);
+            cardBg.color = new Color(0.05f, 0.08f, 0.14f, 0.86f);
 
             LayoutElement rowLe = rowObj.AddComponent<LayoutElement>();
-            rowLe.preferredHeight = 92f;
+            rowLe.preferredHeight = 68f;
+            rowLe.flexibleHeight = 1f;
 
-            VerticalLayoutGroup vLayout = rowObj.AddComponent<VerticalLayoutGroup>();
-            vLayout.padding = new RectOffset(14, 14, 10, 10);
-            vLayout.spacing = 8f;
+            HorizontalLayoutGroup rowH = rowObj.AddComponent<HorizontalLayoutGroup>();
+            rowH.padding = new RectOffset(10, 10, 8, 8);
+            rowH.spacing = 12f;
+            rowH.childAlignment = TextAnchor.MiddleLeft;
+            rowH.childControlWidth = true;
+            rowH.childControlHeight = true;
+            rowH.childForceExpandWidth = false;
+
+            GameObject iconObj = CreateUIObject("TelemetryIcon_" + index, rowObj.transform);
+            LayoutElement iconLe = iconObj.AddComponent<LayoutElement>();
+            iconLe.preferredWidth = 28f;
+            iconLe.preferredHeight = 28f;
+            iconLe.minWidth = 28f;
+            iconLe.minHeight = 28f;
+            Image iconImg = iconObj.AddComponent<Image>();
+            iconImg.preserveAspect = true;
+            iconImg.raycastTarget = false;
+            Sprite telSprite = PixelUITheme.ResolveTelemetryIconSprite(index);
+            iconImg.sprite = telSprite;
+            iconImg.color = telSprite != null ? Color.white : new Color(1f, 1f, 1f, 0.15f);
+
+            GameObject barCol = CreateUIObject("BarColumn", rowObj.transform);
+            LayoutElement colLe = barCol.AddComponent<LayoutElement>();
+            colLe.flexibleWidth = 1f;
+
+            VerticalLayoutGroup vLayout = barCol.AddComponent<VerticalLayoutGroup>();
+            vLayout.spacing = 6f;
             vLayout.childControlWidth = true;
             vLayout.childControlHeight = true;
             vLayout.childForceExpandWidth = true;
             vLayout.childForceExpandHeight = false;
 
-            GameObject topRow = CreateUIObject("TopRow", rowObj.transform);
+            GameObject topRow = CreateUIObject("TopRow", barCol.transform);
             LayoutElement topLe = topRow.AddComponent<LayoutElement>();
-            topLe.preferredHeight = 26f;
+            topLe.preferredHeight = 22f;
 
             HorizontalLayoutGroup hLayout = topRow.AddComponent<HorizontalLayoutGroup>();
             hLayout.spacing = 8f;
@@ -300,21 +362,21 @@ namespace AstraLink.UI.Workshop
             hLayout.childControlHeight = true;
             hLayout.childForceExpandWidth = false;
 
-            Text titleTxt = CreateText("Title", topRow.transform, font, title, 15, FontStyle.Bold,
-                new Color(0.75f, 0.86f, 0.98f, 1f), TextAnchor.MiddleLeft);
+            Text titleTxt = CreateText("Title", topRow.transform, font, title, 14, FontStyle.Bold,
+                new Color(0.86f, 0.92f, 1f, 1f), TextAnchor.MiddleLeft);
             LayoutElement titleLe = titleTxt.gameObject.AddComponent<LayoutElement>();
             titleLe.flexibleWidth = 1f;
 
-            Text valueTxt = CreateText("Value", topRow.transform, font, "...", 15, FontStyle.Bold,
-                Color.white, TextAnchor.MiddleRight);
+            Text valueTxt = CreateText("Value", topRow.transform, font, "...", 13, FontStyle.Bold,
+                new Color(0.75f, 0.94f, 1f, 1f), TextAnchor.MiddleRight);
             LayoutElement valLe = valueTxt.gameObject.AddComponent<LayoutElement>();
-            valLe.preferredWidth = 310f;
+            valLe.preferredWidth = 270f;
 
-            GameObject barBg = CreateUIObject("BarBg", rowObj.transform);
+            GameObject barBg = CreateUIObject("BarBg", barCol.transform);
             Image bgImg = barBg.AddComponent<Image>();
-            bgImg.color = new Color(0.03f, 0.05f, 0.09f, 1f);
+            bgImg.color = new Color(0.02f, 0.04f, 0.08f, 1f);
             LayoutElement barLe = barBg.AddComponent<LayoutElement>();
-            barLe.preferredHeight = 20f;
+            barLe.preferredHeight = 14f;
 
             GameObject barFill = CreateUIObject("BarFill", barBg.transform);
             Image fillImg = barFill.AddComponent<Image>();
