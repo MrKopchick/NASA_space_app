@@ -947,6 +947,10 @@ namespace AstraLink.Core
             SetPanelTopInset(debriefPanel, TopUtilityBarHeight);
 
             EnsureSaveManagerInMainScene(root);
+            if (GetComponent<FirstMissionGuide>() == null)
+            {
+                gameObject.AddComponent<FirstMissionGuide>();
+            }
             RefreshUtilityBarState();
         }
 

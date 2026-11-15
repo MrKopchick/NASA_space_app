@@ -170,12 +170,21 @@ namespace AstraLink.UI.Hub
         public void SelectContract(int index)
         {
             if (_missions == null || index < 0 || index >= _missions.Count) return;
+            if (!IsMissionUnlocked(index)) return;
 
             IsSandboxModeSelected = false;
             SelectedMission = _missions[index];
 
             RefreshCards();
             OnMissionSelected?.Invoke(SelectedMission);
+        }
+
+        private bool IsMissionUnlocked(int index)
+        {
+            if (index <= 0) return true;
+            if (_missions == null || index >= _missions.Count) return false;
+            if (_agencyState == null || _agencyState.CompletedMissionIds == null) return false;
+            return _agencyState.CompletedMissionIds.Contains(_missions[index - 1].Id);
         }
 
         public void RefreshCards()
@@ -209,6 +218,7 @@ namespace AstraLink.UI.Hub
             {
                 bool isSelected = SelectedMission != null && SelectedMission.Id == _missions[i].Id;
                 bool isCompleted = _agencyState.CompletedMissionIds != null && _agencyState.CompletedMissionIds.Contains(_missions[i].Id);
+                bool isUnlocked = IsMissionUnlocked(i);
 
                 if (_cardBackgrounds[i] != null)
                 {
@@ -216,21 +226,59 @@ namespace AstraLink.UI.Hub
 
                     if (_cardBackgrounds[i].sprite != null)
                     {
-                        _cardBackgrounds[i].color = isSelected
-                            ? new Color(0.88f, 0.94f, 1f, 0.54f)
-                            : new Color(0.74f, 0.82f, 0.96f, 0.48f);
+                        if (!isUnlocked)
+                        {
+                            _cardBackgrounds[i].color = new Color(0.32f, 0.34f, 0.38f, 0.42f);
+                        }
+                        else
+                        {
+                            _cardBackgrounds[i].color = isSelected
+                                ? new Color(0.88f, 0.94f, 1f, 0.54f)
+                                : new Color(0.74f, 0.82f, 0.96f, 0.48f);
+                        }
                     }
                     else
                     {
-                        _cardBackgrounds[i].color = isSelected
-                            ? new Color(0.14f, 0.19f, 0.32f, 0.56f)
-                            : new Color(0.10f, 0.13f, 0.22f, 0.50f);
+                        if (!isUnlocked)
+                        {
+                            _cardBackgrounds[i].color = new Color(0.12f, 0.13f, 0.15f, 0.48f);
+                        }
+                        else
+                        {
+                            _cardBackgrounds[i].color = isSelected
+                                ? new Color(0.14f, 0.19f, 0.32f, 0.56f)
+                                : new Color(0.10f, 0.13f, 0.22f, 0.50f);
+                        }
                     }
                 }
 
                 if (i < _cardButtonLabels.Count && _cardButtonLabels[i] != null)
                 {
-                    if (isSelected)
+                    Button acceptBtn = _cardButtonLabels[i].GetComponentInParent<Button>();
+                    if (acceptBtn != null)
+                    {
+                        acceptBtn.interactable = isUnlocked;
+                        Image btnImg = acceptBtn.GetComponent<Image>();
+                        if (btnImg != null)
+                        {
+                            if (!isUnlocked && buttonDisabledSprite != null)
+                            {
+                                btnImg.sprite = buttonDisabledSprite;
+                            }
+                            else if (isUnlocked && buttonNormalSprite != null)
+                            {
+                                btnImg.sprite = buttonNormalSprite;
+                            }
+
+                            btnImg.color = isUnlocked ? Color.white : new Color(0.45f, 0.47f, 0.52f, 0.85f);
+                        }
+                    }
+
+                    if (!isUnlocked)
+                    {
+                        _cardButtonLabels[i].text = "LOCKED (COMPLETE PREV)";
+                    }
+                    else if (isSelected)
                     {
                         _cardButtonLabels[i].text = isCompleted ? "SELECTED (DONE)" : "SELECTED";
                     }
