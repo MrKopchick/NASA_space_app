@@ -544,6 +544,10 @@ namespace AstraLink.UI.Debrief
                 orbitRadarUI.SetPlaybackSpeed(multiplier);
             }
             UpdatePlaybackSpeedButtonHighlights(multiplier);
+            if (spaceMapController != null && orbitRadarUI != null)
+            {
+                spaceMapController.SetSimulationPlaybackState(orbitRadarUI.IsPlaying, multiplier);
+            }
         }
 
         /// <summary>
@@ -566,6 +570,10 @@ namespace AstraLink.UI.Debrief
                     playbackPlayPauseLabel.text = orbitRadarUI.IsPlaying ? "PAUSE" : "PLAY";
                 }
                 SyncSolarHudPlaybackState();
+                if (spaceMapController != null)
+                {
+                    spaceMapController.SetSimulationPlaybackState(orbitRadarUI.IsPlaying, orbitRadarUI.SpeedMultiplier);
+                }
             }
         }
 
@@ -588,6 +596,11 @@ namespace AstraLink.UI.Debrief
                     playbackPlayPauseLabel.text = "PLAY";
                 }
                 SyncSolarHudPlaybackState();
+                // Keep map paused but do NOT advance mapSimTime — the map will stay frozen.
+                if (spaceMapController != null)
+                {
+                    spaceMapController.SetSimulationPlaybackState(false, orbitRadarUI.SpeedMultiplier);
+                }
             }
         }
 
@@ -619,6 +632,10 @@ namespace AstraLink.UI.Debrief
             {
                 orbitRadarUI.JumpToTick(0, pausePlayback: false);
                 SyncSolarHudPlaybackState();
+                if (spaceMapController != null)
+                {
+                    spaceMapController.SetSimulationPlaybackState(orbitRadarUI.IsPlaying, orbitRadarUI.SpeedMultiplier);
+                }
             }
         }
 
@@ -634,6 +651,10 @@ namespace AstraLink.UI.Debrief
             {
                 orbitRadarUI.JumpToTick(tickIndex, pausePlayback: !orbitRadarUI.IsPlaying);
                 SyncSolarHudPlaybackState();
+                if (spaceMapController != null)
+                {
+                    spaceMapController.SetSimulationPlaybackState(orbitRadarUI.IsPlaying, orbitRadarUI.SpeedMultiplier);
+                }
             }
         }
 
@@ -720,6 +741,10 @@ namespace AstraLink.UI.Debrief
         private void HandleRadarSpeedChanged(float newSpeed)
         {
             UpdatePlaybackSpeedButtonHighlights(newSpeed);
+            if (spaceMapController != null && orbitRadarUI != null)
+            {
+                spaceMapController.SetSimulationPlaybackState(orbitRadarUI.IsPlaying, newSpeed);
+            }
         }
 
         private void HandleManualMissionRecalculated(MissionReport recalculatedReport, ManualCommandRequest command)
@@ -777,6 +802,12 @@ namespace AstraLink.UI.Debrief
 
         private void HandleRadarTestFlightCompleted(MissionReport completedReport)
         {
+            // Stop the space map when the flight ends
+            if (spaceMapController != null)
+            {
+                spaceMapController.SetSimulationPlaybackState(false, 1f);
+            }
+
             if (_devSafeMode)
             {
                 if (orbitRadarUI != null)
@@ -936,6 +967,12 @@ namespace AstraLink.UI.Debrief
             if (playbackPlayPauseLabel != null)
             {
                 playbackPlayPauseLabel.text = "PAUSE";
+            }
+
+            // Sync space map playback now that launch animation is done and tick playback starts
+            if (spaceMapController != null)
+            {
+                spaceMapController.SetSimulationPlaybackState(true, orbitRadarUI.SpeedMultiplier);
             }
         }
 
