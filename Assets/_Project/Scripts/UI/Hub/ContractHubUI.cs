@@ -44,6 +44,10 @@ namespace AstraLink.UI.Hub
         private readonly List<Image> _cardBackgrounds = new List<Image>();
         private readonly List<Text> _cardButtonLabels = new List<Text>();
         private Text _agencyBudgetText;
+        private Text _carouselCounterText;
+        private Button _prevMissionButton;
+        private Button _nextMissionButton;
+        private int _carouselIndex;
 
         public MissionGoal SelectedMission { get; private set; }
         public bool IsSandboxModeSelected { get; private set; }
@@ -192,6 +196,15 @@ namespace AstraLink.UI.Hub
                 _agencyBudgetText.text = string.Format("${0:0}k", _agencyState.CapitalThousands);
             }
 
+            if (_missions.Count > 0)
+            {
+                _carouselIndex = Mathf.Clamp(_carouselIndex, 0, _missions.Count - 1);
+            }
+            else
+            {
+                _carouselIndex = 0;
+            }
+
             for (int i = 0; i < _missions.Count && i < _cardBackgrounds.Count; i++)
             {
                 bool isSelected = SelectedMission != null && SelectedMission.Id == _missions[i].Id;
@@ -199,17 +212,19 @@ namespace AstraLink.UI.Hub
 
                 if (_cardBackgrounds[i] != null)
                 {
+                    _cardBackgrounds[i].gameObject.SetActive(i == _carouselIndex);
+
                     if (_cardBackgrounds[i].sprite != null)
                     {
                         _cardBackgrounds[i].color = isSelected
-                            ? Color.white
-                            : new Color(0.82f, 0.86f, 0.94f, 0.96f);
+                            ? new Color(0.88f, 0.94f, 1f, 0.54f)
+                            : new Color(0.74f, 0.82f, 0.96f, 0.48f);
                     }
                     else
                     {
                         _cardBackgrounds[i].color = isSelected
-                            ? new Color(0.16f, 0.22f, 0.36f, 0.98f)
-                            : new Color(0.11f, 0.14f, 0.24f, 0.95f);
+                            ? new Color(0.14f, 0.19f, 0.32f, 0.56f)
+                            : new Color(0.10f, 0.13f, 0.22f, 0.50f);
                     }
                 }
 
@@ -225,6 +240,50 @@ namespace AstraLink.UI.Hub
                     }
                 }
             }
+
+            if (_carouselCounterText != null)
+            {
+                _carouselCounterText.text = _missions.Count > 0
+                    ? string.Format("MISSION {0}/{1}", _carouselIndex + 1, _missions.Count)
+                    : "NO MISSIONS";
+            }
+
+            SetCarouselButtonEnabled(_prevMissionButton, _carouselIndex > 0);
+            SetCarouselButtonEnabled(_nextMissionButton, _carouselIndex < _missions.Count - 1);
+        }
+
+        private void StepCarousel(int delta)
+        {
+            if (_missions.Count == 0) return;
+            int next = Mathf.Clamp(_carouselIndex + delta, 0, _missions.Count - 1);
+            if (next == _carouselIndex) return;
+            _carouselIndex = next;
+            RefreshCards();
+        }
+
+        private void SetCarouselButtonEnabled(Button btn, bool enabled)
+        {
+            if (btn == null) return;
+            btn.interactable = enabled;
+
+            Image img = btn.GetComponent<Image>();
+            if (img != null)
+            {
+                if (!enabled && buttonDisabledSprite != null)
+                    img.sprite = buttonDisabledSprite;
+                else if (enabled && buttonNormalSprite != null)
+                    img.sprite = buttonNormalSprite;
+
+                img.color = enabled ? Color.white : new Color(0.65f, 0.68f, 0.74f, 0.85f);
+            }
+
+            Text txt = btn.GetComponentInChildren<Text>(true);
+            if (txt != null)
+            {
+                txt.color = enabled
+                    ? new Color(0.06f, 0.12f, 0.18f, 1f)
+                    : new Color(0.75f, 0.78f, 0.84f, 0.70f);
+            }
         }
 
         private void UpdateBackgroundProgression()
@@ -236,7 +295,7 @@ namespace AstraLink.UI.Hub
             {
                 if (bg.texture != null) bg.texture.filterMode = FilterMode.Point;
                 backgroundImage.sprite = bg;
-                backgroundImage.color = new Color(0.65f, 0.72f, 0.88f, 1f);
+                backgroundImage.color = new Color(0.92f, 0.95f, 1f, 1f);
             }
             else
             {
@@ -357,7 +416,7 @@ namespace AstraLink.UI.Hub
             if (existingRoot != null)
             {
                 // Rebuild automatically if existing HubContentRoot is from an older layout version
-                if (existingRoot.Find("TopHeaderBar") != null && existingRoot.Find("LayoutV3Marker") != null)
+                if (existingRoot.Find("TopHeaderBar") != null && existingRoot.Find("LayoutV18Marker") != null)
                 {
                     StretchFull(existingRoot.GetComponent<RectTransform>());
                     BindExistingHierarchy(existingRoot);
@@ -377,7 +436,7 @@ namespace AstraLink.UI.Hub
             GameObject rootObj = CreateUIObject("HubContentRoot", hubRoot);
             StretchFull(rootObj.GetComponent<RectTransform>());
 
-            GameObject marker = CreateUIObject("LayoutV3Marker", rootObj.transform);
+            GameObject marker = CreateUIObject("LayoutV18Marker", rootObj.transform);
             marker.AddComponent<LayoutElement>().ignoreLayout = true;
 
             VerticalLayoutGroup rootLayout = rootObj.AddComponent<VerticalLayoutGroup>();
@@ -394,7 +453,7 @@ namespace AstraLink.UI.Hub
 
             HorizontalLayoutGroup topBarLayout = topBar.AddComponent<HorizontalLayoutGroup>();
             topBarLayout.padding = new RectOffset(28, 32, 12, 12);
-            topBarLayout.spacing = 10f;
+            topBarLayout.spacing = 12f;
             topBarLayout.childAlignment = TextAnchor.MiddleLeft;
             topBarLayout.childControlWidth = true;
             topBarLayout.childControlHeight = true;
@@ -412,6 +471,12 @@ namespace AstraLink.UI.Hub
             htLe.flexibleWidth = 1f;
             htLe.preferredHeight = 38f;
 
+            _carouselCounterText = CreateText("MissionCounterText", topBar.transform, titleFont,
+                "MISSION 1/3", 16, FontStyle.Bold, new Color(0.55f, 0.90f, 1f, 1f), TextAnchor.MiddleRight);
+            LayoutElement mcLe = _carouselCounterText.gameObject.AddComponent<LayoutElement>();
+            mcLe.preferredWidth = 160f;
+            mcLe.preferredHeight = 38f;
+
             // Agency Credits pill on the right of Top Bar
             if (creditsCoinSprite != null)
             {
@@ -427,13 +492,39 @@ namespace AstraLink.UI.Hub
             abLe.minWidth = 84f;
             abLe.preferredHeight = 38f;
 
-            // --- 2. THREE CONTRACT CARDS ---
-            GameObject cardsRow = CreateUIObject("MissionCardsContainer", rootObj.transform);
+            // --- 2. FULL-SCREEN SINGLE-MISSION CAROUSEL (< | MISSION CARD | >) ---
+            GameObject carouselRow = CreateUIObject("MissionCarouselRow", rootObj.transform);
+            LayoutElement carouselLe = carouselRow.AddComponent<LayoutElement>();
+            carouselLe.flexibleHeight = 1f;
+
+            HorizontalLayoutGroup carouselLayout = carouselRow.AddComponent<HorizontalLayoutGroup>();
+            carouselLayout.spacing = 24f;
+            carouselLayout.childAlignment = TextAnchor.MiddleCenter;
+            carouselLayout.childControlWidth = true;
+            carouselLayout.childControlHeight = true;
+            carouselLayout.childForceExpandWidth = false;
+            carouselLayout.childForceExpandHeight = false;
+
+            _prevMissionButton = CreatePixelButton(carouselRow.transform, "Btn_PrevMission", "<", 72f, titleFont,
+                () => StepCarousel(-1));
+            LayoutElement prevLe = _prevMissionButton.GetComponent<LayoutElement>();
+            prevLe.preferredWidth = 72f;
+            prevLe.minWidth = 72f;
+            prevLe.preferredHeight = 72f;
+            prevLe.minHeight = 72f;
+            prevLe.flexibleWidth = 0f;
+            Text prevTxt = _prevMissionButton.GetComponentInChildren<Text>();
+            if (prevTxt != null) { prevTxt.fontSize = 20; prevTxt.horizontalOverflow = HorizontalWrapMode.Overflow; }
+
+            GameObject cardsRow = CreateUIObject("MissionCardsContainer", carouselRow.transform);
             LayoutElement cardsRowLe = cardsRow.AddComponent<LayoutElement>();
+            cardsRowLe.flexibleWidth = 1f;
             cardsRowLe.flexibleHeight = 1f;
+            cardsRowLe.minHeight = 480f;
+            cardsRowLe.preferredHeight = 640f;
 
             HorizontalLayoutGroup cardsLayout = cardsRow.AddComponent<HorizontalLayoutGroup>();
-            cardsLayout.spacing = 30f;
+            cardsLayout.spacing = 0f;
             cardsLayout.childControlWidth = true;
             cardsLayout.childControlHeight = true;
             cardsLayout.childForceExpandWidth = true;
@@ -446,102 +537,285 @@ namespace AstraLink.UI.Hub
             {
                 BuildMissionCard(i, _missions[i], cardsRow.transform, titleFont, textFont);
             }
+
+            _nextMissionButton = CreatePixelButton(carouselRow.transform, "Btn_NextMission", ">", 72f, titleFont,
+                () => StepCarousel(1));
+            LayoutElement nextLe = _nextMissionButton.GetComponent<LayoutElement>();
+            nextLe.preferredWidth = 72f;
+            nextLe.minWidth = 72f;
+            nextLe.preferredHeight = 72f;
+            nextLe.minHeight = 72f;
+            nextLe.flexibleWidth = 0f;
+            Text nextTxt = _nextMissionButton.GetComponentInChildren<Text>();
+            if (nextTxt != null) { nextTxt.fontSize = 20; nextTxt.horizontalOverflow = HorizontalWrapMode.Overflow; }
+
+            ApplyCustomThemeToExistingUI(rootObj.transform);
+        }
+
+        [ContextMenu("Apply Custom Font & Sprites To Hub UI")]
+        public void ApplyCustomThemeInEditor()
+        {
+            Transform hubRoot = GetHubRootTransform();
+            Transform contentRoot = hubRoot != null ? hubRoot.Find("HubContentRoot") : null;
+            if (contentRoot == null) contentRoot = transform.Find("HubContentRoot");
+            if (contentRoot != null)
+            {
+                BindExistingHierarchy(contentRoot);
+                ApplyCustomThemeToExistingUI(contentRoot);
+                RefreshCards();
+            }
+        }
+
+#if UNITY_EDITOR
+        [ContextMenu("Auto-Assign Kenney Font & UI Sprites From Project")]
+        public void AutoAssignKenneyFontAndSpritesInEditor()
+        {
+            if (headerFont == null)
+                headerFont = UnityEditor.AssetDatabase.LoadAssetAtPath<Font>("Assets/_Project/Fonts/Kenney Future.ttf");
+            if (bodyFont == null)
+                bodyFont = UnityEditor.AssetDatabase.LoadAssetAtPath<Font>("Assets/_Project/Fonts/Kenney Mini Square Mono.ttf");
+            if (cardPanelSprite == null)
+                cardPanelSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/_Project/Art/UI/inventory_panel.png");
+            if (innerBoxSprite == null)
+                innerBoxSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/_Project/Art/UI/dialogue_box.png");
+            if (buttonNormalSprite == null)
+                buttonNormalSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/_Project/Art/UI/button_normal.png");
+            if (buttonHoverSprite == null)
+                buttonHoverSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/_Project/Art/UI/button_hover.png");
+            if (buttonPressedSprite == null)
+                buttonPressedSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/_Project/Art/UI/button_pressed.png");
+            if (buttonDisabledSprite == null)
+                buttonDisabledSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/_Project/Art/UI/button_disabled.png");
+
+            UnityEditor.EditorUtility.SetDirty(this);
+            ApplyCustomThemeInEditor();
+            Debug.Log("[ContractHubUI] Assigned Kenney font & pixel UI sprites to Hub!");
+        }
+#endif
+
+        private void ApplyCustomThemeToExistingUI(Transform contentRoot)
+        {
+            if (contentRoot == null) return;
+
+            if (headerFont != null)
+            {
+                Text[] allTexts = contentRoot.GetComponentsInChildren<Text>(true);
+                for (int i = 0; i < allTexts.Length; i++)
+                {
+                    allTexts[i].font = headerFont;
+                }
+            }
+
+            if (cardPanelSprite != null)
+            {
+                if (cardPanelSprite.texture != null) cardPanelSprite.texture.filterMode = FilterMode.Point;
+                for (int i = 0; i < _cardBackgrounds.Count; i++)
+                {
+                    if (_cardBackgrounds[i] != null)
+                    {
+                        _cardBackgrounds[i].sprite = cardPanelSprite;
+                        _cardBackgrounds[i].color = new Color(0.88f, 0.94f, 1f, 0.54f);
+                    }
+                }
+            }
+
+            if (innerBoxSprite != null)
+            {
+                if (innerBoxSprite.texture != null) innerBoxSprite.texture.filterMode = FilterMode.Point;
+                Transform carouselRow = contentRoot.Find("MissionCarouselRow");
+                Transform cardsContainer = carouselRow != null
+                    ? carouselRow.Find("MissionCardsContainer")
+                    : contentRoot.Find("MissionCardsContainer");
+                if (cardsContainer != null)
+                {
+                    Image[] innerImages = cardsContainer.GetComponentsInChildren<Image>(true);
+                    for (int i = 0; i < innerImages.Length; i++)
+                    {
+                        string objName = innerImages[i].gameObject.name;
+                        if (objName == "PlanetBox" || objName == "BriefBox" || objName == "SpecsBox" || objName == "OrbitBox")
+                        {
+                            innerImages[i].sprite = innerBoxSprite;
+                            innerImages[i].color = new Color(0.75f, 0.84f, 0.98f, 0.50f);
+                        }
+                    }
+                }
+            }
+
+            if (buttonNormalSprite != null)
+            {
+                if (buttonNormalSprite.texture != null) buttonNormalSprite.texture.filterMode = FilterMode.Point;
+                Button[] allButtons = contentRoot.GetComponentsInChildren<Button>(true);
+                for (int i = 0; i < allButtons.Length; i++)
+                {
+                    Image btnImg = allButtons[i].GetComponent<Image>();
+                    if (btnImg != null)
+                    {
+                        btnImg.sprite = buttonNormalSprite;
+                        btnImg.color = Color.white;
+                    }
+
+                    if (buttonHoverSprite != null || buttonPressedSprite != null || buttonDisabledSprite != null)
+                    {
+                        allButtons[i].transition = Selectable.Transition.SpriteSwap;
+                        SpriteState st = allButtons[i].spriteState;
+                        if (buttonHoverSprite != null) st.highlightedSprite = buttonHoverSprite;
+                        if (buttonPressedSprite != null) st.pressedSprite = buttonPressedSprite;
+                        if (buttonDisabledSprite != null) st.disabledSprite = buttonDisabledSprite;
+                        allButtons[i].spriteState = st;
+                    }
+                }
+            }
         }
 
         private void BuildMissionCard(int index, MissionGoal mission, Transform parent, Font titleFont, Font textFont)
         {
             GameObject cardObj = CreateSlicedPanel("MissionCard_" + mission.Id, parent, cardPanelSprite,
-                new Color(0.12f, 0.15f, 0.26f, 0.96f), 0f);
+                new Color(0.84f, 0.92f, 1f, 0.72f), 0f);
             _cardBackgrounds.Add(cardObj.GetComponent<Image>());
 
             VerticalLayoutGroup cardLayout = cardObj.AddComponent<VerticalLayoutGroup>();
-            cardLayout.padding = new RectOffset(38, 38, 36, 32);
-            cardLayout.spacing = 12f;
+            cardLayout.padding = new RectOffset(58, 58, 28, 28);
+            cardLayout.spacing = 14f;
             cardLayout.childControlWidth = true;
             cardLayout.childControlHeight = true;
             cardLayout.childForceExpandWidth = true;
             cardLayout.childForceExpandHeight = false;
 
-            // --- A. Card Top Row: Planet Icon Slot + Title & Orbit ---
-            GameObject headerRow = CreateUIObject("CardHeaderRow", cardObj.transform);
-            LayoutElement hrLe = headerRow.AddComponent<LayoutElement>();
-            hrLe.preferredHeight = 76f;
+            // --- A. Top Centered Title & Orbit Subtitle ---
+            GameObject headerCol = CreateUIObject("CardHeaderColumn", cardObj.transform);
+            LayoutElement hcLe = headerCol.AddComponent<LayoutElement>();
+            hcLe.preferredHeight = 62f;
 
-            HorizontalLayoutGroup hrLayout = headerRow.AddComponent<HorizontalLayoutGroup>();
-            hrLayout.spacing = 14f;
-            hrLayout.childAlignment = TextAnchor.MiddleLeft;
-            hrLayout.childControlWidth = true;
-            hrLayout.childControlHeight = true;
-            hrLayout.childForceExpandWidth = false;
-            hrLayout.childForceExpandHeight = false;
+            VerticalLayoutGroup hcLayout = headerCol.AddComponent<VerticalLayoutGroup>();
+            hcLayout.spacing = 4f;
+            hcLayout.childAlignment = TextAnchor.MiddleCenter;
+            hcLayout.childControlWidth = true;
+            hcLayout.childControlHeight = true;
+            hcLayout.childForceExpandWidth = true;
+            hcLayout.childForceExpandHeight = false;
 
-            // Planet Slot (74x74)
-            GameObject planetSlot = CreateSlicedPanel("PlanetSlot", headerRow.transform, iconSlotSprite,
-                new Color(0.06f, 0.08f, 0.15f, 1f), 74f);
-            LayoutElement slotLe = planetSlot.GetComponent<LayoutElement>();
-            slotLe.preferredWidth = 74f;
-            slotLe.minWidth = 74f;
-            slotLe.minHeight = 74f;
+            Text titleTxt = CreateText("Title", headerCol.transform, titleFont, mission.Title.ToUpperInvariant(), 22, FontStyle.Bold,
+                Color.white, TextAnchor.MiddleCenter);
+            titleTxt.gameObject.AddComponent<LayoutElement>().preferredHeight = 34f;
+
+            Text orbitTxt = CreateText("OrbitSummary", headerCol.transform, textFont, GetShortOrbitTag(mission.OrbitId), 14, FontStyle.Normal,
+                new Color(0.48f, 0.86f, 0.96f, 1f), TextAnchor.MiddleCenter);
+            orbitTxt.gameObject.AddComponent<LayoutElement>().preferredHeight = 22f;
+
+            // --- B. Middle 3-Column Body Row: Planet (Left) | Brief (Center) | Specs & Telemetry (Right) ---
+            GameObject bodyRow = CreateUIObject("BodyRow", cardObj.transform);
+            LayoutElement bodyLe = bodyRow.AddComponent<LayoutElement>();
+            bodyLe.flexibleHeight = 1f;
+            bodyLe.minHeight = 320f;
+
+            HorizontalLayoutGroup bodyH = bodyRow.AddComponent<HorizontalLayoutGroup>();
+            bodyH.spacing = 18f;
+            bodyH.childAlignment = TextAnchor.MiddleCenter;
+            bodyH.childControlWidth = true;
+            bodyH.childControlHeight = true;
+            bodyH.childForceExpandWidth = false;
+            bodyH.childForceExpandHeight = true;
+
+            // 1. Left Column: Frameless Planet Icon shifted slightly to the right
+            GameObject planetCol = CreateUIObject("PlanetColumn", bodyRow.transform);
+            LayoutElement planetColLe = planetCol.AddComponent<LayoutElement>();
+            planetColLe.preferredWidth = 310f;
+            planetColLe.minWidth = 310f;
+            planetColLe.flexibleWidth = 0f;
+            planetColLe.flexibleHeight = 1f;
+
+            VerticalLayoutGroup planetColLayout = planetCol.AddComponent<VerticalLayoutGroup>();
+            planetColLayout.padding = new RectOffset(38, 4, 24, 24);
+            planetColLayout.childAlignment = TextAnchor.MiddleCenter;
+            planetColLayout.childControlWidth = true;
+            planetColLayout.childControlHeight = true;
+            planetColLayout.childForceExpandWidth = true;
+            planetColLayout.childForceExpandHeight = true;
 
             Sprite planetSprite = GetMissionPlanetSprite(mission.OrbitId);
             if (planetSprite != null)
             {
-                GameObject planetObj = CreateUIObject("PlanetIcon", planetSlot.transform);
-                RectTransform pRt = planetObj.GetComponent<RectTransform>();
-                pRt.anchorMin = new Vector2(0.5f, 0.5f);
-                pRt.anchorMax = new Vector2(0.5f, 0.5f);
-                pRt.sizeDelta = new Vector2(48f, 48f);
+                GameObject planetObj = CreateUIObject("PlanetIcon", planetCol.transform);
+                LayoutElement pLe = planetObj.AddComponent<LayoutElement>();
+                pLe.flexibleWidth = 1f;
+                pLe.flexibleHeight = 1f;
                 Image pImg = planetObj.AddComponent<Image>();
                 if (planetSprite.texture != null) planetSprite.texture.filterMode = FilterMode.Point;
                 pImg.sprite = planetSprite;
                 pImg.preserveAspect = true;
             }
 
-            // Title + Orbit Column
-            GameObject titleCol = CreateUIObject("TitleColumn", headerRow.transform);
-            LayoutElement tcLe = titleCol.AddComponent<LayoutElement>();
-            tcLe.flexibleWidth = 1f;
-            tcLe.preferredHeight = 74f;
+            OrbitDefinition orbit = _repository != null ? _repository.GetOrbit(mission.OrbitId) : null;
 
-            VerticalLayoutGroup tcLayout = titleCol.AddComponent<VerticalLayoutGroup>();
-            tcLayout.spacing = 4f;
-            tcLayout.childAlignment = TextAnchor.MiddleLeft;
-            tcLayout.childControlWidth = true;
-            tcLayout.childControlHeight = true;
-            tcLayout.childForceExpandWidth = true;
-            tcLayout.childForceExpandHeight = false;
+            // 2. Center Column: Compact Mission Brief Box with Extended Briefing
+            GameObject briefBox = CreateSlicedPanel("BriefBox", bodyRow.transform, innerBoxSprite,
+                new Color(0.75f, 0.84f, 0.98f, 0.50f), 0f);
+            Image briefBoxImg = briefBox.GetComponent<Image>();
+            if (briefBoxImg != null) briefBoxImg.color = new Color(0.75f, 0.84f, 0.98f, 0.50f);
+            LayoutElement briefBoxLe = briefBox.AddComponent<LayoutElement>();
+            briefBoxLe.preferredWidth = 360f;
+            briefBoxLe.minWidth = 300f;
+            briefBoxLe.flexibleWidth = 0.8f;
+            briefBoxLe.flexibleHeight = 1f;
 
-            Text titleTxt = CreateText("Title", titleCol.transform, titleFont, mission.Title.ToUpperInvariant(), 18, FontStyle.Bold,
-                Color.white, TextAnchor.LowerLeft);
-            titleTxt.gameObject.AddComponent<LayoutElement>().preferredHeight = 38f;
+            VerticalLayoutGroup briefLayout = briefBox.AddComponent<VerticalLayoutGroup>();
+            briefLayout.padding = new RectOffset(22, 22, 16, 16);
+            briefLayout.spacing = 8f;
+            briefLayout.childControlWidth = true;
+            briefLayout.childControlHeight = true;
+            briefLayout.childForceExpandWidth = true;
+            briefLayout.childForceExpandHeight = false;
 
-            Text orbitTxt = CreateText("OrbitSummary", titleCol.transform, textFont, GetShortOrbitTag(mission.OrbitId), 14, FontStyle.Normal,
-                new Color(0.48f, 0.86f, 0.96f, 1f), TextAnchor.UpperLeft);
-            orbitTxt.gameObject.AddComponent<LayoutElement>().preferredHeight = 24f;
+            Text briefHeader = CreateText("BriefHeader", briefBox.transform, titleFont, "MISSION BRIEF", 12, FontStyle.Bold,
+                new Color(0.48f, 0.86f, 0.96f, 1f), TextAnchor.MiddleLeft);
+            briefHeader.gameObject.AddComponent<LayoutElement>().preferredHeight = 20f;
 
-            // --- B. Short Brief Description ---
-            Text briefTxt = CreateText("Brief", cardObj.transform, textFont, mission.Brief, 14, FontStyle.Normal,
-                new Color(0.82f, 0.87f, 0.94f, 1f), TextAnchor.UpperLeft);
-            briefTxt.lineSpacing = 1.15f;
-            LayoutElement briefLe = briefTxt.gameObject.AddComponent<LayoutElement>();
-            briefLe.preferredHeight = 84f;
+            string extendedBrief = BuildExtendedMissionBrief(mission, orbit);
+            Text briefTxt = CreateText("Brief", briefBox.transform, textFont, extendedBrief, 14, FontStyle.Normal,
+                new Color(0.92f, 0.95f, 1f, 1f), TextAnchor.UpperLeft);
+            briefTxt.lineSpacing = 1.28f;
+            briefTxt.horizontalOverflow = HorizontalWrapMode.Wrap;
+            briefTxt.verticalOverflow = VerticalWrapMode.Truncate;
+            LayoutElement briefTxtLe = briefTxt.gameObject.AddComponent<LayoutElement>();
+            briefTxtLe.flexibleHeight = 1f;
 
-            // --- C. Clean 5-Row Stat Box (dialogue_box.png) ---
-            GameObject statsBox = CreateSlicedPanel("SpecsBox", cardObj.transform, innerBoxSprite,
-                new Color(0.06f, 0.08f, 0.15f, 0.96f), 192f);
+            // 3. Right Column: Stacked Contract Specs & Orbital Telemetry Boxes
+            GameObject infoCol = CreateUIObject("InfoColumn", bodyRow.transform);
+            LayoutElement infoColLe = infoCol.AddComponent<LayoutElement>();
+            infoColLe.preferredWidth = 440f;
+            infoColLe.minWidth = 380f;
+            infoColLe.flexibleWidth = 1.15f;
+            infoColLe.flexibleHeight = 1f;
+
+            VerticalLayoutGroup infoColLayout = infoCol.AddComponent<VerticalLayoutGroup>();
+            infoColLayout.spacing = 12f;
+            infoColLayout.childControlWidth = true;
+            infoColLayout.childControlHeight = true;
+            infoColLayout.childForceExpandWidth = true;
+            infoColLayout.childForceExpandHeight = true;
+
+            // Top-Right: Contract Specs Box
+            GameObject statsBox = CreateSlicedPanel("SpecsBox", infoCol.transform, innerBoxSprite,
+                new Color(0.75f, 0.84f, 0.98f, 0.50f), 0f);
+            Image statsBoxImg = statsBox.GetComponent<Image>();
+            if (statsBoxImg != null) statsBoxImg.color = new Color(0.75f, 0.84f, 0.98f, 0.50f);
+            statsBox.AddComponent<LayoutElement>().flexibleHeight = 1f;
 
             VerticalLayoutGroup statsLayout = statsBox.AddComponent<VerticalLayoutGroup>();
-            statsLayout.padding = new RectOffset(28, 24, 22, 22);
-            statsLayout.spacing = 6f;
+            statsLayout.padding = new RectOffset(22, 20, 14, 14);
+            statsLayout.spacing = 4f;
             statsLayout.childControlWidth = true;
             statsLayout.childControlHeight = true;
             statsLayout.childForceExpandWidth = true;
             statsLayout.childForceExpandHeight = true;
 
+            CreateText("SpecsHeader", statsBox.transform, titleFont, "CONTRACT SPECS", 12, FontStyle.Bold,
+                new Color(0.48f, 0.86f, 0.96f, 1f), TextAnchor.MiddleLeft);
+
             string payloadTag = string.IsNullOrEmpty(mission.RequiredSensorTag) ? "ANY" : mission.RequiredSensorTag.ToUpperInvariant();
             CreateStatRow(statsBox.transform, textFont, "PAYLOAD", payloadTag, new Color(0.92f, 0.96f, 1f, 1f));
             CreateStatRow(statsBox.transform, textFont, "SCIENCE GOAL",
-                string.Format("{0:0} PTS ({1} ORBITS)", mission.TargetSciencePoints, mission.RequiredOrbits),
+                string.Format("{0:0} PTS ({1} ORB)", mission.TargetSciencePoints, mission.RequiredOrbits),
                 new Color(0.55f, 0.92f, 0.98f, 1f));
             CreateStatRow(statsBox.transform, textFont, "MAX BUDGET",
                 string.Format("${0:0}K", mission.BudgetLimitThousands),
@@ -553,14 +827,50 @@ namespace AstraLink.UI.Hub
                 GetShortHazardTag(mission.EventId),
                 string.IsNullOrEmpty(mission.EventId) ? new Color(0.52f, 0.90f, 0.65f, 1f) : new Color(1f, 0.64f, 0.42f, 1f));
 
-            // Spacer
-            GameObject spacer = CreateUIObject("Spacer", cardObj.transform);
-            spacer.AddComponent<LayoutElement>().flexibleHeight = 1f;
+            // Bottom-Right: Orbital Telemetry Box
+            GameObject orbitBox = CreateSlicedPanel("OrbitBox", infoCol.transform, innerBoxSprite,
+                new Color(0.75f, 0.84f, 0.98f, 0.50f), 0f);
+            Image orbitBoxImg = orbitBox.GetComponent<Image>();
+            if (orbitBoxImg != null) orbitBoxImg.color = new Color(0.75f, 0.84f, 0.98f, 0.50f);
+            orbitBox.AddComponent<LayoutElement>().flexibleHeight = 1f;
 
-            // --- D. Pixel-Art Button ---
+            VerticalLayoutGroup orbitLayout = orbitBox.AddComponent<VerticalLayoutGroup>();
+            orbitLayout.padding = new RectOffset(22, 20, 14, 14);
+            orbitLayout.spacing = 4f;
+            orbitLayout.childControlWidth = true;
+            orbitLayout.childControlHeight = true;
+            orbitLayout.childForceExpandWidth = true;
+            orbitLayout.childForceExpandHeight = true;
+
+            CreateText("OrbitHeader", orbitBox.transform, titleFont, "ORBITAL TELEMETRY", 12, FontStyle.Bold,
+                new Color(1f, 0.82f, 0.38f, 1f), TextAnchor.MiddleLeft);
+
+            float solarPct = orbit != null ? orbit.SolarFluxFactor * 100f : 100f;
+            float eclipsePct = orbit != null ? orbit.EclipseFraction * 100f : 35f;
+            float commPct = orbit != null ? orbit.CommWindowFraction * 100f : 25f;
+            float delaySec = orbit != null ? orbit.SignalDelaySeconds : 1f;
+            float radVal = orbit != null ? orbit.BaseRadiation : 5f;
+
+            CreateStatRow(orbitBox.transform, textFont, "SOLAR FLUX",
+                string.Format("{0:0}%", solarPct),
+                solarPct < 60f ? new Color(1f, 0.68f, 0.38f, 1f) : new Color(1f, 0.90f, 0.45f, 1f));
+            CreateStatRow(orbitBox.transform, textFont, "ECLIPSE",
+                string.Format("{0:0}% / ORBIT", eclipsePct),
+                new Color(0.75f, 0.84f, 1f, 1f));
+            CreateStatRow(orbitBox.transform, textFont, "COMM WINDOW",
+                string.Format("{0:0}% / ORBIT", commPct),
+                new Color(0.55f, 0.92f, 0.98f, 1f));
+            CreateStatRow(orbitBox.transform, textFont, "SIGNAL DELAY",
+                string.Format("{0:0.0} S", delaySec),
+                delaySec >= 5f ? new Color(1f, 0.72f, 0.42f, 1f) : new Color(0.92f, 0.96f, 1f, 1f));
+            CreateStatRow(orbitBox.transform, textFont, "RADIATION",
+                string.Format("{0:0} RAD/T", radVal),
+                radVal >= 15f ? new Color(1f, 0.58f, 0.48f, 1f) : new Color(0.52f, 0.90f, 0.65f, 1f));
+
+            // --- C. Pixel-Art Button ---
             int capturedIndex = index;
             Button acceptBtn = CreatePixelButton(cardObj.transform, "Btn_AcceptContract_" + index,
-                "ACCEPT MISSION", 62f, titleFont, () => SelectContract(capturedIndex));
+                "ACCEPT MISSION", 56f, titleFont, () => SelectContract(capturedIndex));
 
             Text btnLabel = acceptBtn.GetComponentInChildren<Text>();
             _cardButtonLabels.Add(btnLabel);
@@ -597,9 +907,30 @@ namespace AstraLink.UI.Hub
             if (topBar != null)
             {
                 _agencyBudgetText = FindChildComponent<Text>(topBar, "AgencyBudgetText");
+                _carouselCounterText = FindChildComponent<Text>(topBar, "MissionCounterText");
             }
 
-            Transform cardsContainer = root.Find("MissionCardsContainer");
+            Transform carouselRow = root.Find("MissionCarouselRow");
+            if (carouselRow != null)
+            {
+                _prevMissionButton = FindChildComponent<Button>(carouselRow, "Btn_PrevMission");
+                if (_prevMissionButton != null)
+                {
+                    _prevMissionButton.onClick.RemoveAllListeners();
+                    _prevMissionButton.onClick.AddListener(() => StepCarousel(-1));
+                }
+
+                _nextMissionButton = FindChildComponent<Button>(carouselRow, "Btn_NextMission");
+                if (_nextMissionButton != null)
+                {
+                    _nextMissionButton.onClick.RemoveAllListeners();
+                    _nextMissionButton.onClick.AddListener(() => StepCarousel(1));
+                }
+            }
+
+            Transform cardsContainer = carouselRow != null
+                ? carouselRow.Find("MissionCardsContainer")
+                : root.Find("MissionCardsContainer");
             if (cardsContainer != null)
             {
                 for (int i = 0; i < _missions.Count; i++)
@@ -648,6 +979,38 @@ namespace AstraLink.UI.Hub
                 case "orbit_mars": return "MARS ORBIT • 350 KM";
                 default: return "DEEP SPACE ORBIT";
             }
+        }
+
+        private static string BuildExtendedMissionBrief(MissionGoal mission, OrbitDefinition orbit)
+        {
+            string baseBrief = mission != null && !string.IsNullOrEmpty(mission.Brief)
+                ? mission.Brief.Trim()
+                : "Deploy spacecraft to target orbit and complete scientific telemetry objectives.";
+
+            string sensor = mission != null && !string.IsNullOrEmpty(mission.RequiredSensorTag)
+                ? mission.RequiredSensorTag.ToUpperInvariant()
+                : "SCIENCE";
+
+            float solarPct = orbit != null ? orbit.SolarFluxFactor * 100f : 100f;
+            float eclipsePct = orbit != null ? orbit.EclipseFraction * 100f : 35f;
+            float commPct = orbit != null ? orbit.CommWindowFraction * 100f : 25f;
+
+            string advisory;
+            switch (mission != null ? mission.OrbitId : string.Empty)
+            {
+                case "orbit_lunar":
+                    advisory = "FLIGHT ADVISORY: Extended lunar eclipse windows cut solar generation nearly in half each pass. Pair high-capacity Li-Ion storage with thermal/TX autopilot rules.";
+                    break;
+                case "orbit_mars":
+                    advisory = "FLIGHT ADVISORY: Deep-space solar flux drops to " + solarPct.ToString("0") + "% and 10s signal delay prevents manual intervention. Autonomous fault-protection rules are mandatory.";
+                    break;
+                default:
+                    advisory = "FLIGHT ADVISORY: Standard 400 km LEO thermal and radiation profile. Balance solar array output against " + eclipsePct.ToString("0") + "% eclipse phases and downlink during the " + commPct.ToString("0") + "% comm window.";
+                    break;
+            }
+
+            string opsNote = "OPERATIONS: Equip a " + sensor + " payload, verify mass & power margins in the Hangar, and configure A.S.T.R.A. autopilot before launch.";
+            return baseBrief + "\n\n" + advisory + "\n\n" + opsNote;
         }
 
         private static string GetShortHazardTag(string eventId)
