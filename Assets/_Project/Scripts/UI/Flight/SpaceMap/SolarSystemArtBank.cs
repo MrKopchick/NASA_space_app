@@ -133,10 +133,6 @@ namespace AstraLink.UI.Flight.SpaceMap
             SolarSystemArtBank bank = Load();
             if (bank != null && bank.uiPixelFont != null)
             {
-                if (bank.uiPixelFont.material != null && bank.uiPixelFont.material.mainTexture != null)
-                {
-                    bank.uiPixelFont.material.mainTexture.filterMode = FilterMode.Point;
-                }
                 return bank.uiPixelFont;
             }
             return Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
