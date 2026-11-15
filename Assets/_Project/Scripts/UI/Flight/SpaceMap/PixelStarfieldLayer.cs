@@ -154,7 +154,7 @@ namespace AstraLink.UI.Flight.SpaceMap
             _built = true;
         }
 
-        public void Animate(float timeSec, Vector2 cameraPanPx)
+        public void Animate(float simDt, float simTimeSec, Vector2 cameraPanPx)
         {
             if (!_built || _stars == null)
             {
@@ -167,7 +167,7 @@ namespace AstraLink.UI.Flight.SpaceMap
                 if (star.Img == null || star.Rect == null) continue;
 
                 // Subtle stepped pixel-art twinkle feel blended smoothly
-                float wave = 0.5f + 0.5f * Mathf.Sin(timeSec * star.BlinkSpeed + star.Phase);
+                float wave = 0.5f + 0.5f * Mathf.Sin(simTimeSec * star.BlinkSpeed + star.Phase);
                 float crispWave = Mathf.Round(wave * 4f) * 0.25f;
                 float alpha = Mathf.Lerp(star.MinAlpha, star.MaxAlpha, crispWave);
 
@@ -187,7 +187,7 @@ namespace AstraLink.UI.Flight.SpaceMap
                 }
             }
 
-            AnimateShootingStar(Time.unscaledDeltaTime);
+            AnimateShootingStar(simDt);
         }
 
         private void AnimateShootingStar(float dt)
