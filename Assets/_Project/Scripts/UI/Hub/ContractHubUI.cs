@@ -509,9 +509,11 @@ namespace AstraLink.UI.Hub
 
             // 4. Contract Requirements Box
             string hazardText = GetEventHumanSummary(mission.EventId);
+            int totalTicks = mission.RequiredOrbits * 20;
             string specsContent = string.Format(
                 "• Build Budget Limit: <b>${0:0}k</b>\n" +
-                "• Science Target: <b>{1:0} pts</b> in <b>{2} orbits</b>\n" +
+                "• Mission Goal: <b>{1:0} Science pts</b> in <b>{2} orbits ({8} ticks)</b>\n" +
+                "• Data Loop: <b>Sensor -> SSD -> Comm Window -> Science</b>\n" +
                 "• Required Payload: <b>{3}</b>\n" +
                 "• Recommended Chip: <b>{4} rule slots</b>\n" +
                 "• Orbital Hazard: <b>{5}</b>\n" +
@@ -523,9 +525,10 @@ namespace AstraLink.UI.Hub
                 mission.MinChipSlots,
                 hazardText,
                 mission.RewardThousands,
-                mission.PassiveIncomeThousands);
+                mission.PassiveIncomeThousands,
+                totalTicks);
 
-            GameObject specsBox = CreatePanel("SpecsBox", cardObj.transform, new Color(0.05f, 0.08f, 0.14f, 0.92f), 250f);
+            GameObject specsBox = CreatePanel("SpecsBox", cardObj.transform, new Color(0.05f, 0.08f, 0.14f, 0.92f), 268f);
             VerticalLayoutGroup specsLayout = specsBox.AddComponent<VerticalLayoutGroup>();
             specsLayout.padding = new RectOffset(18, 18, 16, 16);
             specsLayout.childControlWidth = true;
@@ -558,13 +561,13 @@ namespace AstraLink.UI.Hub
             switch (orbitId)
             {
                 case "orbit_leo":
-                    return "Low Earth Orbit (400 km) • Eclipse 35% • Sun 100% • Delay 1.0 s";
+                    return "Low Earth Orbit (400 km) • 20 ticks/orbit • Eclipse 35% • Comm Window 25% • Delay 1.0 s";
                 case "orbit_lunar":
-                    return "Lunar Orbit (100 km) • Eclipse 45% • Comm Window 15% • Delay 3.0 s";
+                    return "Lunar Orbit (100 km) • 20 ticks/orbit • Eclipse 45% • Comm Window 15% • Delay 3.0 s";
                 case "orbit_mars":
-                    return "Mars Orbit (350 km) • Sun Flux 43% • Eclipse 35% • Delay 10.0 s";
+                    return "Mars Orbit (350 km) • 20 ticks/orbit • Eclipse 35% • Comm 15% • Sun 43% • Delay 10.0 s";
                 default:
-                    return "Deep Space • High Radiation & Signal Delay";
+                    return "Deep Space • 20 ticks/orbit • High Radiation & Signal Delay";
             }
         }
 
