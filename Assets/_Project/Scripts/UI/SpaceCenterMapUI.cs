@@ -6,6 +6,7 @@ using AstraLink.UI.Hub;
 using AstraLink.UI.Workshop;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.Rendering.Universal;
 using UnityEngine.Tilemaps;
 using UnityEngine.UI;
 
@@ -92,6 +93,7 @@ namespace AstraLink.UI
             WireBuildingButtons();
             EnsureTooltipBanner();
             EnsureBackToMapButton();
+            EnsureLivingSpaceCenterSystems();
         }
 
         private void Start()
@@ -757,6 +759,61 @@ namespace AstraLink.UI
             txt.alignment = TextAnchor.MiddleCenter;
             txt.raycastTarget = false;
             return txt;
+        }
+
+        private void EnsureLivingSpaceCenterSystems()
+        {
+            EnsureSpaceCenterNpcManager();
+            EnsureSpaceCenterDayNightCycle();
+        }
+
+        private void EnsureSpaceCenterNpcManager()
+        {
+            if (FindObjectOfType<SpaceCenterNpcManager>(true) != null)
+                return;
+
+            GameObject host = null;
+            if (spaceCenterGrid != null)
+            {
+                Transform gridTransform = spaceCenterGrid.transform;
+                for (int i = 0; i < gridTransform.childCount; i++)
+                {
+                    Transform child = gridTransform.GetChild(i);
+                    if (child.name.IndexOf("npc", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        host = child.gameObject;
+                        break;
+                    }
+                }
+
+                if (host == null)
+                {
+                    host = new GameObject("SpaceCenterNpc");
+                    host.transform.SetParent(gridTransform, false);
+                }
+            }
+            else
+            {
+                host = new GameObject("SpaceCenterNpc");
+            }
+
+            host.AddComponent<SpaceCenterNpcManager>();
+        }
+
+        private void EnsureSpaceCenterDayNightCycle()
+        {
+            if (FindObjectOfType<SpaceCenterDayNightCycle>(true) != null)
+                return;
+
+            Light2D[] lights = FindObjectsOfType<Light2D>(true);
+            for (int i = 0; i < lights.Length; i++)
+            {
+                if (lights[i].lightType == Light2D.LightType.Global)
+                {
+                    lights[i].gameObject.AddComponent<SpaceCenterDayNightCycle>();
+                    return;
+                }
+            }
         }
     }
 }
