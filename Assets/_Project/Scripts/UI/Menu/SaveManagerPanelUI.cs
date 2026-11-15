@@ -23,6 +23,8 @@ namespace AstraLink.UI
         private string _selectedSlotId;
         private Font _uiFont;
 
+        public bool IsOpen => _modalRoot != null && _modalRoot.activeSelf;
+
         public void Initialize(Transform canvasTransform, Font referenceFont)
         {
             if (_modalRoot != null) return;
