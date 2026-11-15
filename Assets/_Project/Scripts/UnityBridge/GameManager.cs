@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using AstraLink.UI;
 using AstraLink.UI.Common;
 using AstraLink.UI.Debrief;
 using AstraLink.UI.Hub;
@@ -543,7 +544,27 @@ namespace AstraLink.Core
             string json = JsonUtility.ToJson(CurrentAgencyState);
             PlayerPrefs.SetString(AgencyStatePrefsKey, json);
             PlayerPrefs.Save();
+
+            if (string.IsNullOrEmpty(SaveManager.ActiveSlotId))
+            {
+                SaveManager.CreateNewSave("CAMPAIGN 01", json);
+            }
+            else
+            {
+                SaveManager.SaveToSlot(SaveManager.ActiveSlotId, explicitJson: json);
+            }
         }
+
+        public void ReloadStateFromActiveSave()
+        {
+            LoadOrCreateAgencyState();
+            LastMissionReport = null;
+
+            contractHubUI?.Initialize(Repository, CurrentAgencyState);
+            builderPanelUI?.Initialize(Repository, Simulator, CurrentAgencyState, ActiveMission, Auditor);
+            ShowHub();
+        }
+        
 
         public void LoadOrCreateAgencyState()
         {
@@ -783,6 +804,7 @@ namespace AstraLink.Core
                 rt.localScale = Vector3.one;
             }
         }
+        
 
         private void RefreshControllerForScreen(GameScreen screen)
         {
@@ -873,6 +895,8 @@ namespace AstraLink.Core
             StretchPanelFullScreen(workshopPanel);
             StretchPanelFullScreen(flightPanel);
             StretchPanelFullScreen(debriefPanel);
+
+            EnsureSaveManagerInMainScene(root);
         }
 
         private static void StretchPanelFullScreen(GameObject panel)
@@ -929,7 +953,7 @@ namespace AstraLink.Core
             rt.offsetMax = Vector2.zero;
 
             var txt = labelObj.GetComponent<Text>();
-            txt.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            txt.font = Resources.GetBuiltinResource<Font>("TimesNewRoman.ttf") ?? Resources.GetBuiltinResource<Font>("Arial.ttf");
             txt.text = titleText + "\n[Switch screens: top buttons or keys 1 / 2 / 3 / 4]";
             txt.fontSize = 32;
             txt.alignment = TextAnchor.MiddleCenter;
@@ -1022,6 +1046,25 @@ namespace AstraLink.Core
             }
         }
 
+        private void EnsureSaveManagerInMainScene(Transform canvasRoot)
+        {
+            var savePanel = GetComponent<SaveManagerPanelUI>();
+            if (savePanel == null)
+            {
+                savePanel = gameObject.AddComponent<SaveManagerPanelUI>();
+            }
+
+            Font timesFont = Resources.GetBuiltinResource<Font>("TimesNewRoman.ttf") ?? Resources.GetBuiltinResource<Font>("Arial.ttf");
+            savePanel.Initialize(canvasRoot, timesFont);
+            savePanel.OnLoadRequested -= HandleSaveLoadedInMainScene;
+            savePanel.OnLoadRequested += HandleSaveLoadedInMainScene;
+        }
+
+        private void HandleSaveLoadedInMainScene(SaveSlotMetadata _)
+        {
+            ReloadStateFromActiveSave();
+        }
+
         private void UpdateTopNavHighlight(GameScreen activeScreen)
         {
             if (_topNavBar == null) return;
@@ -1076,7 +1119,7 @@ namespace AstraLink.Core
             txtRt.offsetMax = Vector2.zero;
 
             var txt = txtObj.GetComponent<Text>();
-            txt.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            txt.font = Resources.GetBuiltinResource<Font>("TimesNewRoman.ttf") ?? Resources.GetBuiltinResource<Font>("Arial.ttf");
             txt.text = label;
             txt.fontSize = 22;
             txt.alignment = TextAnchor.MiddleCenter;
