@@ -20,7 +20,7 @@ namespace AstraLink.UI.Flight
     {
         public static SpaceMapController Instance { get; private set; }
 
-        private const int AsteroidCount = 110;
+        private const int AsteroidCount = 420;
         private const int TransferDotCount = 24;
         private const float MinZoom = 0.22f;
         private const float MaxZoom = 14.00f;
@@ -60,7 +60,7 @@ namespace AstraLink.UI.Flight
             public RectTransform Rect;
             public Image PlanetImage;
             public RectTransform OrbitRingRect;
-            public Image OrbitRingImage;
+            public Graphic OrbitRingGraphic;
             public Image SelectionReticle;
             public Text LabelText;
             public Sprite[] Frames;
@@ -736,9 +736,9 @@ namespace AstraLink.UI.Flight
             {
                 SolarSystemBodyCatalog.BodyDefinition spec = catalog[i];
 
-                // Orbit ring
+                // Orbit ring (smooth anti-aliased vector ellipse)
                 RectTransform ringRt = null;
-                Image ringImg = null;
+                Graphic ringGraphic = null;
                 if (spec.OrbitRadiusPx > 1f || spec.SatelliteOrbitRadiusPx > 1f)
                 {
                     float a = spec.OrbitRadiusPx > 1f ? spec.OrbitRadiusPx : spec.SatelliteOrbitRadiusPx;
@@ -753,10 +753,13 @@ namespace AstraLink.UI.Flight
                     float tiltRad = spec.PerihelionAngleDeg * Mathf.Deg2Rad;
                     ringRt.anchoredPosition = new Vector2(focusShift * Mathf.Cos(tiltRad), focusShift * Mathf.Sin(tiltRad));
 
-                    ringImg = ringObj.AddComponent<Image>();
-                    ringImg.sprite = _procRingSprite;
-                    ringImg.color = spec.OrbitColor;
-                    ringImg.raycastTarget = false;
+                    ringObj.AddComponent<CanvasRenderer>();
+                    OrbitEllipseGraphic ellipse = ringObj.AddComponent<OrbitEllipseGraphic>();
+                    ellipse.color = spec.OrbitColor;
+                    ellipse.raycastTarget = false;
+                    ellipse.Thickness = string.IsNullOrEmpty(spec.ParentId) ? 2.6f : 1.6f;
+                    ellipse.Segments = 240;
+                    ringGraphic = ellipse;
                 }
 
                 // Planet / Sun / Belt marker node
@@ -797,18 +800,22 @@ namespace AstraLink.UI.Flight
                 lblRt.anchorMin = new Vector2(0.5f, 0f);
                 lblRt.anchorMax = new Vector2(0.5f, 0f);
                 lblRt.pivot = new Vector2(0.5f, 1f);
-                lblRt.anchoredPosition = new Vector2(0f, -4f);
-                lblRt.sizeDelta = new Vector2(140f, 18f);
+                lblRt.anchoredPosition = new Vector2(0f, -6f);
+                lblRt.sizeDelta = new Vector2(180f, 26f);
 
                 Text lblText = lblObj.AddComponent<Text>();
                 lblText.font = font;
                 lblText.text = spec.DisplayName.ToUpperInvariant();
-                lblText.fontSize = string.IsNullOrEmpty(spec.ParentId) ? 13 : 10;
+                lblText.fontSize = string.IsNullOrEmpty(spec.ParentId) ? 18 : 13;
                 lblText.fontStyle = FontStyle.Bold;
-                lblText.color = new Color(0.90f, 0.95f, 1f, 0.90f);
+                lblText.color = new Color(0.95f, 0.98f, 1f, 0.96f);
                 lblText.alignment = TextAnchor.UpperCenter;
                 lblText.horizontalOverflow = HorizontalWrapMode.Overflow;
+                lblText.verticalOverflow = VerticalWrapMode.Overflow;
                 lblText.raycastTarget = false;
+                Outline lblOutline = lblObj.AddComponent<Outline>();
+                lblOutline.effectColor = new Color(0.02f, 0.04f, 0.09f, 0.98f);
+                lblOutline.effectDistance = new Vector2(1.5f, -1.5f);
 
                 var proxy = nodeObj.AddComponent<SolarBodyHitProxy>();
                 proxy.Owner = this;
@@ -820,7 +827,7 @@ namespace AstraLink.UI.Flight
                     Rect = nodeRt,
                     PlanetImage = planetImg,
                     OrbitRingRect = ringRt,
-                    OrbitRingImage = ringImg,
+                    OrbitRingGraphic = ringGraphic,
                     SelectionReticle = retImg,
                     LabelText = lblText,
                     Frames = frames,
@@ -853,20 +860,20 @@ namespace AstraLink.UI.Flight
 
                 GameObject astObj = CreateUIObject("BeltAsteroid_" + i, _asteroidsLayerRect);
                 RectTransform rt = astObj.GetComponent<RectTransform>();
-                float size = UnityEngine.Random.Range(6f, 13.5f);
+                float size = UnityEngine.Random.Range(5.5f, 15.5f);
                 rt.sizeDelta = new Vector2(size, size);
 
                 Image img = astObj.AddComponent<Image>();
                 img.preserveAspect = true;
                 img.raycastTarget = false;
-                float shade = UnityEngine.Random.Range(0.75f, 1.0f);
-                img.color = new Color(shade, shade * 0.97f, shade, UnityEngine.Random.Range(0.78f, 1.0f));
+                float shade = UnityEngine.Random.Range(0.78f, 1.0f);
+                img.color = new Color(shade, shade * 0.97f, shade, UnityEngine.Random.Range(0.85f, 1.0f));
                 if (frames != null && frames.Length > 0)
                 {
                     img.sprite = frames[0];
                 }
 
-                float radius = UnityEngine.Random.Range(500f, 620f);
+                float radius = UnityEngine.Random.Range(485f, 635f);
                 float keplerSpeed = 2.4f * Mathf.Pow(560f / radius, 1.5f);
 
                 _asteroids.Add(new AsteroidRuntimeNode
@@ -1470,12 +1477,12 @@ namespace AstraLink.UI.Flight
         {
             if (_procRingSprite == null)
             {
-                const int size = 512;
+                const int size = 1024;
                 Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-                tex.filterMode = FilterMode.Point;
+                tex.filterMode = FilterMode.Bilinear;
                 Color[] px = new Color[size * size];
                 float half = size * 0.5f;
-                float rMid = half - 3f;
+                float rMid = half - 5f;
                 for (int y = 0; y < size; y++)
                 {
                     for (int x = 0; x < size; x++)
@@ -1484,12 +1491,10 @@ namespace AstraLink.UI.Flight
                         float dy = y + 0.5f - half;
                         float dist = Mathf.Sqrt(dx * dx + dy * dy);
                         float diff = Mathf.Abs(dist - rMid);
-                        if (diff < 1.35f)
+                        if (diff < 2.6f)
                         {
-                            float angle = Mathf.Atan2(dy, dx);
-                            bool dashOn = Mathf.Sin(angle * 48f) > -0.35f;
-                            float alpha = dashOn ? Mathf.Clamp01(1.35f - diff) : 0.20f;
-                            px[y * size + x] = new Color(1f, 1f, 1f, alpha);
+                            float alpha = Mathf.Clamp01(1f - diff / 2.6f);
+                            px[y * size + x] = new Color(1f, 1f, 1f, alpha * alpha);
                         }
                         else
                         {
@@ -1636,6 +1641,65 @@ namespace AstraLink.UI.Flight
             rt.anchorMax = Vector2.one;
             rt.offsetMin = Vector2.zero;
             rt.offsetMax = Vector2.zero;
+        }
+    }
+
+    [RequireComponent(typeof(CanvasRenderer))]
+    internal sealed class OrbitEllipseGraphic : MaskableGraphic
+    {
+        public float Thickness = 2.4f;
+        public float Feather = 1.1f;
+        public int Segments = 240;
+
+        protected override void OnPopulateMesh(VertexHelper vh)
+        {
+            vh.Clear();
+            Rect rect = GetPixelAdjustedRect();
+            float rx = rect.width * 0.5f;
+            float ry = rect.height * 0.5f;
+            if (rx <= 1f || ry <= 1f) return;
+
+            int segs = Mathf.Clamp(Segments, 32, 360);
+            float halfCore = Mathf.Max(0.4f, Thickness * 0.5f);
+            float outerPad = halfCore + Mathf.Max(0.2f, Feather);
+            float innerPad = halfCore;
+
+            Color c = color;
+            Color32 coreCol = c;
+            Color32 edgeCol = new Color32(coreCol.r, coreCol.g, coreCol.b, 0);
+            Vector2 center = rect.center;
+
+            for (int i = 0; i <= segs; i++)
+            {
+                float a = (i / (float)segs) * Mathf.PI * 2f;
+                float cos = Mathf.Cos(a);
+                float sin = Mathf.Sin(a);
+
+                Vector2 p = new Vector2(center.x + rx * cos, center.y + ry * sin);
+                Vector2 n = new Vector2(cos / rx, sin / ry);
+                float nLen = n.magnitude;
+                Vector2 dir = nLen > 1e-6f ? n / nLen : new Vector2(cos, sin);
+
+                vh.AddVert(p - dir * outerPad, edgeCol, Vector2.zero);
+                vh.AddVert(p - dir * innerPad, coreCol, Vector2.zero);
+                vh.AddVert(p + dir * innerPad, coreCol, Vector2.zero);
+                vh.AddVert(p + dir * outerPad, edgeCol, Vector2.zero);
+            }
+
+            for (int i = 0; i < segs; i++)
+            {
+                int b0 = i * 4;
+                int b1 = (i + 1) * 4;
+                for (int s = 0; s < 3; s++)
+                {
+                    int v0 = b0 + s;
+                    int v1 = b0 + s + 1;
+                    int v2 = b1 + s + 1;
+                    int v3 = b1 + s;
+                    vh.AddTriangle(v0, v1, v2);
+                    vh.AddTriangle(v2, v3, v0);
+                }
+            }
         }
     }
 }
