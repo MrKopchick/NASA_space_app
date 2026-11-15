@@ -2144,8 +2144,8 @@ namespace AstraLink.UI.Flight.SpaceMap
             txt.raycastTarget = false;
             txt.horizontalOverflow = HorizontalWrapMode.Wrap;
             txt.resizeTextForBestFit = true;
-            txt.resizeTextMinSize = 8;
-            txt.resizeTextMaxSize = fontSize;
+            txt.resizeTextMinSize = 10;
+            txt.resizeTextMaxSize = txt.fontSize;
             RectTransform txtRt = txt.GetComponent<RectTransform>();
             StretchFull(txtRt);
             txtRt.offsetMin = new Vector2(5f, 2f);
@@ -2258,13 +2258,17 @@ namespace AstraLink.UI.Flight.SpaceMap
             Text txt = go.AddComponent<Text>();
             txt.font = font;
             txt.text = content;
-            txt.fontSize = fontSize;
+            txt.fontSize = fontSize < 16 ? fontSize + 2 : fontSize;
             txt.fontStyle = style;
             txt.color = color;
             txt.alignment = alignment;
             txt.horizontalOverflow = HorizontalWrapMode.Wrap;
             txt.verticalOverflow = VerticalWrapMode.Overflow;
             txt.raycastTarget = false;
+
+            Shadow shadow = go.AddComponent<Shadow>();
+            shadow.effectColor = new Color(0.02f, 0.04f, 0.09f, 0.94f);
+            shadow.effectDistance = new Vector2(1.3f, -1.3f);
             return txt;
         }
 
