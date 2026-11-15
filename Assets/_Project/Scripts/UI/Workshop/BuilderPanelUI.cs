@@ -737,7 +737,7 @@ namespace AstraLink.UI.Workshop
             Transform existingRoot = workshopRoot.Find("WorkshopContentRoot");
             if (existingRoot != null)
             {
-                if (existingRoot.Find("HangarUI_v5") != null)
+                if (existingRoot.Find("HangarUI_v6") != null)
                 {
                     StretchFull(existingRoot.GetComponent<RectTransform>());
                     BindExistingHierarchy(existingRoot, workshopRoot);
@@ -749,11 +749,11 @@ namespace AstraLink.UI.Workshop
                 else DestroyImmediate(existingRoot.gameObject);
             }
 
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Font font = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
 
             GameObject rootObj = CreateUIObject("WorkshopContentRoot", workshopRoot);
             StretchFull(rootObj.GetComponent<RectTransform>());
-            CreateUIObject("HangarUI_v5", rootObj.transform);
+            CreateUIObject("HangarUI_v6", rootObj.transform).AddComponent<LayoutElement>().ignoreLayout = true;
 
             VerticalLayoutGroup rootLayout = rootObj.AddComponent<VerticalLayoutGroup>();
             rootLayout.padding = new RectOffset(22, 22, 12, 12);
@@ -870,7 +870,9 @@ namespace AstraLink.UI.Workshop
 
             GameObject leftHeaderRow = CreateUIObject("SlotsHeaderRow", leftCol.transform);
             LayoutElement lhLe = leftHeaderRow.AddComponent<LayoutElement>();
-            lhLe.preferredHeight = 28f;
+            lhLe.minHeight = 36f;
+            lhLe.preferredHeight = 36f;
+            lhLe.flexibleHeight = 0f;
             HorizontalLayoutGroup lhH = leftHeaderRow.AddComponent<HorizontalLayoutGroup>();
             lhH.childAlignment = TextAnchor.MiddleLeft;
             lhH.childControlWidth = true;
@@ -878,28 +880,30 @@ namespace AstraLink.UI.Workshop
             lhH.childForceExpandWidth = false;
 
             Text leftHeader = CreateText("SlotsHeader", leftHeaderRow.transform, font,
-                "SPACECRAFT ASSEMBLY", 18, FontStyle.Bold,
+                "SPACECRAFT ASSEMBLY", 22, FontStyle.Bold,
                 new Color(0.45f, 0.85f, 1f, 1f), TextAnchor.MiddleLeft);
             LayoutElement lhTitleLe = leftHeader.gameObject.AddComponent<LayoutElement>();
             lhTitleLe.flexibleWidth = 1f;
 
             Text leftSub = CreateText("SlotsSubHeader", leftHeaderRow.transform, font,
-                "5 modules + launch vehicle", 13, FontStyle.Normal,
+                "5 modules + launch vehicle", 15, FontStyle.Normal,
                 new Color(0.55f, 0.68f, 0.84f, 1f), TextAnchor.MiddleRight);
             LayoutElement lhSubLe = leftSub.gameObject.AddComponent<LayoutElement>();
-            lhSubLe.preferredWidth = 260f;
+            lhSubLe.preferredWidth = 360f;
 
             if (slotIconImages == null || slotIconImages.Length != 5)
             {
                 slotIconImages = new Image[5];
             }
 
+            Transform slotsListParent = CreateScrollListContent(leftCol.transform, "SlotsScroll", 12f);
+
             for (int i = 0; i < 5; i++)
             {
-                BuildSlotRow(i, SlotTitles[i], SlotIconPlaceholders[i], leftCol.transform, font);
+                BuildSlotRow(i, SlotTitles[i], SlotIconPlaceholders[i], slotsListParent, font);
             }
 
-            BuildRocketSelectorRow(leftCol.transform, font);
+            BuildRocketSelectorRow(slotsListParent, font);
 
             // RIGHT COLUMN: Telemetry Panel + Bottom Dry Run & Launch Buttons
             GameObject rightWrap = CreateUIObject("RightColumn", columnsRow.transform);
@@ -941,7 +945,7 @@ namespace AstraLink.UI.Workshop
             LayoutElement lnFootLe = launchFooterBtn.GetComponent<LayoutElement>();
             lnFootLe.flexibleWidth = 1f;
             Text lnTxt = launchFooterBtn.GetComponentInChildren<Text>();
-            if (lnTxt != null) lnTxt.fontSize = 18;
+            if (lnTxt != null) lnTxt.fontSize = 26;
 
             // 3. MODAL #1: CONSTRUCT-STYLE AUTOPILOT RULE EDITOR OVERLAY
             GameObject apOverlay = CreateUIObject("AutopilotModalOverlay", workshopRoot);
@@ -1041,9 +1045,10 @@ namespace AstraLink.UI.Workshop
             Transform leftCol = root.Find("MainColumns/SlotsColumn");
             if (leftCol != null)
             {
+                Transform slotsContainer = leftCol.Find("SlotsScroll/Viewport/Content") ?? leftCol;
                 for (int i = 0; i < 5; i++)
                 {
-                    Transform slotRow = leftCol.Find("SlotRow_" + i);
+                    Transform slotRow = slotsContainer.Find("SlotRow_" + i);
                     if (slotRow == null) continue;
 
                     int tooltipSlot = i;
@@ -1078,7 +1083,7 @@ namespace AstraLink.UI.Workshop
                     }
                 }
 
-                Transform rocketRow = leftCol.Find("RocketSelectorRow");
+                Transform rocketRow = (leftCol.Find("SlotsScroll/Viewport/Content") ?? leftCol).Find("RocketSelectorRow");
                 if (rocketRow != null)
                 {
                     TooltipTrigger.AttachDynamic(rocketRow.gameObject, () =>
@@ -1162,12 +1167,13 @@ namespace AstraLink.UI.Workshop
             bg.color = new Color(0.08f, 0.13f, 0.22f, 0.94f);
 
             LayoutElement rowLe = rowObj.AddComponent<LayoutElement>();
-            rowLe.preferredHeight = 92f;
-            rowLe.flexibleHeight = 1f;
+            rowLe.minHeight = 132f;
+            rowLe.preferredHeight = 132f;
+            rowLe.flexibleHeight = 0f;
 
             HorizontalLayoutGroup hLayout = rowObj.AddComponent<HorizontalLayoutGroup>();
-            hLayout.padding = new RectOffset(18, 34, 8, 8);
-            hLayout.spacing = 12f;
+            hLayout.padding = new RectOffset(20, 28, 12, 12);
+            hLayout.spacing = 14f;
             hLayout.childAlignment = TextAnchor.MiddleLeft;
             hLayout.childControlWidth = true;
             hLayout.childControlHeight = true;
@@ -1178,10 +1184,10 @@ namespace AstraLink.UI.Workshop
             Image frameBg = iconFrame.AddComponent<Image>();
             frameBg.color = new Color(0.05f, 0.09f, 0.16f, 1f);
             LayoutElement iconLe = iconFrame.AddComponent<LayoutElement>();
-            iconLe.preferredWidth = 68f;
-            iconLe.preferredHeight = 68f;
-            iconLe.minWidth = 68f;
-            iconLe.minHeight = 68f;
+            iconLe.preferredWidth = 84f;
+            iconLe.preferredHeight = 84f;
+            iconLe.minWidth = 84f;
+            iconLe.minHeight = 84f;
 
             GameObject spriteObj = CreateUIObject("PartIconSprite", iconFrame.transform);
             RectTransform spriteRt = spriteObj.GetComponent<RectTransform>();
@@ -1211,23 +1217,29 @@ namespace AstraLink.UI.Workshop
             infoLayout.childForceExpandWidth = true;
             infoLayout.childForceExpandHeight = false;
 
-            CreateText("SlotCategoryTitle", infoBox.transform, font, slotTitle, 11, FontStyle.Bold,
+            CreateText("SlotCategoryTitle", infoBox.transform, font, slotTitle, 16, FontStyle.Bold,
                 new Color(0.45f, 0.82f, 1f, 1f), TextAnchor.MiddleLeft);
 
-            _slotPartNameTexts[slotIndex] = CreateText("PartName", infoBox.transform, font, "Component Name", 17, FontStyle.Bold,
+            _slotPartNameTexts[slotIndex] = CreateText("PartName", infoBox.transform, font, "Component Name", 22, FontStyle.Bold,
                 Color.white, TextAnchor.MiddleLeft);
+            _slotPartNameTexts[slotIndex].resizeTextForBestFit = true;
+            _slotPartNameTexts[slotIndex].resizeTextMinSize = 15;
+            _slotPartNameTexts[slotIndex].resizeTextMaxSize = 22;
 
-            _slotPartStatsTexts[slotIndex] = CreateText("PartStats", infoBox.transform, font, "Component Stats", 13, FontStyle.Normal,
+            _slotPartStatsTexts[slotIndex] = CreateText("PartStats", infoBox.transform, font, "Component Stats", 17, FontStyle.Normal,
                 new Color(0.78f, 0.90f, 0.84f, 1f), TextAnchor.MiddleLeft);
+            _slotPartStatsTexts[slotIndex].resizeTextForBestFit = true;
+            _slotPartStatsTexts[slotIndex].resizeTextMinSize = 13;
+            _slotPartStatsTexts[slotIndex].resizeTextMaxSize = 17;
 
             // 3. Right: Compact [ < ] 1/2 [ > ] Selector
             GameObject selBox = CreateUIObject("SelectorBox", rowObj.transform);
             LayoutElement selLe = selBox.AddComponent<LayoutElement>();
-            selLe.preferredWidth = 128f;
-            selLe.minWidth = 128f;
+            selLe.preferredWidth = 162f;
+            selLe.minWidth = 162f;
 
             HorizontalLayoutGroup selH = selBox.AddComponent<HorizontalLayoutGroup>();
-            selH.spacing = 4f;
+            selH.spacing = 6f;
             selH.childAlignment = TextAnchor.MiddleRight;
             selH.childControlWidth = true;
             selH.childControlHeight = true;
@@ -1236,19 +1248,19 @@ namespace AstraLink.UI.Workshop
 
             int captured = slotIndex;
             Button prevSlotBtn = CreateButton(selBox.transform, "Btn_Prev", "<",
-                new Color(0.18f, 0.34f, 0.56f, 1f), 38f, 34f, font,
+                new Color(0.18f, 0.34f, 0.56f, 1f), 48f, 44f, font,
                 () => CycleSlotComponent(captured, -1));
             ConfigureArrowButtonText(prevSlotBtn);
             _slotPrevButtons[slotIndex] = prevSlotBtn;
 
-            _slotCounterTexts[slotIndex] = CreateText("CounterText", selBox.transform, font, "1/1", 13, FontStyle.Bold,
+            _slotCounterTexts[slotIndex] = CreateText("CounterText", selBox.transform, font, "1/1", 22, FontStyle.Bold,
                 new Color(0.86f, 0.94f, 1f, 1f), TextAnchor.MiddleCenter);
             LayoutElement cntLe = _slotCounterTexts[slotIndex].gameObject.AddComponent<LayoutElement>();
-            cntLe.preferredWidth = 42f;
-            cntLe.preferredHeight = 34f;
+            cntLe.preferredWidth = 54f;
+            cntLe.preferredHeight = 44f;
 
             Button nextSlotBtn = CreateButton(selBox.transform, "Btn_Next", ">",
-                new Color(0.18f, 0.34f, 0.56f, 1f), 38f, 34f, font,
+                new Color(0.18f, 0.34f, 0.56f, 1f), 48f, 44f, font,
                 () => CycleSlotComponent(captured, 1));
             ConfigureArrowButtonText(nextSlotBtn);
             _slotNextButtons[slotIndex] = nextSlotBtn;
@@ -1261,12 +1273,13 @@ namespace AstraLink.UI.Workshop
             bg.color = new Color(0.18f, 0.14f, 0.08f, 0.96f);
 
             LayoutElement rowLe = rowObj.AddComponent<LayoutElement>();
-            rowLe.preferredHeight = 96f;
-            rowLe.flexibleHeight = 1f;
+            rowLe.minHeight = 136f;
+            rowLe.preferredHeight = 136f;
+            rowLe.flexibleHeight = 0f;
 
             HorizontalLayoutGroup hLayout = rowObj.AddComponent<HorizontalLayoutGroup>();
-            hLayout.padding = new RectOffset(18, 34, 8, 8);
-            hLayout.spacing = 12f;
+            hLayout.padding = new RectOffset(20, 28, 12, 12);
+            hLayout.spacing = 14f;
             hLayout.childAlignment = TextAnchor.MiddleLeft;
             hLayout.childControlWidth = true;
             hLayout.childControlHeight = true;
@@ -1277,10 +1290,10 @@ namespace AstraLink.UI.Workshop
             Image frameBg = iconFrame.AddComponent<Image>();
             frameBg.color = new Color(0.08f, 0.09f, 0.16f, 1f);
             LayoutElement iconLe = iconFrame.AddComponent<LayoutElement>();
-            iconLe.preferredWidth = 68f;
-            iconLe.preferredHeight = 68f;
-            iconLe.minWidth = 68f;
-            iconLe.minHeight = 68f;
+            iconLe.preferredWidth = 84f;
+            iconLe.preferredHeight = 84f;
+            iconLe.minWidth = 84f;
+            iconLe.minHeight = 84f;
 
             GameObject spriteObj = CreateUIObject("RocketIconSprite", iconFrame.transform);
             RectTransform spriteRt = spriteObj.GetComponent<RectTransform>();
@@ -1309,23 +1322,29 @@ namespace AstraLink.UI.Workshop
             infoLayout.childForceExpandWidth = true;
             infoLayout.childForceExpandHeight = false;
 
-            CreateText("RocketHeader", infoBox.transform, font, "LAUNCH VEHICLE", 11, FontStyle.Bold,
+            CreateText("RocketHeader", infoBox.transform, font, "LAUNCH VEHICLE", 16, FontStyle.Bold,
                 new Color(1f, 0.78f, 0.36f, 1f), TextAnchor.MiddleLeft);
 
-            _rocketNameText = CreateText("RocketName", infoBox.transform, font, "Light Rocket 'Arrow-1'", 17, FontStyle.Bold,
+            _rocketNameText = CreateText("RocketName", infoBox.transform, font, "Light Rocket 'Arrow-1'", 22, FontStyle.Bold,
                 Color.white, TextAnchor.MiddleLeft);
+            _rocketNameText.resizeTextForBestFit = true;
+            _rocketNameText.resizeTextMinSize = 15;
+            _rocketNameText.resizeTextMaxSize = 22;
 
-            _rocketStatsText = CreateText("RocketStats", infoBox.transform, font, "Rocket Stats", 13, FontStyle.Normal,
+            _rocketStatsText = CreateText("RocketStats", infoBox.transform, font, "Rocket Stats", 17, FontStyle.Normal,
                 new Color(0.95f, 0.88f, 0.72f, 1f), TextAnchor.MiddleLeft);
+            _rocketStatsText.resizeTextForBestFit = true;
+            _rocketStatsText.resizeTextMinSize = 13;
+            _rocketStatsText.resizeTextMaxSize = 17;
 
             // 3. Right: Compact [ < ] 1/3 [ > ] Selector
             GameObject selBox = CreateUIObject("SelectorBox", rowObj.transform);
             LayoutElement selLe = selBox.AddComponent<LayoutElement>();
-            selLe.preferredWidth = 128f;
-            selLe.minWidth = 128f;
+            selLe.preferredWidth = 162f;
+            selLe.minWidth = 162f;
 
             HorizontalLayoutGroup selH = selBox.AddComponent<HorizontalLayoutGroup>();
-            selH.spacing = 4f;
+            selH.spacing = 6f;
             selH.childAlignment = TextAnchor.MiddleRight;
             selH.childControlWidth = true;
             selH.childControlHeight = true;
@@ -1333,19 +1352,19 @@ namespace AstraLink.UI.Workshop
             selH.childForceExpandHeight = false;
 
             Button prevRktBtn = CreateButton(selBox.transform, "Btn_PrevRocket", "<",
-                new Color(0.18f, 0.34f, 0.56f, 1f), 38f, 34f, font,
+                new Color(0.18f, 0.34f, 0.56f, 1f), 48f, 44f, font,
                 () => CycleRocket(-1));
             ConfigureArrowButtonText(prevRktBtn);
             _rocketPrevButton = prevRktBtn;
 
-            _rocketCounterText = CreateText("CounterText", selBox.transform, font, "1/3", 13, FontStyle.Bold,
+            _rocketCounterText = CreateText("CounterText", selBox.transform, font, "1/3", 22, FontStyle.Bold,
                 new Color(1f, 0.90f, 0.70f, 1f), TextAnchor.MiddleCenter);
             LayoutElement rktCntLe = _rocketCounterText.gameObject.AddComponent<LayoutElement>();
-            rktCntLe.preferredWidth = 42f;
-            rktCntLe.preferredHeight = 34f;
+            rktCntLe.preferredWidth = 54f;
+            rktCntLe.preferredHeight = 44f;
 
             Button nextRktBtn = CreateButton(selBox.transform, "Btn_NextRocket", ">",
-                new Color(0.18f, 0.34f, 0.56f, 1f), 38f, 34f, font,
+                new Color(0.18f, 0.34f, 0.56f, 1f), 48f, 44f, font,
                 () => CycleRocket(1));
             ConfigureArrowButtonText(nextRktBtn);
             _rocketNextButton = nextRktBtn;
@@ -1546,11 +1565,89 @@ namespace AstraLink.UI.Workshop
             Text txt = btn.GetComponentInChildren<Text>();
             if (txt != null)
             {
-                txt.fontSize = 14;
+                txt.fontSize = 22;
                 txt.fontStyle = FontStyle.Bold;
                 txt.horizontalOverflow = HorizontalWrapMode.Overflow;
                 txt.verticalOverflow = VerticalWrapMode.Overflow;
             }
+        }
+
+        private static Transform CreateScrollListContent(Transform parent, string name, float spacing)
+        {
+            GameObject scrollObj = CreateUIObject(name, parent);
+            LayoutElement scrollLe = scrollObj.AddComponent<LayoutElement>();
+            scrollLe.flexibleHeight = 1f;
+            scrollLe.minHeight = 200f;
+
+            ScrollRect sr = scrollObj.AddComponent<ScrollRect>();
+            sr.horizontal = false;
+            sr.vertical = true;
+            sr.movementType = ScrollRect.MovementType.Clamped;
+            sr.scrollSensitivity = 36f;
+
+            GameObject viewport = CreateUIObject("Viewport", scrollObj.transform);
+            RectTransform vpRt = viewport.GetComponent<RectTransform>();
+            StretchFull(vpRt);
+            vpRt.offsetMax = new Vector2(-14f, 0f);
+            Image vpImg = viewport.AddComponent<Image>();
+            vpImg.color = new Color(1f, 1f, 1f, 0.01f);
+            Mask vpMask = viewport.AddComponent<Mask>();
+            vpMask.showMaskGraphic = false;
+
+            GameObject content = CreateUIObject("Content", viewport.transform);
+            RectTransform cRt = content.GetComponent<RectTransform>();
+            cRt.anchorMin = new Vector2(0f, 1f);
+            cRt.anchorMax = new Vector2(1f, 1f);
+            cRt.pivot = new Vector2(0.5f, 1f);
+            cRt.offsetMin = Vector2.zero;
+            cRt.offsetMax = Vector2.zero;
+
+            VerticalLayoutGroup cVl = content.AddComponent<VerticalLayoutGroup>();
+            cVl.spacing = spacing;
+            cVl.padding = new RectOffset(2, 6, 4, 4);
+            cVl.childControlWidth = true;
+            cVl.childControlHeight = true;
+            cVl.childForceExpandWidth = true;
+            cVl.childForceExpandHeight = false;
+
+            ContentSizeFitter csf = content.AddComponent<ContentSizeFitter>();
+            csf.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            GameObject sbObj = CreateUIObject("Scrollbar", scrollObj.transform);
+            RectTransform sbRt = sbObj.GetComponent<RectTransform>();
+            sbRt.anchorMin = new Vector2(1f, 0f);
+            sbRt.anchorMax = new Vector2(1f, 1f);
+            sbRt.pivot = new Vector2(1f, 0.5f);
+            sbRt.sizeDelta = new Vector2(10f, 0f);
+            sbRt.anchoredPosition = Vector2.zero;
+            Image sbTrack = sbObj.AddComponent<Image>();
+            sbTrack.color = new Color(0.03f, 0.06f, 0.12f, 0.90f);
+
+            GameObject slidingArea = CreateUIObject("SlidingArea", sbObj.transform);
+            RectTransform saRt = slidingArea.GetComponent<RectTransform>();
+            StretchFull(saRt);
+            saRt.offsetMin = new Vector2(1f, 2f);
+            saRt.offsetMax = new Vector2(-1f, -2f);
+
+            GameObject handleObj = CreateUIObject("Handle", slidingArea.transform);
+            RectTransform hRt = handleObj.GetComponent<RectTransform>();
+            StretchFull(hRt);
+            Image handleImg = handleObj.AddComponent<Image>();
+            handleImg.color = new Color(0.28f, 0.72f, 0.96f, 0.95f);
+
+            Scrollbar sb = sbObj.AddComponent<Scrollbar>();
+            sb.direction = Scrollbar.Direction.BottomToTop;
+            sb.targetGraphic = handleImg;
+            sb.handleRect = hRt;
+
+            sr.viewport = vpRt;
+            sr.content = cRt;
+            sr.verticalScrollbar = sb;
+            sr.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
+            Canvas.ForceUpdateCanvases();
+            sr.verticalNormalizedPosition = 1f;
+            return content.transform;
         }
 
         private static void SetArrowButtonEnabled(Button btn, bool enabled)

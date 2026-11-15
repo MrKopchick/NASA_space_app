@@ -1184,7 +1184,7 @@ namespace AstraLink.UI.Flight
                 bgImage.color = new Color(0.05f, 0.09f, 0.16f, 0.96f);
             }
 
-            Font builtinFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Font builtinFont = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
 
             // Header Status Label
             if (statusHeaderLabel == null)

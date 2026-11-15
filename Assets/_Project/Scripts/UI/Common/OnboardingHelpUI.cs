@@ -308,7 +308,7 @@ namespace AstraLink.UI.Common
                 Destroy(oldWindow.gameObject);
             }
 
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Font font = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
 
             GameObject window = CreatePanel("OnboardingWindow", _modalRoot.transform, new Color(0.06f, 0.10f, 0.17f, 0.99f));
             RectTransform winRt = window.GetComponent<RectTransform>();

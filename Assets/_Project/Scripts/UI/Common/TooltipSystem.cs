@@ -334,7 +334,7 @@ namespace AstraLink.Core
             textObj.transform.SetParent(panelObj.transform, false);
 
             _tipText = textObj.GetComponent<Text>();
-            _tipText.font = Resources.GetBuiltinResource<Font>(BuiltinFontResourceName);
+            _tipText.font = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
             _tipText.fontSize = fontSize;
             _tipText.color = new Color(0.95f, 0.98f, 1.0f, 1.0f);
             _tipText.alignment = TextAnchor.MiddleLeft;

@@ -41,7 +41,7 @@ namespace AstraLink.UI
             ConfigureSpriteInEditor("Assets/_Project/Art/UI/button_disabled.png", new Vector4(5, 5, 5, 5));
 
             HeaderFont = UnityEditor.AssetDatabase.LoadAssetAtPath<Font>("Assets/_Project/Fonts/Kenney Future.ttf");
-            BodyFont = UnityEditor.AssetDatabase.LoadAssetAtPath<Font>("Assets/_Project/Fonts/Kenney Mini Square Mono.ttf");
+            BodyFont = UnityEditor.AssetDatabase.LoadAssetAtPath<Font>("Assets/_Project/Fonts/Kenney Future.ttf");
 
             PanelFrameSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/_Project/Art/UI/inventory_panel.png");
             BoxFrameSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/_Project/Art/UI/dialogue_box.png");

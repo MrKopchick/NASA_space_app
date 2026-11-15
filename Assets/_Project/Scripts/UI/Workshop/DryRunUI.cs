@@ -652,7 +652,7 @@ namespace AstraLink.UI.Workshop
                 }
             }
 
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Font font = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
             int maxCardsToShow = Mathf.Min(messages.Count, 4);
 
             for (int i = 0; i < maxCardsToShow; i++)
@@ -715,7 +715,7 @@ namespace AstraLink.UI.Workshop
                 return;
             }
 
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Font font = AstraLink.UI.Flight.SpaceMap.SolarSystemArtBank.GetPixelFont();
 
             // Modal Dark Backdrop
             GameObject rootObj = CreateUIObject("DryRunContentRoot", transform);
