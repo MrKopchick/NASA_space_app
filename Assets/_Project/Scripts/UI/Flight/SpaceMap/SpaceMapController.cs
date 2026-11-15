@@ -196,8 +196,12 @@ namespace AstraLink.UI.Flight
 
         public event Action OnLaunchSequenceCompleted;
         public event Action<SolarSystemBodyCatalog.BodyDefinition> OnCelestialBodySelected;
+        public event Action<bool> OnOverviewModeChanged;
+
+        private bool _isSystemOverview;
 
         public bool IsLaunchPlaying => _isLaunchPlaying;
+        public bool IsSystemOverview => _isSystemOverview;
         public SolarSystemBodyCatalog.BodyDefinition SelectedBody =>
             _bodyMap.TryGetValue(_selectedBodyId, out CelestialRuntimeNode n) ? n.Spec : null;
 
@@ -367,9 +371,23 @@ namespace AstraLink.UI.Flight
             RefreshMissionVehicleSprites();
 
             _hasInitialOverviewFit = false;
-            FitOverviewOnFirstValidLayout();
-            SelectBodyById(_targetPlanetBodyId, focusCamera: false);
-            ResetCameraToSystemOverview();
+            if (!string.IsNullOrEmpty(_targetPlanetBodyId) && _bodyMap.ContainsKey(_targetPlanetBodyId))
+            {
+                SelectBodyById(_targetPlanetBodyId, focusCamera: true);
+                _currentZoom = _targetZoom;
+                _currentPanPx = _targetPanPx;
+                if (_stageRect != null)
+                {
+                    _stageRect.localScale = new Vector3(_currentZoom, _currentZoom, 1f);
+                    _stageRect.anchoredPosition = _currentPanPx;
+                }
+                _hasInitialOverviewFit = true;
+            }
+            else
+            {
+                FitOverviewOnFirstValidLayout();
+                ResetCameraToSystemOverview();
+            }
         }
 
         public void PlayLaunchSequence()
@@ -468,6 +486,7 @@ namespace AstraLink.UI.Flight
 
             if (focusCamera)
             {
+                SetOverviewMode(false);
                 _isFollowingSelected = !string.Equals(bodyId, "sun", StringComparison.Ordinal) && !node.Spec.IsAsteroidBelt;
                 float idealZoom = !string.IsNullOrEmpty(node.Spec.ParentId)
                     ? 7.50f
@@ -483,14 +502,28 @@ namespace AstraLink.UI.Flight
             OnCelestialBodySelected?.Invoke(node.Spec);
         }
 
+        public void FocusTargetMission()
+        {
+            string targetId = !string.IsNullOrEmpty(_targetPlanetBodyId) ? _targetPlanetBodyId : "earth";
+            SelectBodyById(targetId, focusCamera: true);
+        }
+
         public void ResetCameraToSystemOverview()
         {
             _isFollowingSelected = false;
             float vw = _mapViewportRect != null && _mapViewportRect.rect.width > 100f ? _mapViewportRect.rect.width : 1920f;
             float vh = _mapViewportRect != null && _mapViewportRect.rect.height > 100f ? _mapViewportRect.rect.height : 1010f;
             float fitDim = Mathf.Min(vw * 0.78f, vh * 0.94f);
-            _targetZoom = Mathf.Clamp(fitDim / 2580f, 0.24f, 0.72f);
-            _targetPanPx = new Vector2(-135f, 0f);
+            _targetZoom = Mathf.Clamp(fitDim / 1380f, 0.55f, 0.96f);
+            _targetPanPx = new Vector2(-40f, 0f);
+            SetOverviewMode(true);
+        }
+
+        private void SetOverviewMode(bool isOverview)
+        {
+            if (_isSystemOverview == isOverview) return;
+            _isSystemOverview = isOverview;
+            OnOverviewModeChanged?.Invoke(_isSystemOverview);
         }
 
         [ContextMenu("Generate SpaceMap UI In Scene")]
@@ -923,7 +956,7 @@ namespace AstraLink.UI.Flight
             // Rocket during launch sequence
             GameObject rocketObj = CreateUIObject("LaunchRocket", _missionLayerRect);
             _rocketRootRect = rocketObj.GetComponent<RectTransform>();
-            _rocketRootRect.sizeDelta = new Vector2(26f, 36f);
+            _rocketRootRect.sizeDelta = new Vector2(8f, 11.5f);
             _rocketBodyImage = rocketObj.AddComponent<Image>();
             _rocketBodyImage.preserveAspect = true;
             _rocketBodyImage.raycastTarget = false;
@@ -933,7 +966,7 @@ namespace AstraLink.UI.Flight
             fRt.anchorMin = new Vector2(0.5f, 0f);
             fRt.anchorMax = new Vector2(0.5f, 0f);
             fRt.pivot = new Vector2(0.5f, 1f);
-            fRt.sizeDelta = new Vector2(16f, 18f);
+            fRt.sizeDelta = new Vector2(4.5f, 6f);
             _rocketFlameImage = flameObj.AddComponent<Image>();
             _rocketFlameImage.preserveAspect = true;
             _rocketFlameImage.raycastTarget = false;
@@ -941,7 +974,7 @@ namespace AstraLink.UI.Flight
 
             GameObject flashObj = CreateUIObject("SeparationFlash", _missionLayerRect);
             RectTransform flRt = flashObj.GetComponent<RectTransform>();
-            flRt.sizeDelta = new Vector2(54f, 54f);
+            flRt.sizeDelta = new Vector2(24f, 24f);
             _deployFlashImg = flashObj.AddComponent<Image>();
             _deployFlashImg.sprite = _procSolidGlowSprite;
             _deployFlashImg.color = new Color(0.75f, 0.98f, 1f, 0f);
@@ -1198,10 +1231,19 @@ namespace AstraLink.UI.Flight
             }
         }
 
+        private Vector2 GetTargetSatelliteOrbitPos(CelestialRuntimeNode targetNode)
+        {
+            if (targetNode == null) return Vector2.zero;
+            float bodyRadius = Mathf.Max(targetNode.Spec.VisualWidthPx, targetNode.Spec.VisualHeightPx) * 0.5f;
+            float orbitRadius = bodyRadius + Mathf.Clamp(bodyRadius * 0.42f, 5f, 11f);
+            float rad = _spacecraftOrbitDeg * Mathf.Deg2Rad;
+            return targetNode.CurrentStagePos + new Vector2(Mathf.Cos(rad), Mathf.Sin(rad)) * orbitRadius;
+        }
+
         private IEnumerator RunTransferLaunchRoutine()
         {
             Vector2 startPos = _bodyMap.TryGetValue("earth", out CelestialRuntimeNode earth) ? earth.CurrentStagePos : Vector2.zero;
-            Vector2 endPos = _bodyMap.TryGetValue(_targetPlanetBodyId, out CelestialRuntimeNode tgt) ? tgt.CurrentStagePos : startPos;
+            Vector2 endPos = _bodyMap.TryGetValue(_targetPlanetBodyId, out CelestialRuntimeNode tgt) ? GetTargetSatelliteOrbitPos(tgt) : startPos;
 
             if (_rocketRootRect != null) _rocketRootRect.gameObject.SetActive(true);
             if (_satelliteRootRect != null) _satelliteRootRect.gameObject.SetActive(false);
@@ -1216,15 +1258,15 @@ namespace AstraLink.UI.Flight
                 float eased = 1f - Mathf.Pow(1f - u, 2.2f);
 
                 if (_bodyMap.TryGetValue("earth", out CelestialRuntimeNode eNow)) startPos = eNow.CurrentStagePos;
-                if (_bodyMap.TryGetValue(_targetPlanetBodyId, out CelestialRuntimeNode tNow)) endPos = tNow.CurrentStagePos;
+                if (_bodyMap.TryGetValue(_targetPlanetBodyId, out CelestialRuntimeNode tNow)) endPos = GetTargetSatelliteOrbitPos(tNow);
 
                 Vector2 pos;
                 float tangentDeg;
                 if (string.Equals(_targetPlanetBodyId, "earth", StringComparison.Ordinal))
                 {
-                    Vector2 apex = startPos + new Vector2(0f, 44f);
-                    pos = Vector2.Lerp(startPos, apex, eased);
-                    tangentDeg = 0f;
+                    pos = Vector2.Lerp(startPos, endPos, eased);
+                    Vector2 dir = endPos - startPos;
+                    tangentDeg = dir.sqrMagnitude > 0.001f ? Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg - 90f : 0f;
                 }
                 else
                 {
@@ -1251,7 +1293,7 @@ namespace AstraLink.UI.Flight
 
             if (_rocketRootRect != null) _rocketRootRect.gameObject.SetActive(false);
 
-            // Brief stage separation flash
+            // Brief stage separation flash at the exact satellite deployment point
             float flashDur = Mathf.Max(0.15f, phase2SeparationDurationSeconds);
             float flashElapsed = 0f;
             while (flashElapsed < flashDur && !_skipRequested)
@@ -1260,7 +1302,7 @@ namespace AstraLink.UI.Flight
                 float p = Mathf.Clamp01(flashElapsed / flashDur);
                 if (_deployFlashImg != null && _bodyMap.TryGetValue(_targetPlanetBodyId, out CelestialRuntimeNode tgtNode))
                 {
-                    _deployFlashImg.rectTransform.anchoredPosition = tgtNode.CurrentStagePos;
+                    _deployFlashImg.rectTransform.anchoredPosition = GetTargetSatelliteOrbitPos(tgtNode);
                     _deployFlashImg.color = new Color(0.75f, 0.98f, 1f, Mathf.Sin(p * Mathf.PI) * 0.85f);
                 }
                 yield return null;
@@ -1281,8 +1323,17 @@ namespace AstraLink.UI.Flight
 
             if (_rocketRootRect != null) _rocketRootRect.gameObject.SetActive(false);
             if (_deployFlashImg != null) _deployFlashImg.color = new Color(0.75f, 0.98f, 1f, 0f);
-            if (_satelliteRootRect != null) _satelliteRootRect.gameObject.SetActive(true);
+            if (_satelliteRootRect != null)
+            {
+                if (_bodyMap.TryGetValue(_targetPlanetBodyId, out CelestialRuntimeNode tgtNode))
+                {
+                    _satelliteRootRect.anchoredPosition = GetTargetSatelliteOrbitPos(tgtNode);
+                    _satelliteRootRect.localEulerAngles = new Vector3(0f, 0f, _spacecraftOrbitDeg + 90f);
+                }
+                _satelliteRootRect.gameObject.SetActive(true);
+            }
 
+            SelectBodyById(_targetPlanetBodyId, focusCamera: true);
             OnLaunchSequenceCompleted?.Invoke();
         }
 
@@ -1325,7 +1376,14 @@ namespace AstraLink.UI.Flight
             if (_mapViewportRect.rect.width < 120f || _mapViewportRect.rect.height < 120f) return;
 
             _hasInitialOverviewFit = true;
-            ResetCameraToSystemOverview();
+            if (!string.IsNullOrEmpty(_targetPlanetBodyId) && _bodyMap.ContainsKey(_targetPlanetBodyId))
+            {
+                SelectBodyById(_targetPlanetBodyId, focusCamera: true);
+            }
+            else
+            {
+                ResetCameraToSystemOverview();
+            }
             _currentZoom = _targetZoom;
             _currentPanPx = _targetPanPx;
             if (_stageRect != null)
