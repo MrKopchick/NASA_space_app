@@ -38,7 +38,7 @@ namespace AstraLink.Core
 
         public static GameManager Instance { get; private set; }
 
-        [Header("Screen Panels (Хаб, Ангар, Політ, Дебрифінг)")]
+        [Header("Screen Panels (Hub, Workshop, Flight, Debrief)")]
         [SerializeField] private GameObject hubPanel;
         [SerializeField] private GameObject workshopPanel;
         [SerializeField] private GameObject flightPanel;
@@ -830,10 +830,10 @@ namespace AstraLink.Core
 
             ResolveSceneControllers();
 
-            CleanupOrPopulatePanel(hubPanel, contractHubUI != null, "1. ХАБ КОНТРАКТІВ ТА R&D (HubPanel)", new Color(0.08f, 0.13f, 0.22f, 1f));
-            CleanupOrPopulatePanel(workshopPanel, builderPanelUI != null, "2. АНГАР ТА КОНСТРУКТОР (WorkshopPanel)", new Color(0.11f, 0.16f, 0.20f, 1f));
-            CleanupOrPopulatePanel(flightPanel, missionReportUI != null, "3. ОРБІТАЛЬНИЙ ПОЛІТ (FlightPanel)", new Color(0.05f, 0.08f, 0.16f, 1f));
-            CleanupOrPopulatePanel(debriefPanel, missionReportUI != null, "4. ДЕБРИФІНГ МІСІЇ (DebriefPanel)", new Color(0.14f, 0.11f, 0.20f, 1f));
+            CleanupOrPopulatePanel(hubPanel, contractHubUI != null, "1. CONTRACT HUB & R&D (HubPanel)", new Color(0.08f, 0.13f, 0.22f, 1f));
+            CleanupOrPopulatePanel(workshopPanel, builderPanelUI != null, "2. WORKSHOP & BUILDER (WorkshopPanel)", new Color(0.11f, 0.16f, 0.20f, 1f));
+            CleanupOrPopulatePanel(flightPanel, missionReportUI != null, "3. ORBITAL FLIGHT (FlightPanel)", new Color(0.05f, 0.08f, 0.16f, 1f));
+            CleanupOrPopulatePanel(debriefPanel, missionReportUI != null, "4. MISSION DEBRIEF (DebriefPanel)", new Color(0.14f, 0.11f, 0.20f, 1f));
 
             EnsureTopNavBar(root);
         }
@@ -883,7 +883,7 @@ namespace AstraLink.Core
 
             var txt = labelObj.GetComponent<Text>();
             txt.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            txt.text = titleText + "\n[Перемикання: кнопки зверху або клавіші 1 / 2 / 3 / 4]";
+            txt.text = titleText + "\n[Switch screens: top buttons or keys 1 / 2 / 3 / 4]";
             txt.fontSize = 32;
             txt.alignment = TextAnchor.MiddleCenter;
             txt.color = new Color(0.85f, 0.93f, 1f, 1f);
@@ -928,10 +928,10 @@ namespace AstraLink.Core
 
             if (navBar.transform.childCount == 0)
             {
-                CreateNavButton(navBar.transform, "Btn_Hub", "1. Хаб (Hub)", ShowHub);
-                CreateNavButton(navBar.transform, "Btn_Workshop", "2. Ангар (Workshop)", ShowWorkshop);
-                CreateNavButton(navBar.transform, "Btn_Flight", "3. Політ (Flight)", ShowFlight);
-                CreateNavButton(navBar.transform, "Btn_Debrief", "4. Дебрифінг (Debrief)", ShowDebrief);
+                CreateNavButton(navBar.transform, "Btn_Hub", "1. Hub", ShowHub);
+                CreateNavButton(navBar.transform, "Btn_Workshop", "2. Workshop", ShowWorkshop);
+                CreateNavButton(navBar.transform, "Btn_Flight", "3. Flight", ShowFlight);
+                CreateNavButton(navBar.transform, "Btn_Debrief", "4. Debrief", ShowDebrief);
             }
         }
 
