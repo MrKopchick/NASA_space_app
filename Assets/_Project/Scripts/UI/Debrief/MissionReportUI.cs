@@ -180,11 +180,12 @@ namespace AstraLink.UI.Debrief
         private Image _dispatcherPortraitImg;
         private Text _dispatcherNameText;
         private Text _dispatcherJokeText;
+        private Coroutine _viewFadeCoroutine;
 
         private static readonly (string Path, string Name)[] DispatcherRoster =
         {
             ("Assets/_Project/Art/Portraits/Dispatcher/dispatcher_reptilian.png", "DISPATCHER ZORG-9"),
-            ("Assets/_Project/Art/Portraits/Dispatcher/dispatcher_cyborg.png", "DISPATCHER T-800"),
+            ("Assets/_Project/Art/Portraits/Dispatcher/dispatcher_cyborg.png", "DISPATCHER T-799"),
             ("Assets/_Project/Art/Portraits/Dispatcher/dispatcher_hooded.png", "DISPATCHER DARTH PETRO"),
             ("Assets/_Project/Art/Portraits/Dispatcher/dispatcher_armored.png", "CAPTAIN BONK"),
             ("Assets/_Project/Art/Portraits/Dispatcher/dispatcher_blue.png", "COMMANDER COBALT"),
@@ -505,6 +506,35 @@ namespace AstraLink.UI.Debrief
 
             HighlightModeButton(switchToLiveFlightButton, liveFlightMode, new Color(0.14f, 0.58f, 0.86f, 1f));
             HighlightModeButton(switchToDebriefButton, !liveFlightMode, new Color(0.16f, 0.56f, 0.36f, 1f));
+
+            GameObject activeRoot = liveFlightMode ? liveFlightModeRoot : debriefSummaryModeRoot;
+            if (Application.isPlaying && gameObject.activeInHierarchy && activeRoot != null)
+            {
+                if (_viewFadeCoroutine != null)
+                {
+                    StopCoroutine(_viewFadeCoroutine);
+                }
+                _viewFadeCoroutine = StartCoroutine(FadeInViewRoutine(activeRoot, 0.22f));
+            }
+        }
+
+        private System.Collections.IEnumerator FadeInViewRoutine(GameObject target, float duration)
+        {
+            if (target == null) yield break;
+            CanvasGroup cg = target.GetComponent<CanvasGroup>();
+            if (cg == null) cg = target.AddComponent<CanvasGroup>();
+            cg.alpha = 0f;
+            float elapsed = 0f;
+            while (elapsed < duration)
+            {
+                if (target == null) yield break;
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / Mathf.Max(0.01f, duration));
+                cg.alpha = Mathf.SmoothStep(0f, 1f, t);
+                yield return null;
+            }
+            if (cg != null) cg.alpha = 1f;
+            _viewFadeCoroutine = null;
         }
 
         private static void HighlightModeButton(Button btn, bool active, Color activeColor)
