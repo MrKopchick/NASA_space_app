@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using AstraLink.UI.Common;
 using AstraLink.UI.Debrief;
 using AstraLink.UI.Hub;
 using AstraLink.UI.Workshop;
@@ -235,6 +236,13 @@ namespace AstraLink.Core
             RefreshControllerForScreen(screen);
             UpdateTopNavHighlight(screen);
             SaveAgencyState();
+
+            if (Application.isPlaying && screen == GameScreen.Hub && _topNavBar != null && _topNavBar.transform.parent != null)
+            {
+                bool isFreshCampaign = CurrentAgencyState != null
+                    && (CurrentAgencyState.CompletedMissionIds == null || CurrentAgencyState.CompletedMissionIds.Count == 0);
+                OnboardingHelpUI.ShowIfFirstCampaign(_topNavBar.transform.parent, isFreshCampaign);
+            }
 
             Debug.Log("[GameManager] Switched active screen to: " + screen);
             OnScreenChanged?.Invoke(screen);
@@ -932,6 +940,46 @@ namespace AstraLink.Core
                 CreateNavButton(navBar.transform, "Btn_Workshop", "2. Workshop", ShowWorkshop);
                 CreateNavButton(navBar.transform, "Btn_Flight", "3. Flight", ShowFlight);
                 CreateNavButton(navBar.transform, "Btn_Debrief", "4. Debrief", ShowDebrief);
+            }
+
+            EnsureHowItWorksButton(navBar.transform, canvasRoot);
+        }
+
+        private static void EnsureHowItWorksButton(Transform navBarTransform, Transform canvasRoot)
+        {
+            Transform existing = navBarTransform.Find("Btn_HowItWorks");
+            Button btn;
+            if (existing == null)
+            {
+                CreateNavButton(navBarTransform, "Btn_HowItWorks", "? HOW IT WORKS", () => OnboardingHelpUI.Show(canvasRoot));
+                existing = navBarTransform.Find("Btn_HowItWorks");
+            }
+
+            if (existing == null)
+            {
+                return;
+            }
+
+            existing.SetAsLastSibling();
+            LayoutElement le = existing.GetComponent<LayoutElement>();
+            if (le == null)
+            {
+                le = existing.gameObject.AddComponent<LayoutElement>();
+            }
+            le.preferredWidth = 185f;
+            le.flexibleWidth = 0f;
+
+            Image img = existing.GetComponent<Image>();
+            if (img != null)
+            {
+                img.color = new Color(0.16f, 0.36f, 0.56f, 1f);
+            }
+
+            btn = existing.GetComponent<Button>();
+            if (btn != null)
+            {
+                btn.onClick.RemoveAllListeners();
+                btn.onClick.AddListener(() => OnboardingHelpUI.Show(canvasRoot));
             }
         }
 
