@@ -951,8 +951,12 @@ namespace AstraLink.Core
             SetPanelTopInset(workshopPanel, TopUtilityBarHeight);
             StretchPanelFullScreen(flightPanel);
             SetPanelTopInset(debriefPanel, TopUtilityBarHeight);
-
-            EnsurePauseMenuInMainScene(root);
+            
+            EnsureSaveManagerInMainScene(root);
+            if (GetComponent<FirstMissionGuide>() == null)
+            {
+                gameObject.AddComponent<FirstMissionGuide>();
+            }
             RefreshUtilityBarState();
         }
 
