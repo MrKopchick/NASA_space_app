@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using AstraLink.Core;
+using AstraLink.UI;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -490,6 +491,7 @@ namespace AstraLink.UI.Workshop
             {
                 BindExistingHierarchy(existingRoot);
                 BindUX6RuleTooltips(existingRoot);
+                PixelUITheme.ApplyToHierarchy(existingRoot);
                 return;
             }
 
@@ -573,7 +575,9 @@ namespace AstraLink.UI.Workshop
             {
                 _rowWidgets.Add(BuildRuleRow(i, rootObj.transform, legacyFont, tmpFont));
             }
+
             BindUX6RuleTooltips(rootObj.transform);
+            PixelUITheme.ApplyToHierarchy(rootObj.transform);
         }
 
         private static void CreateColumnHeaderLabel(Transform parent, Font font, string text, float width, Color color)
